@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OHLCV Chart Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; background: #131722; color: #d1d4dc; }
+    #toolbar { display: flex; gap: 8px; padding: 12px; background: #1e222d; align-items: center; flex-wrap: wrap; }
+    #toolbar button { padding: 6px 14px; border: 1px solid #363a45; background: #131722; color: #d1d4dc; cursor: pointer; border-radius: 4px; font-size: 13px; }
+    #toolbar button:hover { background: #2a2e39; }
+    #toolbar button.active { background: #2962ff; border-color: #2962ff; color: #fff; }
+    #toolbar .separator { width: 1px; height: 24px; background: #363a45; }
+    #info { margin-left: auto; font-size: 13px; color: #758696; }
+    #chart-container { width: 100%; height: calc(100vh - 48px); }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <button data-res="1m">1m</button>
+    <button data-res="5m">5m</button>
+    <button data-res="1H" class="active">1H</button>
+    <button data-res="4H">4H</button>
+    <button data-res="1D">1D</button>
+    <div class="separator"></div>
+    <button id="theme-btn">Light</button>
+    <button id="live-btn">Live</button>
+    <span id="info">Candles: 0</span>
+  </div>
+  <div id="chart-container"></div>
+
+  <script type="module">
+    import { OHLCVChart, DARK_THEME, LIGHT_THEME } from '../dist/index.mjs';
+
+    // Generate realistic BTC candles
+    function generateCandles(count, resolution) {
+      const candles = [];
+      const resSeconds = { '1m': 60, '5m': 300, '1H': 3600, '4H': 14400, '1D': 86400 };
+      const interval = resSeconds[resolution] || 3600;
+      const now = Math.floor(Date.now() / 1000);
+      const startTime = now - count * interval;
+
+      let price = 42000 + Math.random() * 5000;
+      const meanPrice = price;
+      const volatility = price * 0.002;
+
+      for (let i = 0; i < count; i++) {
+        // Random walk with mean reversion
+        const meanReversion = (meanPrice - price) * 0.002;
+        const change = (Math.random() - 0.5) * volatility * 2 + meanReversion;
+        const open = price;
+        price += change;
+        const close = price;
+        const high = Math.max(open, close) + Math.random() * volatility;
+        const low = Math.min(open, close) - Math.random() * volatility;
+
+        // Volume with occasional spikes
+        let volume = 100 + Math.random() * 900;
+        if (Math.random() < 0.05) volume *= 3 + Math.random() * 5; // spike
+
+        candles.push({
+          o: Math.round(open * 100) / 100,
+          h: Math.round(high * 100) / 100,
+          l: Math.round(low * 100) / 100,
+          c: Math.round(close * 100) / 100,
+          v: Math.round(volume * 100) / 100,
+          t: startTime + i * interval,
+        });
+      }
+      return candles;
+    }
+
+    // Initialize chart
+    const container = document.getElementById('chart-container');
+    let currentResolution = '1H';
+    let isDark = true;
+    let isLive = false;
+    let liveInterval = null;
+
+    const chart = new OHLCVChart({
+      container,
+      symbol: 'BTC/USDT',
+      resolution: currentResolution,
+      theme: 'dark',
+      onCandleClick: (candle, index) => {
+        console.log('Candle clicked:', index, candle);
+      },
+      onVisibleRangeChange: (from, to) => {
+        // console.log('Visible range:', new Date(from * 1000), new Date(to * 1000));
+      },
+    });
+
+    // Load initial data
+    let candles = generateCandles(2000, currentResolution);
+    chart.setData(candles);
+    updateInfo();
+
+    // Resolution buttons
+    document.querySelectorAll('[data-res]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelector('[data-res].active')?.classList.remove('active');
+        btn.classList.add('active');
+        currentResolution = btn.dataset.res;
+        candles = generateCandles(2000, currentResolution);
+        chart.setData(candles);
+        updateInfo();
+      });
+    });
+
+    // Theme toggle
+    document.getElementById('theme-btn').addEventListener('click', () => {
+      isDark = !isDark;
+      chart.setTheme(isDark ? 'dark' : 'light');
+      document.body.style.background = isDark ? '#131722' : '#ffffff';
+      document.body.style.color = isDark ? '#d1d4dc' : '#131722';
+      document.getElementById('toolbar').style.background = isDark ? '#1e222d' : '#f0f3fa';
+      document.querySelectorAll('#toolbar button').forEach(b => {
+        if (!b.classList.contains('active')) {
+          b.style.background = isDark ? '#131722' : '#ffffff';
+          b.style.color = isDark ? '#d1d4dc' : '#131722';
+          b.style.borderColor = isDark ? '#363a45' : '#c8ccd8';
+        }
+      });
+      document.getElementById('theme-btn').textContent = isDark ? 'Light' : 'Dark';
+    });
+
+    // Live simulation
+    document.getElementById('live-btn').addEventListener('click', () => {
+      isLive = !isLive;
+      const btn = document.getElementById('live-btn');
+      btn.classList.toggle('active', isLive);
+
+      if (isLive) {
+        liveInterval = setInterval(() => {
+          const last = candles[candles.length - 1];
+          const volatility = last.c * 0.001;
+          const change = (Math.random() - 0.5) * volatility * 2;
+          const newClose = last.c + change;
+          const newCandle = {
+            o: last.o,
+            h: Math.max(last.h, newClose),
+            l: Math.min(last.l, newClose),
+            c: Math.round(newClose * 100) / 100,
+            v: last.v + Math.random() * 50,
+            t: last.t,
+          };
+          candles[candles.length - 1] = newCandle;
+          chart.updateLastCandle(newCandle);
+        }, 500);
+      } else {
+        clearInterval(liveInterval);
+        liveInterval = null;
+      }
+    });
+
+    function updateInfo() {
+      document.getElementById('info').textContent = `Candles: ${candles.length}`;
+    }
+  </script>
+</body>
+</html>
