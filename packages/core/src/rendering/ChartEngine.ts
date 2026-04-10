@@ -10,6 +10,7 @@ import { TimeAxisRenderer } from './TimeAxis';
 import { CrosshairRenderer, type CrosshairState } from './CrosshairRenderer';
 import { PriceLineRenderer } from './PriceLineRenderer';
 import { LegendRenderer } from './LegendRenderer';
+import { GoToLiveRenderer } from './GoToLiveRenderer';
 
 export class ChartEngine {
   readonly viewport: Viewport;
@@ -37,6 +38,7 @@ export class ChartEngine {
   private _crosshairRenderer = new CrosshairRenderer();
   private _priceLineRenderer = new PriceLineRenderer();
   private _legendRenderer = new LegendRenderer();
+  readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
   private _crosshairState: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false };
@@ -62,6 +64,9 @@ export class ChartEngine {
     this._chartCanvas = this._createLayerCanvas(w, h, 1);
     this._uiCanvas = this._createLayerCanvas(w, h, 2);
     this._crosshairCanvas = this._createLayerCanvas(w, h, 3);
+    // Make the top canvas focusable so it can receive keyboard events.
+    this._crosshairCanvas.tabIndex = 0;
+    this._crosshairCanvas.style.outline = 'none';
 
     container.appendChild(this._chartCanvas);
     container.appendChild(this._uiCanvas);
@@ -157,19 +162,13 @@ export class ChartEngine {
     this._layout = computeLayout(width, height);
     this.viewport.setLayout(this._layout);
 
+    // resizeHiDPICanvas resets canvas.width/height (which clears the transform)
+    // and re-applies ctx.scale(dpr, dpr) internally. Do not re-scale here —
+    // getContext('2d') returns the same context object, and an extra scale call
+    // would compound with the one already applied, resulting in dpr² scaling.
     resizeHiDPICanvas(this._chartCanvas, width, height);
     resizeHiDPICanvas(this._uiCanvas, width, height);
     resizeHiDPICanvas(this._crosshairCanvas, width, height);
-
-    // Re-grab contexts (scale is reset after resize)
-    this._chartCtx = this._chartCanvas.getContext('2d')!;
-    this._uiCtx = this._uiCanvas.getContext('2d')!;
-    this._crosshairCtx = this._crosshairCanvas.getContext('2d')!;
-
-    const dpr = window.devicePixelRatio || 1;
-    this._chartCtx.scale(dpr, dpr);
-    this._uiCtx.scale(dpr, dpr);
-    this._crosshairCtx.scale(dpr, dpr);
 
     this.requestRender();
   }
@@ -240,6 +239,13 @@ export class ChartEngine {
       this._legendRenderer.render(
         ctx, this._layout, legendCandle, this._symbol, this._resolution, this._theme, this._priceFormat, this._volumeFormat,
       );
+
+      // Floating "Go to live" pill when the user has scrolled away from the live edge.
+      if (!this.viewport.autoFollow && this._buffer.length > 0) {
+        this.goToLiveRenderer.render(ctx, this._layout, this._theme);
+      } else {
+        this.goToLiveRenderer.hide();
+      }
     }
 
     if (this._crosshairDirty) {

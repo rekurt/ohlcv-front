@@ -1,12 +1,27 @@
 {
   "name": "ohlcv-front",
   "private": true,
-  "workspaces": ["packages/*"],
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/react",
+    "packages/vue",
+    "examples/_shared",
+    "examples/core",
+    "examples/react",
+    "examples/vue"
+  ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build -w packages/core && npm run build -w packages/react -w packages/vue",
+    "build:examples": "npm run build -w examples/core -w examples/react -w examples/vue",
+    "dev:core": "npm run dev -w examples/core",
+    "dev:react": "npm run dev -w examples/react",
+    "dev:vue": "npm run dev -w examples/vue",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p packages/vue/tsconfig.json"
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p packages/vue/tsconfig.json && tsc --noEmit -p examples/core/tsconfig.json && tsc --noEmit -p examples/react/tsconfig.json && tsc --noEmit -p examples/vue/tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

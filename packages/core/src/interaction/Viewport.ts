@@ -18,6 +18,20 @@ export class Viewport {
   volumeMax = 0;
   layout!: ChartLayout;
 
+  /**
+   * Number of empty-candle slots kept between the last candle and the right
+   * edge of the chart area. Leaves breathing room for the forming live candle.
+   */
+  rightPaddingCandles = 5;
+
+  /**
+   * When true, new data appended to the buffer auto-scrolls the viewport to
+   * keep the newest candle in view. Set to false automatically when the user
+   * pans away from the right edge, and back to true when they pan back or
+   * explicitly call `goToLive()`.
+   */
+  autoFollow = true;
+
   private _bufferLength = 0;
 
   setLayout(layout: ChartLayout): void {
@@ -65,6 +79,17 @@ export class Viewport {
   pan(deltaIndex: number): void {
     this.startIndex += deltaIndex;
     this._clampRange();
+    this._updateAutoFollow();
+  }
+
+  /**
+   * Pan by a pixel delta (as reported by wheel or touch events).
+   * Positive `dx` means the content moves right (show older candles);
+   * negative `dx` means the content moves left (show newer candles).
+   */
+  panPixels(dx: number): void {
+    if (this.candleStep === 0) return;
+    this.pan(-dx / this.candleStep);
   }
 
   /** Zoom around a center X coordinate */
@@ -117,16 +142,62 @@ export class Viewport {
     this.volumeMax = maxVol;
   }
 
-  /** Scroll to the end of data */
+  /** Scroll to the end of data, leaving rightPaddingCandles of empty space. */
   scrollToEnd(bufferLength: number): void {
     this._bufferLength = bufferLength;
-    this.startIndex = Math.max(0, bufferLength - this.visibleCount);
+    this.startIndex = Math.max(0, bufferLength - this.visibleCount + this.rightPaddingCandles);
     this._clampRange();
   }
 
-  /** Check if viewport is at the end of data */
+  /**
+   * Fit all candles from the buffer into the visible chart area by adjusting
+   * candleWidth. Useful for "show me everything" action. Scrolls to the start.
+   */
+  fitAll(bufferLength: number): void {
+    this._bufferLength = bufferLength;
+    if (bufferLength <= 0) return;
+    const chartWidth = this.layout.chartRight - this.layout.chartLeft;
+    const stepForAll = chartWidth / bufferLength;
+    const rawWidth = stepForAll / (1 + CANDLE_GAP_RATIO);
+    this.candleWidth = clamp(rawWidth, MIN_CANDLE_WIDTH, MAX_CANDLE_WIDTH);
+    this._recalcVisibleCount();
+    this.startIndex = 0;
+    this.autoFollow = false;
+  }
+
+  /**
+   * Reset candleWidth to the default value and scroll to the live edge.
+   * Useful for "back to normal" action after deep zoom.
+   */
+  fitVisible(bufferLength: number): void {
+    this.candleWidth = DEFAULT_CANDLE_WIDTH;
+    this._recalcVisibleCount();
+    this.autoFollow = true;
+    this.scrollToEnd(bufferLength);
+  }
+
+  /**
+   * Scroll to the live edge without changing candleWidth. Re-enables autoFollow.
+   */
+  goToLive(bufferLength: number): void {
+    this.autoFollow = true;
+    this.scrollToEnd(bufferLength);
+  }
+
+  /**
+   * True only when the viewport is resting exactly at the live anchor
+   * position (last candle sits at chartRight - rightPaddingCandles).
+   *
+   * The tolerance is < 0.5 candle so that fractional pan deltas from
+   * panPixels() still snap cleanly. Panning even one full candle past the
+   * anchor into the empty future zone counts as "user exploring the future"
+   * and returns false — which prevents live updates from jerking the view
+   * back to the anchor on every tick.
+   */
   isAtEnd(): boolean {
-    return this.startIndex + this.visibleCount >= this._bufferLength - 1;
+    if (this._bufferLength === 0) return true;
+    const anchor = this._bufferLength - this.visibleCount + this.rightPaddingCandles;
+    return Math.abs(this.startIndex - anchor) < 0.5;
   }
 
   /** Check if viewport is at the start of data */
@@ -141,10 +212,24 @@ export class Viewport {
   }
 
   private _clampRange(): void {
-    // Allow scrolling a bit past the end (half screen of empty space)
-    const maxStart = Math.max(0, this._bufferLength - this.visibleCount / 2);
+    // Allow scrolling a bit past the end: enough to show right padding plus
+    // half a screen of extra empty space for overshoot momentum.
+    const maxStart = Math.max(
+      0,
+      this._bufferLength - this.visibleCount + this.rightPaddingCandles + this.visibleCount / 2,
+    );
     // Allow scrolling before start (half screen of empty space)
     const minStart = -this.visibleCount / 2;
     this.startIndex = clamp(this.startIndex, minStart, maxStart);
+  }
+
+  /**
+   * Update autoFollow based on whether the viewport is still at the live edge.
+   * Called after every pan. When the user pans back, we stop following live;
+   * when they pan forward to the edge, we start following again.
+   */
+  private _updateAutoFollow(): void {
+    if (this._bufferLength === 0) return;
+    this.autoFollow = this.isAtEnd();
   }
 }

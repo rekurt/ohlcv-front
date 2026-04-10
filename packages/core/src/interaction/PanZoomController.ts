@@ -77,6 +77,9 @@ export class PanZoomController {
       cancelAnimationFrame(this._momentumRafId);
       this._momentumRafId = 0;
     }
+    this._canvas.style.cursor = 'grabbing';
+    // Ensure the canvas receives keyboard events for keyboard shortcuts.
+    this._canvas.focus();
     document.addEventListener('mousemove', this._onMouseMove);
     document.addEventListener('mouseup', this._onMouseUp);
   }
@@ -102,6 +105,7 @@ export class PanZoomController {
 
   private _handleMouseUp(_e: MouseEvent): void {
     this._isDragging = false;
+    this._canvas.style.cursor = 'crosshair';
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
 
@@ -112,16 +116,55 @@ export class PanZoomController {
     }
   }
 
+  /**
+   * Wheel / trackpad handling:
+   *  - Shift + wheel                                    → pan horizontally
+   *  - horizontal swipe with bias                       → pan horizontally
+   *  - plain vertical wheel                             → smooth zoom at cursor
+   *
+   * The horizontal bias is important: macOS trackpads often emit wheel
+   * events with a significant deltaX **and** a smaller-but-nonzero deltaY
+   * during a horizontal two-finger swipe. A strict `|deltaX| > |deltaY|`
+   * check misclassifies such events as zoom. We accept a swipe as horizontal
+   * when deltaX is at least half of deltaY (i.e. horizontal is ≥33% of the
+   * total motion), which captures real-world trackpad jitter while still
+   * leaving clearly-vertical mouse-wheel events (deltaY >> deltaX) to zoom.
+   *
+   * `preventDefault()` is always called so the page never scrolls on a
+   * wheel event that lands on the chart.
+   */
   private _handleWheel(e: WheelEvent): void {
     e.preventDefault();
     const rect = this._canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
+    const { deltaX, deltaY, shiftKey } = e;
 
-    // Zoom factor based on wheel delta
-    const factor = e.deltaY > 0 ? 0.9 : 1.1;
-    this._viewport.zoom(factor, x);
-    this._notifyChange();
-    this._checkPanToStart();
+    // 1. Shift+wheel → pan (mouse-wheel fallback for horizontal)
+    if (shiftKey && deltaY !== 0) {
+      this._viewport.panPixels(-deltaY);
+      this._notifyChange();
+      this._checkPanToStart();
+      return;
+    }
+
+    // 2. Horizontal swipe with bias → pan. deltaX must be meaningfully
+    //    non-zero AND at least half of deltaY in magnitude for this to be
+    //    treated as a swipe instead of a zoom with tilt-wheel jitter.
+    if (Math.abs(deltaX) > 0.5 && Math.abs(deltaX) * 2 >= Math.abs(deltaY)) {
+      this._viewport.panPixels(-deltaX);
+      this._notifyChange();
+      this._checkPanToStart();
+      return;
+    }
+
+    // 3. Plain vertical wheel → smooth magnitude-aware zoom around the cursor
+    if (deltaY !== 0) {
+      const rawFactor = Math.exp(-deltaY * 0.002);
+      const factor = Math.max(0.1, Math.min(10, rawFactor));
+      this._viewport.zoom(factor, x);
+      this._notifyChange();
+      this._checkPanToStart();
+    }
   }
 
   private _handleTouchStart(e: TouchEvent): void {

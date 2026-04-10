@@ -24,11 +24,15 @@ export { WebSocketTransport } from './data/WebSocketTransport';
 
 // Rendering
 export { ChartEngine } from './rendering/ChartEngine';
+export { GoToLiveRenderer } from './rendering/GoToLiveRenderer';
+export type { GoToLiveBounds } from './rendering/GoToLiveRenderer';
 
 // Interaction
 export { Viewport } from './interaction/Viewport';
 export { PanZoomController } from './interaction/PanZoomController';
 export { CrosshairController } from './interaction/CrosshairController';
+export { KeyboardController } from './interaction/KeyboardController';
+export type { KeyboardCallbacks } from './interaction/KeyboardController';
 
 // Constants & Utilities
 export { DARK_THEME, LIGHT_THEME } from './constants';
