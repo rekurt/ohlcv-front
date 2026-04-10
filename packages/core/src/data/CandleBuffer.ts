@@ -79,14 +79,16 @@ export class CandleBuffer {
     const newVolume = new Float64Array(cap);
     const newTime = new Float64Array(cap);
 
-    // Write prepended candles first
+    // Write prepended candles first. Use direct iteration to avoid repeated
+    // array lookups and satisfy noUncheckedIndexedAccess.
     for (let i = 0; i < candles.length; i++) {
-      newOpen[i] = candles[i].o;
-      newHigh[i] = candles[i].h;
-      newLow[i] = candles[i].l;
-      newClose[i] = candles[i].c;
-      newVolume[i] = candles[i].v;
-      newTime[i] = candles[i].t;
+      const c = candles[i]!;
+      newOpen[i] = c.o;
+      newHigh[i] = c.h;
+      newLow[i] = c.l;
+      newClose[i] = c.c;
+      newVolume[i] = c.v;
+      newTime[i] = c.t;
     }
 
     // Copy existing data after
@@ -134,26 +136,27 @@ export class CandleBuffer {
   /** Get a single candle by index */
   candleAt(index: number): Candle | null {
     if (index < 0 || index >= this._length) return null;
+    // Index bounds are validated above; TypedArray access is guaranteed safe.
     return {
-      o: this._open[index],
-      h: this._high[index],
-      l: this._low[index],
-      c: this._close[index],
-      v: this._volume[index],
-      t: this._time[index],
+      o: this._open[index]!,
+      h: this._high[index]!,
+      l: this._low[index]!,
+      c: this._close[index]!,
+      v: this._volume[index]!,
+      t: this._time[index]!,
     };
   }
 
   lastTime(): number {
-    return this._length > 0 ? this._time[this._length - 1] : 0;
+    return this._length > 0 ? this._time[this._length - 1]! : 0;
   }
 
   firstTime(): number {
-    return this._length > 0 ? this._time[0] : 0;
+    return this._length > 0 ? this._time[0]! : 0;
   }
 
   lastClose(): number {
-    return this._length > 0 ? this._close[this._length - 1] : 0;
+    return this._length > 0 ? this._close[this._length - 1]! : 0;
   }
 
   clear(): void {

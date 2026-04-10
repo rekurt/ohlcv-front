@@ -20,13 +20,14 @@ export class VolumeRenderer {
 
       if (x + halfBody < layout.chartLeft || x - halfBody > layout.chartRight) continue;
 
-      const open = view.open[i];
-      const close = view.close[i];
+      // `i < view.length` guarantees TypedArray access is defined.
+      const open = view.open[i]!;
+      const close = view.close[i]!;
       const bull = close >= open;
 
       ctx.fillStyle = bull ? theme.bullVolume : theme.bearVolume;
 
-      const vol = view.volume[i];
+      const vol = view.volume[i]!;
       const barTop = viewport.volumeToY(vol);
       const barHeight = layout.volumeBottom - barTop;
 

@@ -1,6 +1,12 @@
 import type { ThemeColors, ChartLayout } from '../types';
 import { niceGridValues, formatPrice } from '../utils';
 import type { Viewport } from '../interaction/Viewport';
+import {
+  AXIS_FONT,
+  AXIS_LABEL_HEIGHT,
+  AXIS_LABEL_TEXT_PAD,
+  AXIS_LABEL_BG_INSET,
+} from '../constants';
 
 export class PriceAxisRenderer {
   render(
@@ -24,14 +30,14 @@ export class PriceAxisRenderer {
     // Price labels
     const values = niceGridValues(viewport.priceMin, viewport.priceMax, 6);
     ctx.fillStyle = theme.text;
-    ctx.font = '11px monospace';
+    ctx.font = AXIS_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
     for (const price of values) {
       const y = viewport.priceToY(price);
       if (y >= layout.chartTop && y <= layout.chartBottom) {
-        ctx.fillText(fmt(price), axisX + 8, y);
+        ctx.fillText(fmt(price), axisX + AXIS_LABEL_TEXT_PAD, y);
       }
     }
   }
@@ -52,18 +58,17 @@ export class PriceAxisRenderer {
 
     const axisX = layout.chartRight;
     const text = fmt(price);
-    const labelHeight = 20;
-    const labelWidth = layout.priceAxisWidth - 4;
+    const labelWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
 
     // Background
     ctx.fillStyle = isBull ? theme.bullCandle : theme.bearCandle;
-    ctx.fillRect(axisX + 2, y - labelHeight / 2, labelWidth, labelHeight);
+    ctx.fillRect(axisX + AXIS_LABEL_BG_INSET, y - AXIS_LABEL_HEIGHT / 2, labelWidth, AXIS_LABEL_HEIGHT);
 
     // Text
     ctx.fillStyle = '#ffffff';
-    ctx.font = '11px monospace';
+    ctx.font = AXIS_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, axisX + 8, y);
+    ctx.fillText(text, axisX + AXIS_LABEL_TEXT_PAD, y);
   }
 }

@@ -1,6 +1,29 @@
 {
   "name": "@ohlcv/core",
   "version": "0.0.1",
+  "description": "Framework-agnostic OHLCV candlestick chart library. Canvas-based, TypedArray-backed, keyboard-first.",
+  "keywords": [
+    "ohlcv",
+    "candlestick",
+    "chart",
+    "trading",
+    "canvas",
+    "typescript",
+    "indicators",
+    "rsi",
+    "bollinger",
+    "binance"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rekurt/ohlcv-front.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/rekurt/ohlcv-front/issues"
+  },
+  "homepage": "https://github.com/rekurt/ohlcv-front#readme",
   "type": "module",
   "exports": {
     ".": {
@@ -17,10 +40,13 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
   },
-  "sideEffects": false
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.18.0"
+  }
 }

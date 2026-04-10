@@ -1,4 +1,5 @@
 import type { ChartLayout, ThemeColors } from '../types';
+import { PILL_FONT, PILL_FONT_SIZE, PILL_PADDING_X, PILL_PADDING_Y, PILL_MARGIN } from '../constants';
 
 export interface GoToLiveBounds {
   x: number;
@@ -29,20 +30,17 @@ export class GoToLiveRenderer {
 
   render(ctx: CanvasRenderingContext2D, layout: ChartLayout, theme: ThemeColors): void {
     const label = 'Go to live ▶';
-    const paddingX = 12;
-    const paddingY = 6;
-    const fontSize = 12;
 
     ctx.save();
-    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+    ctx.font = PILL_FONT;
     const textWidth = ctx.measureText(label).width;
-    const width = textWidth + paddingX * 2;
-    const height = fontSize + paddingY * 2;
+    const width = textWidth + PILL_PADDING_X * 2;
+    const height = PILL_FONT_SIZE + PILL_PADDING_Y * 2;
 
     // Positioned in the bottom-right corner of the chart area, above the
     // time axis and just inside the price axis.
-    const x = layout.chartRight - width - 12;
-    const y = layout.chartBottom - height - 12;
+    const x = layout.chartRight - width - PILL_MARGIN;
+    const y = layout.chartBottom - height - PILL_MARGIN;
 
     // Pill background — filled accent with rounded corners.
     const radius = height / 2;

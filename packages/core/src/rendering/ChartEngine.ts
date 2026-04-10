@@ -67,6 +67,11 @@ export class ChartEngine {
     // Make the top canvas focusable so it can receive keyboard events.
     this._crosshairCanvas.tabIndex = 0;
     this._crosshairCanvas.style.outline = 'none';
+    // Accessibility: label the interactive canvas as an application image
+    // and describe its purpose. Screen readers that don't speak canvas
+    // pixel content will at least announce "OHLCV price chart" on focus.
+    this._crosshairCanvas.setAttribute('role', 'img');
+    this._crosshairCanvas.setAttribute('aria-label', 'OHLCV price chart. Use arrow keys to pan, plus and minus to zoom, Home and End to jump.');
 
     container.appendChild(this._chartCanvas);
     container.appendChild(this._uiCanvas);

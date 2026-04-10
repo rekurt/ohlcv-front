@@ -1,5 +1,6 @@
 import type { Candle, ChartConfig, ThemeColors, ThemeMode } from './types';
 import { resolveTheme } from './utils';
+import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
 import { CandleMerger } from './data/CandleMerger';
 import { DataFeed } from './data/DataFeed';
@@ -17,6 +18,7 @@ export class OHLCVChart {
   private _panZoom: PanZoomController;
   private _crosshair: CrosshairController;
   private _keyboard: KeyboardController;
+  private _reporter: ErrorReporter;
   private _config: ChartConfig;
   private _clickHandler: ((e: MouseEvent) => void) | null = null;
   private _dblClickHandler: ((e: MouseEvent) => void) | null = null;
@@ -24,11 +26,18 @@ export class OHLCVChart {
   constructor(config: ChartConfig) {
     this._config = config;
     const theme = resolveTheme(config.theme);
+    this._reporter = new ErrorReporter(config.onError);
 
-    // Data layer
+    // Data layer — pass the reporter so transport/fetch errors get dispatched
+    // through `onError` instead of being silently swallowed.
     this._buffer = new CandleBuffer();
     this._merger = new CandleMerger(this._buffer);
-    this._dataFeed = new DataFeed(this._buffer, this._merger, config.transport ?? null);
+    this._dataFeed = new DataFeed(
+      this._buffer,
+      this._merger,
+      config.transport ?? null,
+      this._reporter,
+    );
 
     // Rendering
     this._engine = new ChartEngine(config.container, theme);

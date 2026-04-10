@@ -1,6 +1,14 @@
 import type { ThemeColors, ChartLayout } from '../types';
 import { formatPrice } from '../utils';
 import type { Viewport } from '../interaction/Viewport';
+import {
+  AXIS_FONT,
+  AXIS_LABEL_HEIGHT,
+  AXIS_LABEL_TEXT_PAD,
+  AXIS_LABEL_BG_INSET,
+  CROSSHAIR_DASH,
+  CROSSHAIR_TIME_LABEL_PAD_X,
+} from '../constants';
 
 export interface CrosshairState {
   x: number;
@@ -14,7 +22,7 @@ export class CrosshairRenderer {
   render(
     ctx: CanvasRenderingContext2D,
     layout: ChartLayout,
-    viewport: Viewport,
+    _viewport: Viewport,
     state: CrosshairState,
     theme: ThemeColors,
     customPriceFormat?: (price: number) => string,
@@ -24,7 +32,7 @@ export class CrosshairRenderer {
     const { x, y, price, time } = state;
     const fmt = customPriceFormat || formatPrice;
 
-    ctx.setLineDash([4, 4]);
+    ctx.setLineDash(CROSSHAIR_DASH as unknown as number[]);
     ctx.strokeStyle = theme.crosshair;
     ctx.lineWidth = 1;
 
@@ -44,25 +52,34 @@ export class CrosshairRenderer {
 
     // Price label on Y-axis
     const priceText = fmt(price);
-    const labelHeight = 20;
-    const priceWidth = layout.priceAxisWidth - 4;
+    const priceWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
 
     ctx.fillStyle = theme.crosshair;
-    ctx.fillRect(layout.chartRight + 2, y - labelHeight / 2, priceWidth, labelHeight);
+    ctx.fillRect(
+      layout.chartRight + AXIS_LABEL_BG_INSET,
+      y - AXIS_LABEL_HEIGHT / 2,
+      priceWidth,
+      AXIS_LABEL_HEIGHT,
+    );
     ctx.fillStyle = '#ffffff';
-    ctx.font = '11px monospace';
+    ctx.font = AXIS_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(priceText, layout.chartRight + 8, y);
+    ctx.fillText(priceText, layout.chartRight + AXIS_LABEL_TEXT_PAD, y);
 
     // Time label on X-axis
-    ctx.font = '11px monospace';
-    const timeWidth = ctx.measureText(time).width + 12;
+    ctx.font = AXIS_FONT;
+    const timeWidth = ctx.measureText(time).width + CROSSHAIR_TIME_LABEL_PAD_X;
     ctx.fillStyle = theme.crosshair;
-    ctx.fillRect(x - timeWidth / 2, layout.chartBottom + 2, timeWidth, 20);
+    ctx.fillRect(
+      x - timeWidth / 2,
+      layout.chartBottom + AXIS_LABEL_BG_INSET,
+      timeWidth,
+      AXIS_LABEL_HEIGHT,
+    );
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(time, x, layout.chartBottom + 6);
+    ctx.fillText(time, x, layout.chartBottom + AXIS_LABEL_BG_INSET + AXIS_LABEL_TEXT_PAD / 2);
   }
 }

@@ -1,5 +1,6 @@
 import type { Candle, ThemeColors, ChartLayout } from '../types';
 import { formatPrice, formatVolume } from '../utils';
+import { LEGEND_FONT, LEGEND_MARGIN_LEFT, LEGEND_MARGIN_TOP } from '../constants';
 
 export class LegendRenderer {
   render(
@@ -18,10 +19,10 @@ export class LegendRenderer {
     const vFmt = customVolumeFormat || formatVolume;
 
     const isBull = candle.c >= candle.o;
-    const x = layout.chartLeft + 10;
-    const y = layout.chartTop + 16;
+    const x = layout.chartLeft + LEGEND_MARGIN_LEFT;
+    const y = layout.chartTop + LEGEND_MARGIN_TOP;
 
-    ctx.font = '12px monospace';
+    ctx.font = LEGEND_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 

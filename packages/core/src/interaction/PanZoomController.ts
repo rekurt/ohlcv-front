@@ -1,6 +1,21 @@
 import type { Viewport } from './Viewport';
 import { MOMENTUM_FRICTION, MOMENTUM_THRESHOLD } from '../constants';
 
+/**
+ * Check the `prefers-reduced-motion` media query. Safe to call from non-DOM
+ * environments (SSR, tests) — returns false when `matchMedia` is missing.
+ */
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
 export interface PanZoomCallbacks {
   onViewportChange?: () => void;
   onPanToStart?: () => void;
@@ -109,9 +124,10 @@ export class PanZoomController {
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
 
-    // Start momentum
+    // Start momentum — respect `prefers-reduced-motion` to avoid
+    // disorienting users with vestibular sensitivity.
     this._velocity = this._lastDragDelta;
-    if (Math.abs(this._velocity) > MOMENTUM_THRESHOLD) {
+    if (Math.abs(this._velocity) > MOMENTUM_THRESHOLD && !prefersReducedMotion()) {
       this._startMomentum();
     }
   }
@@ -169,8 +185,9 @@ export class PanZoomController {
 
   private _handleTouchStart(e: TouchEvent): void {
     e.preventDefault();
-    if (e.touches.length === 1) {
-      this._touchStartX = e.touches[0].clientX;
+    const t0 = e.touches[0];
+    if (e.touches.length === 1 && t0) {
+      this._touchStartX = t0.clientX;
       this._velocity = 0;
       this._lastDragTime = Date.now();
       if (this._momentumRafId) {
@@ -184,8 +201,10 @@ export class PanZoomController {
 
   private _handleTouchMove(e: TouchEvent): void {
     e.preventDefault();
-    if (e.touches.length === 1) {
-      const dx = e.touches[0].clientX - this._touchStartX;
+    const t0 = e.touches[0];
+    const t1 = e.touches[1];
+    if (e.touches.length === 1 && t0) {
+      const dx = t0.clientX - this._touchStartX;
       const deltaIndex = -dx / this._viewport.candleStep;
 
       const now = Date.now();
@@ -196,14 +215,14 @@ export class PanZoomController {
       }
 
       this._viewport.pan(deltaIndex);
-      this._touchStartX = e.touches[0].clientX;
+      this._touchStartX = t0.clientX;
       this._notifyChange();
       this._checkPanToStart();
-    } else if (e.touches.length === 2) {
+    } else if (e.touches.length === 2 && t0 && t1) {
       const dist = this._getTouchDistance(e.touches);
       if (this._lastTouchDist > 0) {
         const factor = dist / this._lastTouchDist;
-        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerX = (t0.clientX + t1.clientX) / 2;
         const rect = this._canvas.getBoundingClientRect();
         this._viewport.zoom(factor, centerX - rect.left);
         this._notifyChange();
@@ -238,8 +257,11 @@ export class PanZoomController {
   }
 
   private _getTouchDistance(touches: TouchList): number {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
+    const t0 = touches[0];
+    const t1 = touches[1];
+    if (!t0 || !t1) return 0;
+    const dx = t0.clientX - t1.clientX;
+    const dy = t0.clientY - t1.clientY;
     return Math.sqrt(dx * dx + dy * dy);
   }
 

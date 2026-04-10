@@ -120,10 +120,16 @@ export class Viewport {
     let maxPrice = -Infinity;
     let maxVol = 0;
 
+    // Index `i` is bounded by `view.length` which equals the Float64Array
+    // subarray length, so direct access is safe. `!` eliminates the strict
+    // "possibly undefined" noise introduced by noUncheckedIndexedAccess.
     for (let i = 0; i < view.length; i++) {
-      if (view.low[i] < minPrice) minPrice = view.low[i];
-      if (view.high[i] > maxPrice) maxPrice = view.high[i];
-      if (view.volume[i] > maxVol) maxVol = view.volume[i];
+      const lo = view.low[i]!;
+      const hi = view.high[i]!;
+      const vol = view.volume[i]!;
+      if (lo < minPrice) minPrice = lo;
+      if (hi > maxPrice) maxPrice = hi;
+      if (vol > maxVol) maxVol = vol;
     }
 
     // Flat range protection

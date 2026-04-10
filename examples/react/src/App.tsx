@@ -13,18 +13,21 @@ const CANDLE_COUNT = 500;
 const LIVE_TICK_MS = 500;
 
 export function App() {
-  const [symbolId, setSymbolId] = useState(SYMBOLS[0].id);
+  const [symbolId, setSymbolId] = useState(SYMBOLS[0]!.id);
   const [resolutionId, setResolutionId] = useState('1H');
   const [theme, setTheme] = useState<ThemeMode>('dark');
   const [live, setLive] = useState(false);
   const [status, setStatus] = useState('Click a candle to see details');
 
+  // SYMBOLS/RESOLUTIONS are non-empty const readonly arrays; `!` keeps
+  // TypeScript happy under noUncheckedIndexedAccess without polluting the
+  // component with null guards that can never fire at runtime.
   const symbol = useMemo(
-    () => SYMBOLS.find((s) => s.id === symbolId) ?? SYMBOLS[0],
+    () => SYMBOLS.find((s) => s.id === symbolId) ?? SYMBOLS[0]!,
     [symbolId],
   );
   const resolution = useMemo(
-    () => RESOLUTIONS.find((r) => r.id === resolutionId) ?? RESOLUTIONS[0],
+    () => RESOLUTIONS.find((r) => r.id === resolutionId) ?? RESOLUTIONS[0]!,
     [resolutionId],
   );
 
@@ -51,7 +54,8 @@ export function App() {
       const core = chartRef.current?.chart;
       const arr = candlesRef.current;
       if (!core || arr.length === 0) return;
-      const last = arr[arr.length - 1];
+      // Guarded by the length check above.
+      const last = arr[arr.length - 1]!;
       const next = advanceLastCandle({ lastCandle: last, symbol, tickIndex: ++tickIndex });
       arr[arr.length - 1] = next;
       core.updateLastCandle(next);

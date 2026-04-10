@@ -50,7 +50,45 @@ export interface ThemeColors {
   priceLine: string;
 }
 
-export type ThemeMode = 'dark' | 'light';
+/**
+ * Theme selection:
+ * - `'dark'` / `'light'` — explicit
+ * - `'auto'` — follow `prefers-color-scheme` media query (falls back to
+ *   `'dark'` in non-DOM environments)
+ */
+export type ThemeMode = 'dark' | 'light' | 'auto';
+
+/**
+ * Location identifier for an error dispatched through `ChartConfig.onError`.
+ * Use this to decide severity and display strategy — e.g. a `fetchHistory`
+ * error may block the chart, while a `subscribe` error may just drop one
+ * live tick.
+ */
+export type ChartErrorWhere =
+  | 'fetchHistory'
+  | 'loadMoreHistory'
+  | 'subscribe'
+  | 'parseCandles'
+  | 'render'
+  | 'unknown';
+
+/**
+ * Structured error payload dispatched by the chart. Replaces the previous
+ * silent `catch {}` behavior so hosts can log, report to Sentry, or display
+ * a UI warning.
+ */
+export interface ChartError {
+  /** Where in the chart pipeline the error originated. */
+  where: ChartErrorWhere;
+  /** The wrapped Error instance (never null; strings are coerced). */
+  error: Error;
+  /**
+   * When true, the chart may be in an unusable state (e.g. initial history
+   * fetch failed). When false, the chart continues operating normally
+   * (e.g. a single dropped poll cycle).
+   */
+  fatal: boolean;
+}
 
 export interface ChartConfig {
   container: HTMLElement;
@@ -63,6 +101,12 @@ export interface ChartConfig {
   volumeFormat?: (volume: number) => string;
   onCandleClick?: (candle: Candle, index: number) => void;
   onVisibleRangeChange?: (from: number, to: number) => void;
+  /**
+   * Called whenever the chart encounters a non-fatal or fatal error in its
+   * data/render pipeline. If omitted, errors fall back to `console.warn`
+   * via the default `ErrorReporter`.
+   */
+  onError?: (err: ChartError) => void;
 }
 
 export interface ChartLayout {

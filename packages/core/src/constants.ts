@@ -22,6 +22,31 @@ export const GROWTH_FACTOR = 2;
 export const MOMENTUM_FRICTION = 0.95;
 export const MOMENTUM_THRESHOLD = 0.5;
 
+// Fonts (single source of truth for canvas text)
+export const AXIS_FONT = '11px monospace';
+export const LEGEND_FONT = '12px monospace';
+export const PILL_FONT_SIZE = 12;
+export const PILL_FONT = `${PILL_FONT_SIZE}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+
+// Axis labels & padding
+export const AXIS_LABEL_HEIGHT = 20;
+export const AXIS_LABEL_TEXT_PAD = 8;  // horizontal text offset inside price-axis labels
+export const AXIS_LABEL_BG_INSET = 2;  // gap between axis line and label background rect
+export const TIME_AXIS_LABEL_GAP = 8;  // vertical gap below chart area for time axis text
+
+// Crosshair
+export const CROSSHAIR_DASH: readonly [number, number] = [4, 4];
+export const CROSSHAIR_TIME_LABEL_PAD_X = 12;  // horizontal padding around time label under crosshair
+
+// GoToLive pill
+export const PILL_PADDING_X = 12;
+export const PILL_PADDING_Y = 6;
+export const PILL_MARGIN = 12;
+
+// Legend
+export const LEGEND_MARGIN_LEFT = 10;
+export const LEGEND_MARGIN_TOP = 16;
+
 // Themes
 export const DARK_THEME: ThemeColors = {
   background: '#131722',

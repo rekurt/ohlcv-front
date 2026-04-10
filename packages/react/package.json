@@ -1,6 +1,18 @@
 {
   "name": "@ohlcv/react",
   "version": "0.0.1",
+  "description": "React 18+/19 wrapper for @ohlcv/core — <OHLCVChart> component and useOHLCVChart hook.",
+  "keywords": ["ohlcv", "candlestick", "chart", "react", "trading", "canvas"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rekurt/ohlcv-front.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/rekurt/ohlcv-front/issues"
+  },
+  "homepage": "https://github.com/rekurt/ohlcv-front#readme",
   "type": "module",
   "exports": {
     ".": {
@@ -17,12 +29,15 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
   },
   "sideEffects": false,
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "dependencies": {
     "@ohlcv/core": "*"
   },

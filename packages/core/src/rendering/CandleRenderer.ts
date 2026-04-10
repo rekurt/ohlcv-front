@@ -29,8 +29,9 @@ export class CandleRenderer {
     ctx.fillStyle = color;
 
     for (let i = 0; i < view.length; i++) {
-      const open = view.open[i];
-      const close = view.close[i];
+      // `i < view.length` guarantees TypedArray access is defined.
+      const open = view.open[i]!;
+      const close = view.close[i]!;
       const bull = close >= open;
       if (bull !== isBull) continue;
 
@@ -41,8 +42,8 @@ export class CandleRenderer {
       // Skip if outside visible area
       if (x + halfBody < layout.chartLeft || x - halfBody > layout.chartRight) continue;
 
-      const high = view.high[i];
-      const low = view.low[i];
+      const high = view.high[i]!;
+      const low = view.low[i]!;
 
       // Wick
       const wickX = Math.round(x) - WICK_WIDTH / 2;

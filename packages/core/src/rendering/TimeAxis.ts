@@ -2,6 +2,7 @@ import type { ThemeColors, ChartLayout } from '../types';
 import { formatTime } from '../utils';
 import type { Viewport } from '../interaction/Viewport';
 import type { CandleBuffer } from '../data/CandleBuffer';
+import { AXIS_FONT, TIME_AXIS_LABEL_GAP } from '../constants';
 
 export class TimeAxisRenderer {
   render(
@@ -24,7 +25,7 @@ export class TimeAxisRenderer {
 
     // Time labels
     ctx.fillStyle = theme.text;
-    ctx.font = '11px monospace';
+    ctx.font = AXIS_FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
 
@@ -40,7 +41,7 @@ export class TimeAxisRenderer {
       if (!candle) continue;
 
       const label = formatTime(candle.t, resolution);
-      ctx.fillText(label, x, axisY + 8);
+      ctx.fillText(label, x, axisY + TIME_AXIS_LABEL_GAP);
     }
   }
 }

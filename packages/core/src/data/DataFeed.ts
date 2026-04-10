@@ -1,19 +1,29 @@
 import type { Candle, DataFeedConfig, DataTransport, HistoryRequest } from '../types';
 import type { CandleBuffer } from './CandleBuffer';
 import type { CandleMerger } from './CandleMerger';
+import type { ErrorReporter } from '../ErrorReporter';
+
+const HISTORY_WINDOW_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 export class DataFeed {
   private _buffer: CandleBuffer;
   private _merger: CandleMerger;
   private _transport: DataTransport | null;
+  private _reporter: ErrorReporter | null;
   private _config: DataFeedConfig | null = null;
   private _connectVersion = 0;
   private _isLoadingHistory = false;
 
-  constructor(buffer: CandleBuffer, merger: CandleMerger, transport: DataTransport | null) {
+  constructor(
+    buffer: CandleBuffer,
+    merger: CandleMerger,
+    transport: DataTransport | null,
+    reporter: ErrorReporter | null = null,
+  ) {
     this._buffer = buffer;
     this._merger = merger;
     this._transport = transport;
+    this._reporter = reporter;
   }
 
   setTransport(transport: DataTransport | null): void {
@@ -33,7 +43,7 @@ export class DataFeed {
     const req: HistoryRequest = {
       symbol: config.symbol,
       resolution: config.resolution,
-      from: now - 60 * 60 * 24 * 30, // 30 days
+      from: now - HISTORY_WINDOW_SECONDS,
       to: now,
     };
 
@@ -42,9 +52,12 @@ export class DataFeed {
       // Stale check — symbol may have changed during fetch
       if (this._connectVersion !== version) return;
       this._merger.loadHistory(candles);
-    } catch {
-      // Silently ignore fetch errors for stale connections
-      if (this._connectVersion !== version) return;
+    } catch (error) {
+      const isStale = this._connectVersion !== version;
+      // Fatal when the user is still waiting on *this* connect — the chart
+      // has no history to render. Non-fatal (just noise) for stale ones.
+      this._reporter?.report('fetchHistory', error, !isStale);
+      if (isStale) return;
     }
 
     // Subscribe to realtime updates
@@ -71,7 +84,7 @@ export class DataFeed {
     const req: HistoryRequest = {
       symbol: this._config.symbol,
       resolution: this._config.resolution,
-      from: firstTime - 60 * 60 * 24 * 30, // 30 more days
+      from: firstTime - HISTORY_WINDOW_SECONDS,
       to: firstTime,
     };
 
@@ -90,7 +103,10 @@ export class DataFeed {
 
       // Return actual number added (not candles.length — merger filters overlap)
       return this._buffer.length - lengthBefore;
-    } catch {
+    } catch (error) {
+      // Lazy loading failure is never fatal — the user keeps the data
+      // they already have and can try panning back again later.
+      this._reporter?.report('loadMoreHistory', error, false);
       this._isLoadingHistory = false;
       return 0;
     }

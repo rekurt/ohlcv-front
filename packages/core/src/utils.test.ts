@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   lowerBound,
   upperBound,
@@ -9,7 +9,9 @@ import {
   formatTime,
   computeLayout,
   clamp,
+  resolveTheme,
 } from './utils';
+import { DARK_THEME, LIGHT_THEME } from './constants';
 
 describe('lowerBound', () => {
   it('finds first index >= target', () => {
@@ -153,5 +155,68 @@ describe('clamp', () => {
     expect(clamp(5, 0, 10)).toBe(5);
     expect(clamp(-1, 0, 10)).toBe(0);
     expect(clamp(15, 0, 10)).toBe(10);
+  });
+});
+
+describe('resolveTheme', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('returns dark theme for undefined', () => {
+    expect(resolveTheme(undefined)).toEqual(DARK_THEME);
+  });
+
+  it('returns dark theme for "dark"', () => {
+    expect(resolveTheme('dark')).toEqual(DARK_THEME);
+  });
+
+  it('returns light theme for "light"', () => {
+    expect(resolveTheme('light')).toEqual(LIGHT_THEME);
+  });
+
+  it('passes through custom ThemeColors object', () => {
+    const custom = { ...DARK_THEME, background: '#123456' };
+    expect(resolveTheme(custom)).toEqual(custom);
+  });
+
+  it('resolveTheme("auto") picks light when prefers-color-scheme is light', () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('light'),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+
+    expect(resolveTheme('auto')).toEqual(LIGHT_THEME);
+  });
+
+  it('resolveTheme("auto") falls back to dark when prefers-color-scheme is dark', () => {
+    window.matchMedia = ((query: string) => ({
+      matches: false, // neither light nor dark match → fall through
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+
+    expect(resolveTheme('auto')).toEqual(DARK_THEME);
+  });
+
+  it('resolveTheme("auto") degrades to dark when matchMedia throws', () => {
+    window.matchMedia = (() => {
+      throw new Error('not supported');
+    }) as unknown as typeof window.matchMedia;
+
+    expect(resolveTheme('auto')).toEqual(DARK_THEME);
   });
 });

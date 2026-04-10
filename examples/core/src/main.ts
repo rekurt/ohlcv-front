@@ -12,8 +12,13 @@ const CANDLE_COUNT = 500;
 const LIVE_TICK_MS = 500;
 
 // ---- State ----
-let currentSymbol: SymbolInfo = SYMBOLS[0];
-let currentResolution: ResolutionInfo = RESOLUTIONS.find((r) => r.id === '1H') ?? RESOLUTIONS[0];
+// SYMBOLS and RESOLUTIONS are non-empty readonly arrays defined at compile time,
+// but noUncheckedIndexedAccess widens indexed access to `T | undefined`. Fall
+// back to explicit find with a non-null assertion to keep the single source
+// of truth.
+let currentSymbol: SymbolInfo = SYMBOLS[0]!;
+let currentResolution: ResolutionInfo =
+  RESOLUTIONS.find((r) => r.id === '1H') ?? RESOLUTIONS[0]!;
 let theme: ThemeMode = 'dark';
 let liveTimer: ReturnType<typeof setInterval> | null = null;
 let liveTickIndex = 0;
@@ -98,7 +103,8 @@ liveBtn.addEventListener('click', () => {
   }
   liveTimer = setInterval(() => {
     if (candles.length === 0) return;
-    const last = candles[candles.length - 1];
+    // Guarded by the length check above.
+    const last = candles[candles.length - 1]!;
     const next = advanceLastCandle({ lastCandle: last, symbol: currentSymbol, tickIndex: ++liveTickIndex });
     candles[candles.length - 1] = next;
     chart.updateLastCandle(next);

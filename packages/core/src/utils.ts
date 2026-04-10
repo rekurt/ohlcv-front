@@ -13,7 +13,8 @@ export function lowerBound(arr: Float64Array, target: number, start = 0, end = a
   let hi = end;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (arr[mid] < target) lo = mid + 1;
+    // mid is always in [lo, hi) ⊂ [start, end) ⊂ [0, arr.length)
+    if (arr[mid]! < target) lo = mid + 1;
     else hi = mid;
   }
   return lo;
@@ -25,7 +26,8 @@ export function upperBound(arr: Float64Array, target: number, start = 0, end = a
   let hi = end;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (arr[mid] <= target) lo = mid + 1;
+    // mid is always in [lo, hi) ⊂ [start, end) ⊂ [0, arr.length)
+    if (arr[mid]! <= target) lo = mid + 1;
     else hi = mid;
   }
   return lo;
@@ -128,11 +130,33 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-/** Resolve theme from mode or custom colors */
+/**
+ * Resolve theme from mode or custom colors.
+ *
+ * `'auto'` follows the user's `prefers-color-scheme` media query. This
+ * degrades gracefully to `'dark'` in environments without `window.matchMedia`
+ * (SSR, tests, non-browser runtimes).
+ */
 export function resolveTheme(theme: ThemeMode | ThemeColors | undefined): ThemeColors {
-  if (!theme || theme === 'dark') return { ...DARK_THEME };
+  if (!theme) return { ...DARK_THEME };
+  if (theme === 'dark') return { ...DARK_THEME };
   if (theme === 'light') return { ...LIGHT_THEME };
+  if (theme === 'auto') {
+    return prefersLightColorScheme() ? { ...LIGHT_THEME } : { ...DARK_THEME };
+  }
   return { ...theme };
+}
+
+/** True if the OS/browser is currently requesting a light UI. */
+function prefersLightColorScheme(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+  try {
+    return window.matchMedia('(prefers-color-scheme: light)').matches;
+  } catch {
+    return false;
+  }
 }
 
 /** Create a canvas with HiDPI scaling */

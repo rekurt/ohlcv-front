@@ -1,25 +1,66 @@
 import type { Candle, DataFeedConfig, DataTransport, HistoryRequest } from '../types';
+import type { ErrorReporter } from '../ErrorReporter';
 
 export interface PollingTransportConfig {
   apiUrl: string;
   pollInterval?: number; // ms, default 5000
   parseResponse?: (data: unknown) => Candle[];
+  /**
+   * Optional error reporter. When provided, polling errors are dispatched
+   * through it with `where: 'subscribe'`. Without a reporter, errors are
+   * swallowed silently — so consumers of PollingTransport directly should
+   * always wire one.
+   */
+  reporter?: ErrorReporter;
 }
 
 /** Default parser: expects { o: number[], h: number[], l: number[], c: number[], v: number[], t: number[] } */
 function defaultParser(data: unknown): Candle[] {
-  const d = data as { o: number[]; h: number[]; l: number[]; c: number[]; v: number[]; t: number[] };
-  if (!d || !Array.isArray(d.t)) return [];
+  if (!data || typeof data !== 'object') return [];
+  const d = data as {
+    o?: unknown;
+    h?: unknown;
+    l?: unknown;
+    c?: unknown;
+    v?: unknown;
+    t?: unknown;
+  };
+  if (
+    !Array.isArray(d.t) ||
+    !Array.isArray(d.o) ||
+    !Array.isArray(d.h) ||
+    !Array.isArray(d.l) ||
+    !Array.isArray(d.c) ||
+    !Array.isArray(d.v)
+  ) {
+    return [];
+  }
+  const t = d.t as number[];
+  const o = d.o as number[];
+  const h = d.h as number[];
+  const l = d.l as number[];
+  const c = d.c as number[];
+  const v = d.v as number[];
+  const n = Math.min(t.length, o.length, h.length, l.length, c.length, v.length);
   const candles: Candle[] = [];
-  for (let i = 0; i < d.t.length; i++) {
-    candles.push({
-      o: d.o[i],
-      h: d.h[i],
-      l: d.l[i],
-      c: d.c[i],
-      v: d.v[i],
-      t: d.t[i],
-    });
+  for (let i = 0; i < n; i++) {
+    const ti = t[i];
+    const oi = o[i];
+    const hi = h[i];
+    const li = l[i];
+    const ci = c[i];
+    const vi = v[i];
+    if (
+      typeof ti !== 'number' ||
+      typeof oi !== 'number' ||
+      typeof hi !== 'number' ||
+      typeof li !== 'number' ||
+      typeof ci !== 'number' ||
+      typeof vi !== 'number'
+    ) {
+      continue;
+    }
+    candles.push({ o: oi, h: hi, l: li, c: ci, v: vi, t: ti });
   }
   return candles;
 }
@@ -28,6 +69,7 @@ export class PollingTransport implements DataTransport {
   private _apiUrl: string;
   private _pollInterval: number;
   private _parseResponse: (data: unknown) => Candle[];
+  private _reporter: ErrorReporter | null;
   private _pollTimer: ReturnType<typeof setInterval> | null = null;
   private _pollInFlight = false;
   private _abortController: AbortController | null = null;
@@ -38,6 +80,12 @@ export class PollingTransport implements DataTransport {
     this._apiUrl = config.apiUrl;
     this._pollInterval = config.pollInterval ?? 5000;
     this._parseResponse = config.parseResponse ?? defaultParser;
+    this._reporter = config.reporter ?? null;
+  }
+
+  /** Called by OHLCVChart if it wants to wire its own reporter after construction. */
+  setReporter(reporter: ErrorReporter | null): void {
+    this._reporter = reporter;
   }
 
   async fetchHistory(req: HistoryRequest): Promise<Candle[]> {
@@ -92,8 +140,10 @@ export class PollingTransport implements DataTransport {
       };
       const candles = await this.fetchHistory(req);
       this._onUpdate?.(candles);
-    } catch {
-      // Ignore errors (likely aborted or network failure)
+    } catch (error) {
+      // Abort during unsubscribe is expected; report as non-fatal so
+      // downstream loggers can still see it if they want.
+      this._reporter?.report('subscribe', error, false);
     } finally {
       this._pollInFlight = false;
     }
