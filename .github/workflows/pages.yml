@@ -1,0 +1,70 @@
+name: Pages
+
+# Build the unified playground and TypeDoc API reference and publish
+# them together to GitHub Pages on every push to master. Playground
+# lives at the site root, TypeDoc at /api/.
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+# Allow only one concurrent deployment, skipping runs queued between
+# the in-progress and latest push. Do not cancel in-progress runs since
+# we want production deployments to complete.
+concurrency:
+  group: 'pages'
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build library packages
+        run: npm run build
+
+      - name: Build playground
+        run: npm run build -w examples/playground
+        env:
+          PLAYGROUND_BASE: /ohlcv-front/
+
+      - name: Generate TypeDoc
+        run: npm run docs
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -R examples/playground/dist/* _site/
+          mkdir -p _site/api
+          cp -R docs/api/* _site/api/
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
