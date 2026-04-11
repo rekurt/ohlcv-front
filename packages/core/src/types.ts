@@ -1,14 +1,31 @@
 import type { CandleBuffer } from './data/CandleBuffer';
 
+/**
+ * A single OHLCV candle. Times are Unix seconds (not milliseconds).
+ * Prices and volume are plain finite numbers — runtime validation via
+ * `validateCandles` enforces `h >= l`, `h >= max(o,c)`, `l <= min(o,c)`,
+ * `v >= 0`, and `t > 0`.
+ */
 export interface Candle {
+  /** Open price. */
   o: number;
+  /** High price. */
   h: number;
+  /** Low price. */
   l: number;
+  /** Close price. */
   c: number;
+  /** Volume traded in this interval. */
   v: number;
-  t: number; // unix seconds
+  /** Unix timestamp in seconds. */
+  t: number;
 }
 
+/**
+ * Zero-copy typed-array view into a contiguous range of candles in the
+ * underlying `CandleBuffer`. Renderers consume this shape directly to
+ * avoid per-candle object allocation on the hot rendering path.
+ */
 export interface CandleView {
   open: Float64Array;
   high: Float64Array;
@@ -16,26 +33,54 @@ export interface CandleView {
   close: Float64Array;
   volume: Float64Array;
   time: Float64Array;
+  /** Number of valid candles in this view. */
   length: number;
-  offset: number; // index offset in the full buffer
+  /** Index of the first candle in the parent buffer. */
+  offset: number;
 }
 
+/**
+ * Identifier for a live data stream. A `DataTransport.subscribe` call
+ * receives one of these to decide what symbol/resolution to tune in to.
+ */
 export interface DataFeedConfig {
   symbol: string;
   resolution: string;
 }
 
+/**
+ * Parameters for a `DataTransport.fetchHistory` call. `from` and `to`
+ * are Unix seconds and define the inclusive range the caller would
+ * like to receive. The transport may return fewer candles if the
+ * source has a lookback cap.
+ */
 export interface HistoryRequest {
   symbol: string;
   resolution: string;
   from: number;
-  to: number; // unix seconds
+  to: number;
 }
 
+/**
+ * Interface hosts implement to feed the chart with history + live
+ * updates. `@rekurt/ohlcv-core` ships `PollingTransport`,
+ * `WebSocketTransport`, and `BinanceWsTransport` as concrete
+ * implementations, but custom transports are trivially written — the
+ * interface has only four methods.
+ *
+ * Error handling: both `fetchHistory` and `subscribe` should throw (or
+ * reject in the async case) on failure; the chart's `DataFeed`
+ * forwards those errors through `ChartConfig.onError` with a
+ * structured `ChartError` payload.
+ */
 export interface DataTransport {
+  /** Fetch a historical candle range. Resolve with the candles ASC by time. */
   fetchHistory(req: HistoryRequest): Promise<Candle[]>;
+  /** Start a live stream. `onUpdate` is called with new/updated candles. */
   subscribe(config: DataFeedConfig, onUpdate: (candles: Candle[]) => void): void;
+  /** Stop a live stream started by `subscribe`. */
   unsubscribe(): void;
+  /** Release all resources (close socket, abort fetch, clear timers). */
   destroy(): void;
 }
 
@@ -114,14 +159,32 @@ export interface HoverInfo {
   timeLabel: string;
 }
 
+/**
+ * Construction-time configuration for an `OHLCVChart`. All fields
+ * except `container`, `symbol`, and `resolution` are optional and
+ * have sensible defaults.
+ *
+ * Later lifecycle changes should go through the imperative methods
+ * (`setTheme`, `setChartType`, `setIndicatorConfigs`, etc.) rather
+ * than rebuilding the config — the chart manages its own state
+ * internally.
+ */
 export interface ChartConfig {
+  /** DOM element to mount the three canvas layers into. */
   container: HTMLElement;
+  /** Initial symbol identifier passed to the transport. */
   symbol: string;
+  /** Initial resolution (e.g. `'1m'`, `'15m'`, `'1H'`, `'1D'`). */
   resolution: string;
+  /** Optional live data source. When omitted, feed candles via `setData`. */
   transport?: DataTransport;
+  /** Theme mode (`'dark'` / `'light'` / `'auto'`) or explicit colors. */
   theme?: ThemeMode | ThemeColors;
+  /** Locale hint for future i18n. Currently unused by core renderers. */
   locale?: string;
+  /** Custom price formatter. Default: 2 decimal places. */
   priceFormat?: (price: number) => string;
+  /** Custom volume formatter. Default: short K/M/B suffixes. */
   volumeFormat?: (volume: number) => string;
   /** Style of the main price series. Default: `'candles'`. */
   chartType?: ChartType;

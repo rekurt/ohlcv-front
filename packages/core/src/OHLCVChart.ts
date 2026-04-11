@@ -19,6 +19,29 @@ import type { DrawingSnapshot } from './drawings/Drawing';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
 
+/**
+ * High-level facade over the chart engine + data feed + interaction
+ * controllers. This is the single class you instantiate to put a
+ * working OHLCV chart on the page when using the core package
+ * directly — React and Vue wrappers construct this internally.
+ *
+ * Lifecycle:
+ *   const chart = new OHLCVChart({ container, symbol, resolution });
+ *   chart.setData(candles);                  // or rely on transport
+ *   chart.setChartType('line');
+ *   chart.setIndicatorConfigs([{ type: 'sma', period: 20 }]);
+ *   // ... user interacts ...
+ *   chart.destroy();
+ *
+ * Imperative navigation: `goToLive`, `fitVisible`, `fitAll`,
+ * `prependHistory`, `updateLastCandle`.
+ *
+ * State persistence: `saveLayoutState`, `saveFullState`, `loadState`.
+ *
+ * Safety: `destroy()` is idempotent. Errors in the data pipeline are
+ * dispatched through `ChartConfig.onError` instead of being
+ * silently swallowed.
+ */
 export class OHLCVChart {
   private _buffer: CandleBuffer;
   private _merger: CandleMerger;
