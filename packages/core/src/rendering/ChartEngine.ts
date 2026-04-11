@@ -1,5 +1,5 @@
 import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
-import { computeLayout, resizeHiDPICanvas, createHiDPICanvas, resolveTheme } from '../utils';
+import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
 import { Viewport } from '../interaction/Viewport';
 import { GridRenderer } from './GridRenderer';

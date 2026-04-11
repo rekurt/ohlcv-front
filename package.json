@@ -1,6 +1,7 @@
 {
   "name": "ohlcv-front",
   "private": true,
+  "type": "module",
   "engines": {
     "node": ">=18.18.0"
   },
@@ -21,13 +22,23 @@
     "dev:vue": "npm run dev -w examples/vue",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p packages/vue/tsconfig.json && tsc --noEmit -p examples/core/tsconfig.json && tsc --noEmit -p examples/react/tsconfig.json && tsc --noEmit -p examples/vue/tsconfig.json"
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p packages/vue/tsconfig.json && tsc --noEmit -p examples/core/tsconfig.json && tsc --noEmit -p examples/react/tsconfig.json && tsc --noEmit -p examples/vue/tsconfig.json",
+    "lint": "eslint packages examples --max-warnings 0",
+    "lint:fix": "eslint packages examples --fix"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^22.15.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-vue": "^10.8.0",
+    "globals": "^17.4.0",
     "jsdom": "^26.1.0",
     "tsup": "^8.5.0",
     "typescript": "~5.8.0",
-    "vitest": "^3.1.0"
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^3.1.0",
+    "vue-eslint-parser": "^10.4.0"
   }
 }

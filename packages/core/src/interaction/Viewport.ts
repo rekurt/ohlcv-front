@@ -1,4 +1,4 @@
-import type { ChartLayout, CandleView } from '../types';
+import type { ChartLayout } from '../types';
 import {
   DEFAULT_CANDLE_WIDTH,
   MIN_CANDLE_WIDTH,

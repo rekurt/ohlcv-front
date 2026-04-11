@@ -1,5 +1,5 @@
 import type { Candle, ChartConfig, ChartType, ThemeColors, ThemeMode, HoverInfo } from './types';
-import { resolveTheme, formatTime } from './utils';
+import { resolveTheme } from './utils';
 import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
 import { CandleMerger } from './data/CandleMerger';
