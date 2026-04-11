@@ -250,4 +250,47 @@ describe('Viewport integration with autoScale', () => {
     // priceMin/Max computed from visible candles
     expect(vp.priceMin).toBeLessThan(vp.priceMax);
   });
+
+  it('autoScale skips NaN / Infinity candles without corrupting the range', () => {
+    const buf = new CandleBuffer();
+    // One sane candle then a NaN-poisoned one.
+    buf.append({ o: 100, h: 105, l: 95, c: 102, v: 10, t: 1 });
+    buf.append({ o: NaN, h: NaN, l: NaN, c: NaN, v: NaN, t: 2 });
+    buf.append({ o: 110, h: 115, l: 108, c: 112, v: 20, t: 3 });
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    expect(Number.isFinite(vp.priceMin)).toBe(true);
+    expect(Number.isFinite(vp.priceMax)).toBe(true);
+    expect(vp.priceMin).toBeLessThan(vp.priceMax);
+    // The sane candles' range must be included.
+    expect(vp.priceMin).toBeLessThan(95);
+    expect(vp.priceMax).toBeGreaterThan(115);
+  });
+
+  it('autoScale preserves previous range when all visible candles are NaN', () => {
+    const buf = new CandleBuffer();
+    buf.append({ o: 100, h: 110, l: 90, c: 105, v: 10, t: 1 });
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    const prevMin = vp.priceMin;
+    const prevMax = vp.priceMax;
+
+    const buf2 = new CandleBuffer();
+    buf2.append({ o: NaN, h: NaN, l: NaN, c: NaN, v: NaN, t: 2 });
+    vp.autoScale(buf2);
+    expect(vp.priceMin).toBe(prevMin);
+    expect(vp.priceMax).toBe(prevMax);
+  });
+
+  it('autoScale on empty visible window sets safe defaults, no divide-by-zero', () => {
+    const emptyBuf = new CandleBuffer();
+    // Fresh viewport — priceMin === priceMax === 0 by default. autoScale
+    // should write a 0..1 range so priceToY has a non-zero denominator.
+    vp.autoScale(emptyBuf);
+    expect(vp.priceMin).toBe(0);
+    expect(vp.priceMax).toBe(1);
+    // priceToY must return a finite number in the chart area.
+    const y = vp.priceToY(0.5);
+    expect(Number.isFinite(y)).toBe(true);
+  });
 });

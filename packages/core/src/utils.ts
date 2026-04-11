@@ -84,7 +84,12 @@ export function formatVolume(volume: number): string {
 
 /** Format time based on resolution */
 export function formatTime(timestamp: number, resolution: string): string {
+  // Guard against NaN/Infinity timestamps from corrupted feeds —
+  // rendering 'Invalid Date' / undefined month name into the axis
+  // was crashing canvas measureText on some browsers.
+  if (!Number.isFinite(timestamp)) return '';
   const date = new Date(timestamp * 1000);
+  if (Number.isNaN(date.getTime())) return '';
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   if (resolution === '1W' || resolution === '1M') {

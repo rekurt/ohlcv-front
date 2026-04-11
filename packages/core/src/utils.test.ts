@@ -134,6 +134,12 @@ describe('formatTime', () => {
   it('formats weekly with year', () => {
     expect(formatTime(ts, '1W')).toMatch(/^\d+ \w{3} \d{4}$/);
   });
+
+  it('returns empty string for NaN / Infinity timestamps', () => {
+    expect(formatTime(NaN, '1m')).toBe('');
+    expect(formatTime(Infinity, '1D')).toBe('');
+    expect(formatTime(-Infinity, '1W')).toBe('');
+  });
 });
 
 describe('computeLayout', () => {

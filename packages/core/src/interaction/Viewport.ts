@@ -113,26 +113,43 @@ export class Viewport {
     const start = Math.max(0, Math.floor(this.startIndex));
     const end = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
 
-    if (start >= end) return;
+    // Empty visible window (no data, zero-width chart) — reset to a
+    // safe default range so priceToY doesn't divide by zero.
+    if (start >= end) {
+      if (this.priceMin === this.priceMax) {
+        this.priceMin = 0;
+        this.priceMax = 1;
+        this.volumeMax = 0;
+      }
+      return;
+    }
 
     const view = buffer.sliceView(start, end);
     let minPrice = Infinity;
     let maxPrice = -Infinity;
     let maxVol = 0;
 
-    // Index `i` is bounded by `view.length` which equals the Float64Array
-    // subarray length, so direct access is safe. `!` eliminates the strict
-    // "possibly undefined" noise introduced by noUncheckedIndexedAccess.
+    // Scan visible candles for price extrema, skipping NaN/±Infinity
+    // entries so one corrupt candle can't poison the whole range. A
+    // corrupted upstream feed is the most common source of NaNs; we
+    // want the chart to keep rendering the rest of the window.
     for (let i = 0; i < view.length; i++) {
       const lo = view.low[i]!;
       const hi = view.high[i]!;
       const vol = view.volume[i]!;
-      if (lo < minPrice) minPrice = lo;
-      if (hi > maxPrice) maxPrice = hi;
-      if (vol > maxVol) maxVol = vol;
+      if (Number.isFinite(lo) && lo < minPrice) minPrice = lo;
+      if (Number.isFinite(hi) && hi > maxPrice) maxPrice = hi;
+      if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
     }
 
-    // Flat range protection
+    // Every candle in the window was NaN/Infinity. Keep the previous
+    // range (don't overwrite with Infinity sentinels) — the chart will
+    // render empty space but won't crash.
+    if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) {
+      return;
+    }
+
+    // Flat range protection (all candles share the same low/high).
     let range = maxPrice - minPrice;
     if (range === 0) {
       const padding = Math.abs(maxPrice) * 0.01 || 1;
