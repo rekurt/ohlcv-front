@@ -165,6 +165,62 @@ describe('OHLCVChart save/load state', () => {
       chart.destroy();
     });
 
+    it('throws ValidationError on non-object input', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC', resolution: '1H' });
+      expect(() => chart.loadState(null as unknown as LayoutState)).toThrow(ValidationError);
+      expect(() => chart.loadState('bogus' as unknown as LayoutState)).toThrow(ValidationError);
+      chart.destroy();
+    });
+
+    it('throws ValidationError when indicators field is not an array', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC', resolution: '1H' });
+      const bogus = {
+        version: 1,
+        symbol: 'X',
+        resolution: '1H',
+        chartType: 'candles',
+        theme: 'dark',
+        viewport: { startIndex: 0, candleWidth: 8, autoFollow: true },
+        indicators: 'not-an-array',
+        drawings: [],
+      } as unknown as LayoutState;
+      expect(() => chart.loadState(bogus)).toThrow(ValidationError);
+      chart.destroy();
+    });
+
+    it('throws ValidationError when viewport shape is wrong', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC', resolution: '1H' });
+      const bogus = {
+        version: 1,
+        symbol: 'X',
+        resolution: '1H',
+        chartType: 'candles',
+        theme: 'dark',
+        viewport: { startIndex: 'x', candleWidth: 8, autoFollow: true },
+        indicators: [],
+        drawings: [],
+      } as unknown as LayoutState;
+      expect(() => chart.loadState(bogus)).toThrow(ValidationError);
+      chart.destroy();
+    });
+
+    it('rejects FullState with invalid candle data', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC', resolution: '1H' });
+      const bogus = {
+        version: 1,
+        symbol: 'BTC',
+        resolution: '1H',
+        chartType: 'candles',
+        theme: 'dark',
+        viewport: { startIndex: 0, candleWidth: 8, autoFollow: true },
+        indicators: [],
+        drawings: [],
+        data: [{ o: 'not-a-number', h: 1, l: 0, c: 0.5, v: 1, t: 100 }],
+      } as unknown as LayoutState;
+      expect(() => chart.loadState(bogus)).toThrow();
+      chart.destroy();
+    });
+
     it('preserves existing buffer when LayoutState has no data', () => {
       const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
       const candles = Array.from({ length: 10 }, (_, i) => makeCandle(i));

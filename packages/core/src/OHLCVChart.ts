@@ -4,7 +4,7 @@ import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
 import { CandleMerger } from './data/CandleMerger';
 import { DataFeed } from './data/DataFeed';
-import { ValidationError } from './data/validation';
+import { ValidationError, validateCandles } from './data/validation';
 import { ChartEngine } from './rendering/ChartEngine';
 import { Viewport } from './interaction/Viewport';
 import { PanZoomController } from './interaction/PanZoomController';
@@ -478,6 +478,13 @@ export class OHLCVChart {
    * against the wrong chartType. See the M1 spec for the rationale.
    */
   loadState(state: ChartState): void {
+    // Validate the envelope before trusting any field. This is critical
+    // when states cross process boundaries (share URL, localStorage,
+    // server-rendered JSON) — hostile input must not crash the chart
+    // or poison the buffer.
+    if (typeof state !== 'object' || state === null) {
+      throw new ValidationError('loadState', state, 'state must be an object');
+    }
     if (state.version !== 1) {
       throw new ValidationError(
         'loadState',
@@ -485,11 +492,36 @@ export class OHLCVChart {
         `Unsupported chart state version: ${String(state.version)}`,
       );
     }
+    if (typeof state.symbol !== 'string' || typeof state.resolution !== 'string') {
+      throw new ValidationError(
+        'loadState',
+        state,
+        'symbol and resolution must be strings',
+      );
+    }
+    if (!Array.isArray(state.indicators)) {
+      throw new ValidationError('loadState', state, 'indicators must be an array');
+    }
+    if (!Array.isArray(state.drawings)) {
+      throw new ValidationError('loadState', state, 'drawings must be an array');
+    }
+    if (
+      typeof state.viewport !== 'object' ||
+      state.viewport === null ||
+      typeof state.viewport.startIndex !== 'number' ||
+      typeof state.viewport.candleWidth !== 'number' ||
+      typeof state.viewport.autoFollow !== 'boolean'
+    ) {
+      throw new ValidationError('loadState', state, 'viewport shape is invalid');
+    }
 
-    // 1. Data (optional — skipped for LayoutState).
+    // 1. Data (optional — skipped for LayoutState). Run validateCandles
+    //    against untrusted input so a corrupted state can't push
+    //    garbage into the typed buffer.
     if (isFullState(state)) {
+      const validated = validateCandles(state.data, 'loadState.data');
       this._buffer.clear();
-      this._merger.loadHistory(state.data);
+      this._merger.loadHistory(validated);
     }
 
     // 2. Identity + display.
@@ -503,7 +535,9 @@ export class OHLCVChart {
     this._engine.setChartType(state.chartType);
     this.setTheme(state.theme);
 
-    // 3. Indicators — rebuild through the registry.
+    // 3. Indicators — rebuild through the registry. createIndicator
+    //    throws on unknown types so a corrupted state can't forge an
+    //    indicator class.
     this.setIndicatorConfigs(state.indicators);
 
     // 4. Drawings.
