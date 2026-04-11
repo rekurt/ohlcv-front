@@ -13,48 +13,207 @@
         --text: #d1d4dc;
         --muted: #758696;
         --accent: #2962ff;
+        --bull: #26a69a;
+        --bear: #ef5350;
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 13px;
+      }
+      /* Fix for the previous layout bug: use flex column so toolbar + chart + status stack
+         and the chart area flexes to fill exactly what remains. No magic calc(100vh - N). */
+      #app {
+        display: grid;
+        grid-template-columns: 48px 1fr;
+        grid-template-rows: 56px 1fr 28px;
+        grid-template-areas:
+          'sidebar toolbar'
+          'sidebar chart'
+          'sidebar status';
+        height: 100vh;
+      }
       #toolbar {
+        grid-area: toolbar;
         display: flex;
         gap: 10px;
         align-items: center;
-        padding: 10px 14px;
+        padding: 8px 14px;
         background: var(--panel);
         border-bottom: 1px solid var(--border);
         flex-wrap: wrap;
-        min-height: 56px;
       }
-      #toolbar label { font-size: 12px; color: var(--muted); margin-right: 4px; }
-      #toolbar select, #toolbar button {
+      #sidebar {
+        grid-area: sidebar;
+        background: var(--panel);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 8px 0;
+        gap: 4px;
+      }
+      #sidebar button {
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #sidebar button:hover {
+        background: var(--bg);
+        border-color: var(--border);
+      }
+      #sidebar button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      #sidebar .spacer {
+        flex: 1;
+      }
+      #toolbar label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #toolbar select,
+      #toolbar button {
         background: var(--bg);
         color: var(--text);
         border: 1px solid var(--border);
-        padding: 6px 12px;
+        padding: 5px 10px;
         border-radius: 4px;
-        font-size: 13px;
+        font-size: 12px;
         cursor: pointer;
+        font-family: inherit;
       }
       #toolbar button:hover { background: var(--border); }
-      #toolbar button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+      #toolbar button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
       #toolbar .spacer { flex: 1; }
-      #status { font-size: 12px; color: var(--muted); font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
-      #chart { width: 100vw; height: calc(100vh - 56px); }
+      #indicator-menu {
+        position: relative;
+        display: inline-block;
+      }
+      #indicator-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 6px 0;
+        min-width: 200px;
+        z-index: 10;
+      }
+      #indicator-menu.open #indicator-dropdown { display: block; }
+      #indicator-dropdown label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--text);
+      }
+      #indicator-dropdown label:hover { background: var(--bg); }
+      #chart {
+        grid-area: chart;
+        position: relative;
+        min-height: 0;  /* critical for grid to not overflow */
+      }
+      #status {
+        grid-area: status;
+        background: var(--panel);
+        border-top: 1px solid var(--border);
+        padding: 4px 14px;
+        font-size: 11px;
+        color: var(--muted);
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      #status .hint { margin-left: auto; color: var(--muted); }
+      .bull { color: var(--bull); }
+      .bear { color: var(--bear); }
     </style>
   </head>
   <body>
-    <header id="toolbar">
-      <label>Symbol</label>
-      <select id="symbol-select"></select>
-      <label>Resolution</label>
-      <select id="resolution-select"></select>
-      <button id="theme-btn">🌙 Dark</button>
-      <button id="live-btn">▶ Live</button>
-      <span class="spacer"></span>
-      <span id="status">Click a candle to see details</span>
-    </header>
-    <main id="chart"></main>
+    <div id="app">
+      <aside id="sidebar">
+        <button data-tool="none" class="active" title="Select / no tool (Esc)">✋</button>
+        <button data-tool="trendline" title="Trend line (T)">╱</button>
+        <button data-tool="hline" title="Horizontal line (H)">━</button>
+        <div class="spacer"></div>
+        <button id="clear-drawings" title="Clear all drawings">🗑</button>
+        <button id="export-png" title="Export chart as PNG">📷</button>
+      </aside>
+      <header id="toolbar">
+        <label>Symbol</label>
+        <select id="symbol-select"></select>
+
+        <label>TF</label>
+        <select id="resolution-select"></select>
+
+        <label>Type</label>
+        <select id="chart-type-select">
+          <option value="candles">Candles</option>
+          <option value="line">Line</option>
+          <option value="area">Area</option>
+          <option value="ohlc">OHLC Bars</option>
+        </select>
+
+        <label>Data</label>
+        <select id="data-transform-select">
+          <option value="none">Raw</option>
+          <option value="heikin-ashi">Heikin Ashi</option>
+          <option value="renko">Renko</option>
+        </select>
+
+        <div id="indicator-menu">
+          <button id="indicator-toggle">Indicators ▾</button>
+          <div id="indicator-dropdown">
+            <label><input type="checkbox" data-ind="sma20"> SMA(20)</label>
+            <label><input type="checkbox" data-ind="ema50"> EMA(50)</label>
+            <label><input type="checkbox" data-ind="bb"> Bollinger Bands</label>
+            <label><input type="checkbox" data-ind="vwap"> VWAP (session)</label>
+          </div>
+        </div>
+
+        <button id="theme-btn">🌙</button>
+        <button id="live-btn">▶ Live</button>
+
+        <span class="spacer"></span>
+        <span id="symbol-label" style="color: var(--text); font-weight: 600;"></span>
+      </header>
+      <main id="chart"></main>
+      <footer id="status">
+        <span id="status-ohlc">Hover chart to see OHLCV</span>
+        <span class="hint">Drag pan · Wheel zoom · ←→ keys · T trend · H hline · Esc cancel · Dbl-click fit</span>
+      </footer>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

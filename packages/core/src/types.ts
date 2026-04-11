@@ -90,6 +90,28 @@ export interface ChartError {
   fatal: boolean;
 }
 
+/**
+ * Visual style of the main price series.
+ * - `candles` — classic red/green candlesticks (default)
+ * - `line` — simple close-price line
+ * - `area` — close-price line with a gradient fill to chartBottom
+ * - `ohlc` — OHLC bars (vertical line with open/close ticks)
+ */
+export type ChartType = 'candles' | 'line' | 'area' | 'ohlc';
+
+/**
+ * Hover callback payload — invoked by CrosshairController on every
+ * snap-to-candle change. Useful for status bars and legends.
+ */
+export interface HoverInfo {
+  candle: Candle;
+  index: number;
+  /** Raw price under the cursor (before candle snap). */
+  cursorPrice: number;
+  /** ISO-ish time string formatted by the current resolution. */
+  timeLabel: string;
+}
+
 export interface ChartConfig {
   container: HTMLElement;
   symbol: string;
@@ -99,8 +121,12 @@ export interface ChartConfig {
   locale?: string;
   priceFormat?: (price: number) => string;
   volumeFormat?: (volume: number) => string;
+  /** Style of the main price series. Default: `'candles'`. */
+  chartType?: ChartType;
   onCandleClick?: (candle: Candle, index: number) => void;
   onVisibleRangeChange?: (from: number, to: number) => void;
+  /** Called on every crosshair move with the currently-snapped candle. */
+  onHover?: (info: HoverInfo | null) => void;
   /**
    * Called whenever the chart encounters a non-fatal or fatal error in its
    * data/render pipeline. If omitted, errors fall back to `console.warn`

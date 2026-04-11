@@ -1,9 +1,12 @@
-import type { ThemeColors, ChartLayout, Candle } from '../types';
+import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
 import { computeLayout, resizeHiDPICanvas, createHiDPICanvas, resolveTheme } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
 import { Viewport } from '../interaction/Viewport';
 import { GridRenderer } from './GridRenderer';
 import { CandleRenderer } from './CandleRenderer';
+import { LineRenderer } from './LineRenderer';
+import { AreaRenderer } from './AreaRenderer';
+import { OHLCBarRenderer } from './OHLCBarRenderer';
 import { VolumeRenderer } from './VolumeRenderer';
 import { PriceAxisRenderer } from './PriceAxis';
 import { TimeAxisRenderer } from './TimeAxis';
@@ -11,6 +14,20 @@ import { CrosshairRenderer, type CrosshairState } from './CrosshairRenderer';
 import { PriceLineRenderer } from './PriceLineRenderer';
 import { LegendRenderer } from './LegendRenderer';
 import { GoToLiveRenderer } from './GoToLiveRenderer';
+import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
+import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
+import type { DrawingLayer } from '../drawings/DrawingLayer';
+
+/** Palette used to color indicator series in deterministic order. */
+const INDICATOR_COLORS = [
+  '#2962ff', // blue
+  '#ff6d00', // orange
+  '#aa00ff', // purple
+  '#00c853', // green
+  '#ff1744', // red
+  '#00bcd4', // cyan
+  '#ffd600', // yellow
+];
 
 export class ChartEngine {
   readonly viewport: Viewport;
@@ -28,16 +45,26 @@ export class ChartEngine {
   private _resolution = '';
   private _priceFormat?: (price: number) => string;
   private _volumeFormat?: (volume: number) => string;
+  private _chartType: ChartType = 'candles';
+
+  /** User-provided indicators; each is computed on every dirty render. */
+  private _indicators: Indicator[] = [];
+  /** Optional drawing layer rendered on top of candles. */
+  private _drawingLayer: DrawingLayer | null = null;
 
   // Renderers
   private _gridRenderer = new GridRenderer();
   private _candleRenderer = new CandleRenderer();
+  private _lineRenderer = new LineRenderer();
+  private _areaRenderer = new AreaRenderer();
+  private _ohlcBarRenderer = new OHLCBarRenderer();
   private _volumeRenderer = new VolumeRenderer();
   private _priceAxisRenderer = new PriceAxisRenderer();
   private _timeAxisRenderer = new TimeAxisRenderer();
   private _crosshairRenderer = new CrosshairRenderer();
   private _priceLineRenderer = new PriceLineRenderer();
   private _legendRenderer = new LegendRenderer();
+  private _overlayRenderer = new OverlaySeriesRenderer();
   readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
@@ -127,6 +154,46 @@ export class ChartEngine {
   setTheme(theme: ThemeColors): void {
     this._theme = theme;
     this._container.style.backgroundColor = theme.background;
+    this.requestRender();
+  }
+
+  /** Switch the primary price-series rendering style. */
+  setChartType(chartType: ChartType): void {
+    if (this._chartType === chartType) return;
+    this._chartType = chartType;
+    this.requestRender();
+  }
+
+  get chartType(): ChartType {
+    return this._chartType;
+  }
+
+  /**
+   * Replace the indicator set. Indicators with `placement: 'overlay'`
+   * are drawn on top of the price series in deterministic palette
+   * order. Indicators with `placement: 'pane'` are not yet rendered
+   * (pane layout integration is a future phase) — they still compute
+   * their values, which is useful for code paths that want to read
+   * `getIndicatorSeries(id)` without rendering.
+   */
+  setIndicators(indicators: Indicator[]): void {
+    this._indicators = indicators;
+    this.requestRender();
+  }
+
+  /** The currently-configured indicators, in render order. */
+  get indicators(): readonly Indicator[] {
+    return this._indicators;
+  }
+
+  /**
+   * Attach a DrawingLayer whose drawings will be rendered on top of
+   * the price area. Pass `null` to detach. The chart takes no input
+   * events for the drawing layer — consumers listen on `topCanvas`
+   * and drive creation via `layer.addPoint(...)` themselves.
+   */
+  setDrawingLayer(layer: DrawingLayer | null): void {
+    this._drawingLayer = layer;
     this.requestRender();
   }
 
@@ -249,10 +316,52 @@ export class ChartEngine {
       ctx.fillStyle = this._theme.background;
       ctx.fillRect(0, 0, width, height);
 
-      // Grid → Volume → Candles → Axes
+      // Grid → Volume → primary series (by chart type) → overlay indicators
+      // → drawings → Axes. Drawings sit above indicators so a trend line
+      // is visible on top of SMA/EMA/BB clutter.
       this._gridRenderer.render(ctx, this._layout, this.viewport, this._theme);
       this._volumeRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
-      this._candleRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+
+      switch (this._chartType) {
+        case 'line':
+          this._lineRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          break;
+        case 'area':
+          this._areaRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          break;
+        case 'ohlc':
+          this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          break;
+        case 'candles':
+        default:
+          this._candleRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          break;
+      }
+
+      // Overlay indicators. Pane-placement indicators are computed but not
+      // rendered here — a future multi-pane integration will place them.
+      let colorIdx = 0;
+      for (const indicator of this._indicators) {
+        if (indicator.placement !== 'overlay') continue;
+        let series: IndicatorSeries[];
+        try {
+          series = indicator.compute(this._buffer);
+        } catch {
+          // Indicator compute errors are non-fatal; skip this one.
+          continue;
+        }
+        for (const s of series) {
+          const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
+          colorIdx++;
+          this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme);
+        }
+      }
+
+      // Drawing layer on top of indicators.
+      if (this._drawingLayer) {
+        this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
+      }
+
       this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
       this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._resolution, this._theme);
     }

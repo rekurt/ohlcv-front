@@ -14,6 +14,8 @@ export type {
   ChartLayout,
   ChartError,
   ChartErrorWhere,
+  ChartType,
+  HoverInfo,
 } from './types';
 
 // Error reporting

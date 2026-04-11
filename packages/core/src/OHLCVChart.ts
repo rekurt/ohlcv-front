@@ -1,5 +1,5 @@
-import type { Candle, ChartConfig, ThemeColors, ThemeMode } from './types';
-import { resolveTheme } from './utils';
+import type { Candle, ChartConfig, ChartType, ThemeColors, ThemeMode, HoverInfo } from './types';
+import { resolveTheme, formatTime } from './utils';
 import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
 import { CandleMerger } from './data/CandleMerger';
@@ -9,6 +9,8 @@ import { Viewport } from './interaction/Viewport';
 import { PanZoomController } from './interaction/PanZoomController';
 import { CrosshairController } from './interaction/CrosshairController';
 import { KeyboardController } from './interaction/KeyboardController';
+import type { Indicator } from './indicators/Indicator';
+import type { DrawingLayer } from './drawings/DrawingLayer';
 
 export class OHLCVChart {
   private _buffer: CandleBuffer;
@@ -46,6 +48,7 @@ export class OHLCVChart {
     this._engine.setResolution(config.resolution);
     if (config.priceFormat) this._engine.setPriceFormat(config.priceFormat);
     if (config.volumeFormat) this._engine.setVolumeFormat(config.volumeFormat);
+    if (config.chartType) this._engine.setChartType(config.chartType);
     config.container.style.backgroundColor = theme.background;
 
     // Merger triggers render. Only scroll to the live edge if the user is
@@ -80,6 +83,10 @@ export class OHLCVChart {
     });
 
     this._crosshair = new CrosshairController(this._engine, this._buffer, config.resolution);
+    if (config.onHover) {
+      this._onHover = config.onHover;
+      this._crosshair.setOnHover(config.onHover);
+    }
 
     // Keyboard shortcuts
     this._keyboard = new KeyboardController(
@@ -197,6 +204,37 @@ export class OHLCVChart {
     this._engine.viewport.fitAll(this._buffer.length);
     this._engine.requestRender();
   }
+
+  /** Switch the primary price-series rendering style. */
+  setChartType(chartType: ChartType): void {
+    this._engine.setChartType(chartType);
+  }
+
+  /** Replace the indicator set on the chart. */
+  setIndicators(indicators: Indicator[]): void {
+    this._engine.setIndicators(indicators);
+  }
+
+  /** Attach (or clear) a drawing layer rendered above the price series. */
+  setDrawingLayer(layer: DrawingLayer | null): void {
+    this._engine.setDrawingLayer(layer);
+  }
+
+  /**
+   * Snapshot the chart as a PNG data URL. Returns `null` if the
+   * browser cannot provide a 2D context (sandboxed iframe).
+   */
+  toPNG(): string | null {
+    return this._engine.toPNG();
+  }
+
+  /** Install a hover callback that fires on every crosshair snap. */
+  setOnHover(handler: ((info: HoverInfo | null) => void) | null): void {
+    this._onHover = handler;
+    this._crosshair.setOnHover(handler);
+  }
+
+  private _onHover: ((info: HoverInfo | null) => void) | null = null;
 
   /** Clean up all resources */
   destroy(): void {

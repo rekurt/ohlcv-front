@@ -1,5 +1,6 @@
 import type { ChartEngine } from '../rendering/ChartEngine';
 import type { CandleBuffer } from '../data/CandleBuffer';
+import type { HoverInfo } from '../types';
 import { formatTime, clamp } from '../utils';
 
 export class CrosshairController {
@@ -9,6 +10,7 @@ export class CrosshairController {
   private _rafPending = false;
   private _lastX = 0;
   private _lastY = 0;
+  private _onHover: ((info: HoverInfo | null) => void) | null = null;
 
   private _onMouseMove: (e: MouseEvent) => void;
   private _onMouseLeave: (e: MouseEvent) => void;
@@ -26,6 +28,11 @@ export class CrosshairController {
 
     canvas.addEventListener('mousemove', this._onMouseMove);
     canvas.addEventListener('mouseleave', this._onMouseLeave);
+  }
+
+  /** Register a callback invoked on every snap-to-candle hover. */
+  setOnHover(handler: ((info: HoverInfo | null) => void) | null): void {
+    this._onHover = handler;
   }
 
   setBuffer(buffer: CandleBuffer): void {
@@ -58,6 +65,7 @@ export class CrosshairController {
 
   private _handleMouseLeave(_e: MouseEvent): void {
     this._engine.hideCrosshair();
+    this._onHover?.(null);
   }
 
   private _updateCrosshair(): void {
@@ -69,6 +77,7 @@ export class CrosshairController {
     // Only show crosshair in chart area
     if (x < layout.chartLeft || x > layout.chartRight || y < layout.chartTop || y > layout.chartBottom) {
       this._engine.hideCrosshair();
+      this._onHover?.(null);
       return;
     }
 
@@ -81,5 +90,14 @@ export class CrosshairController {
     const timeLabel = candle ? formatTime(candle.t, this._resolution) : '';
 
     this._engine.setCrosshair(snappedX, y, index, candle, timeLabel);
+
+    if (candle && this._onHover) {
+      this._onHover({
+        candle,
+        index,
+        cursorPrice: viewport.yToPrice(y),
+        timeLabel,
+      });
+    }
   }
 }
