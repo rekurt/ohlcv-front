@@ -189,6 +189,38 @@ export class ChartEngine {
     this._crosshairCanvas.remove();
   }
 
+  /**
+   * Snapshot the current chart state as a flat PNG data URL. Composites
+   * all three canvas layers onto a single offscreen canvas so the
+   * result is independent of DOM state.
+   *
+   * Synchronous. Returns a `data:image/png;base64,...` string suitable
+   * for `<img src>`, download links, or uploading to a backend. Returns
+   * `null` if the browser refuses to provide a 2D context on the
+   * offscreen canvas (should never happen outside of sandboxed iframes).
+   */
+  toPNG(): string | null {
+    const snapshot = document.createElement('canvas');
+    snapshot.width = this._chartCanvas.width;
+    snapshot.height = this._chartCanvas.height;
+    const ctx = snapshot.getContext('2d');
+    if (!ctx) return null;
+
+    // Fill the background first so transparent pixels in any layer
+    // don't bleed through to the final image.
+    ctx.fillStyle = this._theme.background;
+    ctx.fillRect(0, 0, snapshot.width, snapshot.height);
+
+    // Composite the three layers bottom-up. We draw the source canvases
+    // at their native device-pixel size so the snapshot preserves
+    // HiDPI sharpness if any.
+    ctx.drawImage(this._chartCanvas, 0, 0);
+    ctx.drawImage(this._uiCanvas, 0, 0);
+    ctx.drawImage(this._crosshairCanvas, 0, 0);
+
+    return snapshot.toDataURL('image/png');
+  }
+
   private _scheduleRaf(): void {
     if (this._rafId) return;
     this._rafId = requestAnimationFrame(() => {

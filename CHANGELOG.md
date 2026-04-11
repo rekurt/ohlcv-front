@@ -7,7 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Added (iteration 2 — drawing tools, more indicators, data transforms, export)
+
+- **Drawing tools MVP** (`@ohlcv/core/drawings`). Buffer-space anchored drawings that stick to the underlying candles on pan/zoom.
+  - `Drawing` abstract base with `AnchorPoint = { index, price }`, point accumulation up to `requiredPoints`, and `toSnapshot` / `fromSnapshot` JSON round-trip for persistence.
+  - `TrendLine` — two-point straight segment with chart-area clipping.
+  - `HorizontalLine` — single-point full-width dashed line with a price pill on the right axis.
+  - `DrawingLayer` — ordered collection with a single "active creation" slot (`startDrawing` / `addPoint` / `updateActiveLastPoint` / `cancelActive` / `remove` / `clear`), registry-based hydration from snapshots, and `render()` that draws completed drawings plus the in-progress one.
+  - Selection, editing, undo, and richer primitives (rays, rectangles, Fibonacci) are intentionally deferred to a later iteration.
+  - 26 unit tests.
+- **Additional indicators** implementing the existing `Indicator` base class:
+  - `MACD(fast=12, slow=26, signal=9)` — three aligned series (`macd`, `signal`, `histogram`). Placement: `'pane'`.
+  - `Stochastic(kPeriod=14, dPeriod=3)` — `%K` and `%D` in [0, 100]. Placement: `'pane'`.
+  - `ATR(period=14)` — Wilder-smoothed true-range volatility. Placement: `'pane'`.
+  - `VWAP(anchor='session' | 'cumulative')` — volume-weighted average price with optional UTC-day session reset. Placement: `'overlay'`.
+  - 29 new tests (MACD fast<slow invariant, Stochastic clamping + zero-range flat-window, ATR positivity on volatile data, VWAP session reset on UTC boundary, zero-volume guard, etc.).
+- **Data transforms** (`@ohlcv/core/transforms`). Pure-function transforms that consume `Candle[]` and return `Candle[]` so consumers can feed the result into `OHLCVChart.setData()` unchanged.
+  - `toHeikinAshi(candles)` — smoothed candles via standard `(o+h+l+c)/4` and `(prev.o+prev.c)/2` recurrence. Includes `advanceHeikinAshi(prevHA, rawCandle)` helper for incremental live-tick updates.
+  - `toRenko(candles, brickSize)` — price-driven bricks with 2×brickSize reversal threshold. Timestamps carry over from the triggering source candle; volume is 0.
+  - 19 new tests (uptrend smoothness, first-candle seeding, single-brick and multi-brick moves, reversal absorption, volume/timestamp invariants).
+- **`ChartEngine.toPNG()`** — synchronous snapshot that composites the three canvas layers (chart / UI / crosshair) over the background color onto an offscreen canvas and returns a `data:image/png;base64,...` data URL. Suitable for download links, uploading to a backend, or `<img src>`. 2 new smoke tests.
+- Test suite: **328 → 404** (+76 new tests, all green). Typecheck clean under strict mode.
+
+### Added (iteration 1 — foundations through OSS-ready)
 
 - **Pane abstraction** (`@ohlcv/core`). New `Pane` and `PaneLayout` classes provide a foundation for multi-pane charts. Each pane has its own `priceMin`/`priceMax`, independent linear or log Y-axis, and can be positioned in the vertical stack. Main price pane is always present; sub-panes for indicators (RSI, MACD) can be added via `PaneLayout.addPane()`. (Integration into `ChartEngine` is planned for the next release.)
 - **Indicator infrastructure** (`@ohlcv/core/indicators`). Base `Indicator` class with `compute(buffer)` → `IndicatorSeries[]` contract, `placement: 'overlay' | 'pane'` flag, and stable `id` for caching. First batch of implementations:

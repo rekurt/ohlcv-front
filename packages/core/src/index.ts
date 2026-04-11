@@ -46,11 +46,27 @@ export { SMA } from './indicators/SMA';
 export { EMA } from './indicators/EMA';
 export { BollingerBands } from './indicators/BollingerBands';
 export { RSI } from './indicators/RSI';
+export { MACD } from './indicators/MACD';
+export { Stochastic } from './indicators/Stochastic';
+export { ATR } from './indicators/ATR';
+export { VWAP } from './indicators/VWAP';
+export type { VWAPAnchor } from './indicators/VWAP';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';
 export { AreaRenderer } from './rendering/AreaRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
+
+// Drawing tools (MVP: trend line + horizontal line + DrawingLayer)
+export { Drawing } from './drawings/Drawing';
+export type { AnchorPoint, DrawingSnapshot } from './drawings/Drawing';
+export { TrendLine } from './drawings/TrendLine';
+export { HorizontalLine } from './drawings/HorizontalLine';
+export { DrawingLayer } from './drawings/DrawingLayer';
+
+// Data transforms (Heikin Ashi, Renko)
+export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';
+export { toRenko } from './transforms/renko';
 
 // Interaction
 export { Viewport } from './interaction/Viewport';
