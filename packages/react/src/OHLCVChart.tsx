@@ -94,10 +94,28 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
   const initialSymbolRef = useRef(true);
   const prevIndicatorsRef = useRef<IndicatorConfig[]>([]);
 
+  // Callback trampoline refs. Core holds a single stable function at
+  // construct time, but we want the latest closure to fire — otherwise
+  // a user component re-render with a new onClick handler ships a
+  // stale callback into core until the transport changes.
+  const onCandleClickRef = useRef(props.onCandleClick);
+  const onVisibleRangeChangeRef = useRef(props.onVisibleRangeChange);
+  const onErrorRef = useRef(props.onError);
+  const onLoadMoreHistoryRef = useRef(props.onLoadMoreHistory);
+  // Keep them in sync on every render. Not wrapped in useEffect —
+  // refs read by async core callbacks, not by React's reconciliation.
+  onCandleClickRef.current = props.onCandleClick;
+  onVisibleRangeChangeRef.current = props.onVisibleRangeChange;
+  onErrorRef.current = props.onError;
+  onLoadMoreHistoryRef.current = props.onLoadMoreHistory;
+
   // Create/destroy chart when transport changes.
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Build the config with trampoline callbacks so the latest user
+    // handler always fires, even after the user's parent component
+    // re-renders with a new closure identity.
     const config: ChartConfig = {
       container: containerRef.current,
       symbol: props.symbol,
@@ -108,11 +126,11 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
       priceFormat: props.priceFormat,
       volumeFormat: props.volumeFormat,
       chartType: props.chartType,
-      onCandleClick: props.onCandleClick,
-      onVisibleRangeChange: props.onVisibleRangeChange,
+      onCandleClick: (candle, index) => onCandleClickRef.current?.(candle, index),
+      onVisibleRangeChange: (from, to) => onVisibleRangeChangeRef.current?.(from, to),
       onHover: props.onHover,
-      onError: props.onError,
-      onLoadMoreHistory: props.onLoadMoreHistory,
+      onError: (err) => onErrorRef.current?.(err),
+      onLoadMoreHistory: (buffer) => onLoadMoreHistoryRef.current?.(buffer),
     };
 
     const chart = new CoreChart(config);
