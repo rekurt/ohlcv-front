@@ -41,9 +41,19 @@ export type { GoToLiveBounds } from './rendering/GoToLiveRenderer';
 export { Pane, PaneLayout } from './rendering/Pane';
 export type { PaneKind, YScale } from './rendering/Pane';
 
+// State persistence
+export type { ChartState, LayoutState, FullState } from './state/ChartState';
+export { isFullState } from './state/ChartState';
+
 // Indicators
 export { Indicator, nanArray } from './indicators/Indicator';
 export type { IndicatorPlacement, IndicatorSeries } from './indicators/Indicator';
+export {
+  createIndicator,
+  indicatorId,
+  diffIndicatorConfigs,
+} from './indicators/registry';
+export type { IndicatorConfig, IndicatorDiff } from './indicators/registry';
 export { SMA } from './indicators/SMA';
 export { EMA } from './indicators/EMA';
 export { BollingerBands } from './indicators/BollingerBands';
