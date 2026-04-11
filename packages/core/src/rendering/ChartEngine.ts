@@ -147,14 +147,19 @@ export class ChartEngine {
     this._layout = computeLayout(w, h);
     this.viewport.setLayout(this._layout);
 
-    // ResizeObserver
-    this._resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect;
-        if (width > 0 && height > 0) this.resize(width, height);
-      }
-    });
-    this._resizeObserver.observe(container);
+    // ResizeObserver. Guarded against missing implementation (jsdom,
+    // very old browsers). When unavailable, the chart never auto-resizes
+    // — consumers can still call chart.render() after a manual resize,
+    // and the initial layout from the constructor still renders correctly.
+    if (typeof ResizeObserver !== 'undefined') {
+      this._resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const { width, height } = entry.contentRect;
+          if (width > 0 && height > 0) this.resize(width, height);
+        }
+      });
+      this._resizeObserver.observe(container);
+    }
   }
 
   /** Top canvas — for event listeners */
@@ -316,6 +321,16 @@ export class ChartEngine {
   }
 
   resize(width: number, height: number): void {
+    // Guard against NaN/Infinity/zero/negative dimensions. These can
+    // come from a hidden container (display:none → rect.width=0),
+    // a ResizeObserver entry during a CSS transition, or a broken
+    // container shrunk below zero width. Skip the resize entirely —
+    // the chart will keep its previous layout and try again on the
+    // next resize event.
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return;
+    }
+
     this._layout = computeLayout(width, height);
     this.viewport.setLayout(this._layout);
 
