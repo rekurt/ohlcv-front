@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-11
+
+First public release under the `@rekurt` npm scope. This release
+consolidates all prior iteration work into a shippable package set.
+
+### Added (M1 — wrapper API parity + distribution)
+
+- **Monorepo scope renamed** from pre-release `@ohlcv/*` to
+  `@rekurt/ohlcv-*`. All package names, imports, dependencies,
+  and documentation updated. There is no upgrade path from 0.0.x
+  — treat this as a fresh install.
+- **React wrapper (`@rekurt/ohlcv-react`) reaches full API parity.**
+  `<OHLCVChart>` exposes `chartType`, `indicators` (declarative
+  config array), `idleCursor`, `onHover`, `onError`, and
+  `onLoadMoreHistory` props. `forwardRef` / `useImperativeHandle`
+  surface includes `goToLive`, `fitVisible`, `fitAll`,
+  `prependHistory`, `updateLastCandle`, `saveLayoutState`,
+  `saveFullState`, `loadState`, `startDrawing`, `getDrawings`,
+  `loadDrawings`, `clearDrawings`, `toPNG`. `useOHLCVChart` hook
+  extended to 1:1 parity with the component. Indicator
+  reconciliation through `diffIndicatorConfigs` — reference-stable
+  arrays no longer thrash the chart.
+- **Vue wrapper (`@rekurt/ohlcv-vue`) reaches full API parity.**
+  Reactive props match React, typed `emits` for all events, and
+  `defineExpose` mirrors the React ref surface 1:1. `v-model:indicators`
+  supported via the `update:indicators` emit for forward compatibility.
+  `useOHLCVChart` composable extended to match component.
+- **Chart state persistence**
+  (`saveLayoutState` / `saveFullState` / `loadState`) with versioned
+  JSON schema. `LayoutState` is URL-friendly (for share links),
+  `FullState` includes the data window (for workspace persistence).
+- **IndicatorConfig discriminated union + `createIndicator` factory
+  + `indicatorId` stable hash + `diffIndicatorConfigs` pure function**
+  so wrapper-driven code never constructs indicator classes by hand
+  and reconciliation is zero-duplication between React and Vue.
+- **`OHLCVChart.setIndicatorConfigs(configs)`** — declarative path
+  used by wrappers; stores configs so `saveLayoutState` can round-trip
+  them. The legacy `setIndicators(Indicator[])` still works for custom
+  indicators but clears the internal config mirror.
+- **Auto-managed drawing layer** — `OHLCVChart` constructs and owns
+  a default `DrawingLayer`. New facade methods: `getDrawingLayer`,
+  `startDrawing('trendline'|'hline')`, `getDrawings`, `loadDrawings`,
+  `clearDrawings`.
+- **Unified playground** (`examples/playground/`) with framework
+  switcher (Vanilla TS / React / Vue), shared toolbar (theme,
+  chartType, indicators), and **share URL** feature via
+  base64-encoded `LayoutState` in `?state=` query param. Vite config
+  aliases `@rekurt/ohlcv-*` at workspace `src/` directly to prevent
+  the stale-dist pitfall that caused the preserveView regression.
+- **ESLint flat config** (TypeScript + React + Vue rules) at root,
+  `npm run lint` + `npm run lint:fix`, `--max-warnings 0` enforced.
+- **GitHub Actions**: `ci.yml` runs lint + typecheck + tests + build
+  on PRs and pushes to master (Node 20 + 22 matrix). `pages.yml`
+  builds the playground + TypeDoc API reference and deploys them to
+  GitHub Pages.
+- **TypeDoc API reference** generated from core + react + vue
+  entry points, hosted alongside the playground under `/api/`.
+- **Three existing minimal examples** (`examples/core|react|vue/`)
+  kept as self-contained repro scaffolds for issue reports.
+
+### Fixed
+
+- **`setData` `preserveView` option** — commit 46f8eea. Previously the
+  framework wrappers re-dispatched `setData` on every `[data]` effect
+  without `preserveView`, causing the core `else` branch to call
+  `scrollToEnd()` and snap the viewport back to the live edge on
+  every unrelated re-render (hover, indicator toggle, theme swap).
+  Wrappers now always pass `preserveView: true` and core keeps
+  `startIndex` / `candleWidth` / `autoFollow` across the reload.
+
 ### Added (iteration 2 — drawing tools, more indicators, data transforms, export)
 
 - **Drawing tools MVP** (`@ohlcv/core/drawings`). Buffer-space anchored drawings that stick to the underlying candles on pan/zoom.
