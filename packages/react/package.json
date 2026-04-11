@@ -1,6 +1,6 @@
 {
   "name": "@rekurt/ohlcv-react",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "React 18+/19 wrapper for @rekurt/ohlcv-core — <OHLCVChart> component and useOHLCVChart hook.",
   "keywords": ["ohlcv", "candlestick", "chart", "react", "trading", "canvas"],
   "license": "MIT",

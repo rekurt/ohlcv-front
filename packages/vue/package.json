@@ -1,6 +1,6 @@
 {
   "name": "@rekurt/ohlcv-vue",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Vue 3 wrapper for @rekurt/ohlcv-core — <OHLCVChart> component and useOHLCVChart composable.",
   "keywords": ["ohlcv", "candlestick", "chart", "vue", "vue3", "trading", "canvas"],
   "license": "MIT",
