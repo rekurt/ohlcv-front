@@ -7,7 +7,8 @@ export class CrosshairController {
   private _engine: ChartEngine;
   private _buffer: CandleBuffer;
   private _resolution: string;
-  private _rafPending = false;
+  private _rafId = 0;
+  private _destroyed = false;
   private _lastX = 0;
   private _lastY = 0;
   private _onHover: ((info: HoverInfo | null) => void) | null = null;
@@ -44,20 +45,26 @@ export class CrosshairController {
   }
 
   destroy(): void {
+    this._destroyed = true;
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+    }
     const canvas = this._engine.topCanvas;
     canvas.removeEventListener('mousemove', this._onMouseMove);
     canvas.removeEventListener('mouseleave', this._onMouseLeave);
   }
 
   private _handleMouseMove(e: MouseEvent): void {
+    if (this._destroyed) return;
     const rect = this._engine.topCanvas.getBoundingClientRect();
     this._lastX = e.clientX - rect.left;
     this._lastY = e.clientY - rect.top;
 
-    if (!this._rafPending) {
-      this._rafPending = true;
-      requestAnimationFrame(() => {
-        this._rafPending = false;
+    if (this._rafId === 0) {
+      this._rafId = requestAnimationFrame(() => {
+        this._rafId = 0;
+        if (this._destroyed) return;
         this._updateCrosshair();
       });
     }

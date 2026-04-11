@@ -568,18 +568,29 @@ export class OHLCVChart {
     return out;
   }
 
-  /** Clean up all resources */
+  /** Clean up all resources. Idempotent — safe to call more than once. */
   destroy(): void {
+    if (this._destroyed) return;
+    this._destroyed = true;
+
     if (this._clickHandler) {
       this._engine.topCanvas.removeEventListener('click', this._clickHandler);
+      this._clickHandler = null;
     }
     if (this._dblClickHandler) {
       this._engine.topCanvas.removeEventListener('dblclick', this._dblClickHandler);
+      this._dblClickHandler = null;
     }
     this._keyboard.destroy();
     this._crosshair.destroy();
     this._panZoom.destroy();
-    this._engine.destroy();
     this._dataFeed.destroy();
+    // Cancel any pending merger RAF before tearing down the engine so
+    // a late frame cannot paint into a disposed canvas.
+    this._merger.destroy();
+    this._engine.destroy();
+    this._onHover = null;
   }
+
+  private _destroyed = false;
 }

@@ -4,7 +4,8 @@ import type { CandleBuffer } from './CandleBuffer';
 export class CandleMerger {
   private _buffer: CandleBuffer;
   private _onUpdate: (() => void) | null = null;
-  private _rafPending = false;
+  private _rafId = 0;
+  private _destroyed = false;
 
   constructor(buffer: CandleBuffer) {
     this._buffer = buffer;
@@ -17,6 +18,20 @@ export class CandleMerger {
   /** Set the render callback (called at most once per frame) */
   onUpdate(callback: () => void): void {
     this._onUpdate = callback;
+  }
+
+  /**
+   * Cancel any pending RAF and mark the merger as destroyed so late
+   * frames produced by a prior `_scheduleUpdate` call don't fire
+   * against torn-down state.
+   */
+  destroy(): void {
+    this._destroyed = true;
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+    }
+    this._onUpdate = null;
   }
 
   /** Merge realtime candle updates */
@@ -54,10 +69,10 @@ export class CandleMerger {
   }
 
   private _scheduleUpdate(): void {
-    if (this._rafPending || !this._onUpdate) return;
-    this._rafPending = true;
-    requestAnimationFrame(() => {
-      this._rafPending = false;
+    if (this._destroyed || this._rafId !== 0 || !this._onUpdate) return;
+    this._rafId = requestAnimationFrame(() => {
+      this._rafId = 0;
+      if (this._destroyed) return;
       this._onUpdate?.();
     });
   }
