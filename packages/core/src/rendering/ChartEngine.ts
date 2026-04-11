@@ -76,6 +76,14 @@ export class ChartEngine {
   private _rafId = 0;
   private _resizeObserver: ResizeObserver | null = null;
 
+  /**
+   * Off-screen ARIA live region used to announce crosshair changes to
+   * screen readers. Populated on every setCrosshair call with a
+   * human-readable OHLC summary of the hovered candle.
+   */
+  private _a11yLiveRegion!: HTMLDivElement;
+  private _lastA11yAnnouncement = '';
+
   constructor(container: HTMLElement, theme: ThemeColors) {
     this._container = container;
     this._theme = theme;
@@ -91,18 +99,45 @@ export class ChartEngine {
     this._chartCanvas = this._createLayerCanvas(w, h, 1);
     this._uiCanvas = this._createLayerCanvas(w, h, 2);
     this._crosshairCanvas = this._createLayerCanvas(w, h, 3);
+
+    // The lower canvases are purely decorative — screen readers should
+    // ignore them entirely so the user only encounters one interactive
+    // chart element instead of three.
+    this._chartCanvas.setAttribute('aria-hidden', 'true');
+    this._uiCanvas.setAttribute('aria-hidden', 'true');
+
     // Make the top canvas focusable so it can receive keyboard events.
     this._crosshairCanvas.tabIndex = 0;
-    this._crosshairCanvas.style.outline = 'none';
+    // WCAG 2.4.7: keep a visible focus indicator. Default browser focus
+    // rings often look bad on dark chart backgrounds; we use a subtle
+    // inset box-shadow via a data-attribute so consumers can override
+    // via CSS without fighting an inline style.
+    this._crosshairCanvas.setAttribute('data-ohlcv-focusable', 'true');
     // Accessibility: label the interactive canvas as an application image
     // and describe its purpose. Screen readers that don't speak canvas
     // pixel content will at least announce "OHLCV price chart" on focus.
     this._crosshairCanvas.setAttribute('role', 'img');
-    this._crosshairCanvas.setAttribute('aria-label', 'OHLCV price chart. Use arrow keys to pan, plus and minus to zoom, Home and End to jump.');
+    this._crosshairCanvas.setAttribute(
+      'aria-label',
+      'OHLCV price chart. Use arrow keys to pan, plus and minus to zoom, Home and End to jump.',
+    );
+
+    // Live region for screen-reader-friendly crosshair announcements.
+    // Positioned off-screen; updated imperatively from setCrosshair.
+    // Only one instance per chart; kept inside the container so it is
+    // cleaned up along with the canvases on destroy.
+    this._a11yLiveRegion = document.createElement('div');
+    this._a11yLiveRegion.setAttribute('role', 'status');
+    this._a11yLiveRegion.setAttribute('aria-live', 'polite');
+    this._a11yLiveRegion.setAttribute('aria-atomic', 'true');
+    // Visually hidden but still in the accessibility tree.
+    this._a11yLiveRegion.style.cssText =
+      'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;';
 
     container.appendChild(this._chartCanvas);
     container.appendChild(this._uiCanvas);
     container.appendChild(this._crosshairCanvas);
+    container.appendChild(this._a11yLiveRegion);
 
     this._chartCtx = this._chartCanvas.getContext('2d')!;
     this._uiCtx = this._uiCanvas.getContext('2d')!;
@@ -248,10 +283,25 @@ export class ChartEngine {
       time: timeLabel,
       visible: true,
     };
-    if (candle) this._legendCandle = candle;
+    if (candle) {
+      this._legendCandle = candle;
+      // Update the aria-live region with an OHLC summary for screen
+      // readers. We dedupe identical announcements so hovering inside a
+      // single candle doesn't flood the live region every RAF.
+      const announcement = this._formatA11yAnnouncement(candle, timeLabel);
+      if (announcement !== this._lastA11yAnnouncement) {
+        this._lastA11yAnnouncement = announcement;
+        this._a11yLiveRegion.textContent = announcement;
+      }
+    }
     this._crosshairDirty = true;
     this._uiDirty = true;
     this._scheduleRaf();
+  }
+
+  private _formatA11yAnnouncement(candle: Candle, timeLabel: string): string {
+    const fmt = this._priceFormat ?? ((p: number) => p.toFixed(2));
+    return `${this._symbol} ${timeLabel}: open ${fmt(candle.o)}, high ${fmt(candle.h)}, low ${fmt(candle.l)}, close ${fmt(candle.c)}`;
   }
 
   /** Hide crosshair and show last candle in legend */
@@ -281,7 +331,10 @@ export class ChartEngine {
   }
 
   destroy(): void {
-    if (this._rafId) cancelAnimationFrame(this._rafId);
+    if (this._rafId) {
+      cancelAnimationFrame(this._rafId);
+      this._rafId = 0;
+    }
     if (this._resizeObserver) {
       this._resizeObserver.disconnect();
       this._resizeObserver = null;
@@ -289,6 +342,7 @@ export class ChartEngine {
     this._chartCanvas.remove();
     this._uiCanvas.remove();
     this._crosshairCanvas.remove();
+    this._a11yLiveRegion?.remove();
   }
 
   /**
