@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ohlcv/core": "*",
-    "@ohlcv/react": "*",
+    "@rekurt/ohlcv-core": "*",
+    "@rekurt/ohlcv-react": "*",
     "@ohlcv-examples/shared": "*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

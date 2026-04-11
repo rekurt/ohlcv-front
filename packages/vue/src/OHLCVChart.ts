@@ -6,7 +6,7 @@ import {
   type DataTransport,
   type ThemeMode,
   type ThemeColors,
-} from '@ohlcv/core';
+} from '@rekurt/ohlcv-core';
 
 export const OHLCVChart = defineComponent({
   name: 'OHLCVChart',

@@ -6,9 +6,9 @@ Monorepo contents:
 
 | Package           | Purpose                                                            |
 | ----------------- | ------------------------------------------------------------------ |
-| `@ohlcv/core`     | Framework-agnostic rendering + data + interaction (no React/Vue)   |
-| `@ohlcv/react`    | Thin React 19 wrapper (`<OHLCVChart>` component + `useOHLCVChart`) |
-| `@ohlcv/vue`      | Thin Vue 3 wrapper (`OHLCVChart` component + `useOHLCVChart`)      |
+| `@rekurt/ohlcv-core`     | Framework-agnostic rendering + data + interaction (no React/Vue)   |
+| `@rekurt/ohlcv-react`    | Thin React 19 wrapper (`<OHLCVChart>` component + `useOHLCVChart`) |
+| `@rekurt/ohlcv-vue`      | Thin Vue 3 wrapper (`OHLCVChart` component + `useOHLCVChart`)      |
 
 Plus three runnable demo apps under `examples/` (vanilla, React, Vue) that share a seeded mock data feed.
 
@@ -26,7 +26,7 @@ npm run typecheck      # strict tsc across all six tsconfigs
 
 ## What's in the core library
 
-**Rendering** (`@ohlcv/core`):
+**Rendering** (`@rekurt/ohlcv-core`):
 - Candlesticks, volume bars, grid, price axis, time axis, crosshair with snap-to-candle, current price label, legend, "Go to live" pill
 - Alternative chart types: line, area (with gradient), OHLC bars
 - Hi-DPI canvas with three-layer split (chart / UI / interaction) for cheap crosshair redraws
@@ -52,7 +52,7 @@ npm run typecheck      # strict tsc across all six tsconfigs
 - `autoFollow` state machine: live updates track the right edge unless the user pans away
 - Double-click: fit visible
 
-**Indicators** (`@ohlcv/core/indicators`):
+**Indicators** (`@rekurt/ohlcv-core/indicators`):
 - `SMA`, `EMA`, `BollingerBands` (overlay on main pane)
 - `RSI` (sub-pane, placement: `'pane'`)
 - Base class `Indicator` + `IndicatorSeries` — add your own by subclassing
@@ -60,7 +60,7 @@ npm run typecheck      # strict tsc across all six tsconfigs
 ## Minimal usage (vanilla)
 
 ```ts
-import { OHLCVChart, SMA } from '@ohlcv/core';
+import { OHLCVChart, SMA } from '@rekurt/ohlcv-core';
 
 const chart = new OHLCVChart({
   container: document.getElementById('chart')!,
@@ -85,7 +85,7 @@ setInterval(() => {
 ## React
 
 ```tsx
-import { OHLCVChart, type OHLCVChartRef } from '@ohlcv/react';
+import { OHLCVChart, type OHLCVChartRef } from '@rekurt/ohlcv-react';
 import { useRef } from 'react';
 
 function App() {
@@ -107,7 +107,7 @@ function App() {
 
 ```vue
 <script setup lang="ts">
-import { OHLCVChart } from '@ohlcv/vue';
+import { OHLCVChart } from '@rekurt/ohlcv-vue';
 import { ref } from 'vue';
 const candles = ref([]);
 </script>

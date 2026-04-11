@@ -1,5 +1,5 @@
 {
-  "name": "@ohlcv/core",
+  "name": "@rekurt/ohlcv-core",
   "version": "0.0.1",
   "description": "Framework-agnostic OHLCV candlestick chart library. Canvas-based, TypedArray-backed, keyboard-first.",
   "keywords": [

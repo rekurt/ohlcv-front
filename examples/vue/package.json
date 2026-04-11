@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ohlcv/core": "*",
-    "@ohlcv/vue": "*",
+    "@rekurt/ohlcv-core": "*",
+    "@rekurt/ohlcv-vue": "*",
     "@ohlcv-examples/shared": "*",
     "vue": "^3.5.0"
   },

@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ohlcv/core": "*",
+    "@rekurt/ohlcv-core": "*",
     "@ohlcv-examples/shared": "*"
   },
   "devDependencies": {

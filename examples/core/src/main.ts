@@ -16,7 +16,7 @@ import {
   type Indicator,
   type ThemeMode,
   type HoverInfo,
-} from '@ohlcv/core';
+} from '@rekurt/ohlcv-core';
 import {
   SYMBOLS,
   RESOLUTIONS,

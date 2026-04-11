@@ -7,6 +7,6 @@ export default defineConfig({
   sourcemap: true,
   treeshake: true,
   clean: true,
-  external: ['react', 'react-dom', 'react/jsx-runtime', '@ohlcv/core'],
+  external: ['react', 'react-dom', 'react/jsx-runtime', '@rekurt/ohlcv-core'],
   jsx: 'automatic',
 });

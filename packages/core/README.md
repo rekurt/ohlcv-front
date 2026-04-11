@@ -1,19 +1,19 @@
-# @ohlcv/core
+# @rekurt/ohlcv-core
 
 Framework-agnostic OHLCV (candlestick) chart library. Zero runtime dependencies. Canvas-based rendering. TypedArray buffers.
 
-This is the core of the `@ohlcv` monorepo. For framework wrappers see `@ohlcv/react` and `@ohlcv/vue`.
+This is the core of the `@ohlcv` monorepo. For framework wrappers see `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue`.
 
 ## Install
 
 ```bash
-npm install @ohlcv/core
+npm install @rekurt/ohlcv-core
 ```
 
 ## Quick start
 
 ```ts
-import { OHLCVChart } from '@ohlcv/core';
+import { OHLCVChart } from '@rekurt/ohlcv-core';
 
 const chart = new OHLCVChart({
   container: document.getElementById('chart')!,

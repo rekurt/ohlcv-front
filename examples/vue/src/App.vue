@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { OHLCVChart } from '@ohlcv/vue';
+import { OHLCVChart } from '@rekurt/ohlcv-vue';
 import {
   formatPrice,
   formatTime,
@@ -19,7 +19,7 @@ import {
   type Indicator,
   type ThemeMode,
   type OHLCVChart as CoreChart,
-} from '@ohlcv/core';
+} from '@rekurt/ohlcv-core';
 import {
   SYMBOLS,
   RESOLUTIONS,

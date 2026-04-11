@@ -11,4 +11,4 @@ export type {
   ThemeColors,
   ThemeMode,
   ChartConfig,
-} from '@ohlcv/core';
+} from '@rekurt/ohlcv-core';

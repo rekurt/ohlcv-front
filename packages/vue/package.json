@@ -1,7 +1,7 @@
 {
-  "name": "@ohlcv/vue",
+  "name": "@rekurt/ohlcv-vue",
   "version": "0.0.1",
-  "description": "Vue 3 wrapper for @ohlcv/core — <OHLCVChart> component and useOHLCVChart composable.",
+  "description": "Vue 3 wrapper for @rekurt/ohlcv-core — <OHLCVChart> component and useOHLCVChart composable.",
   "keywords": ["ohlcv", "candlestick", "chart", "vue", "vue3", "trading", "canvas"],
   "license": "MIT",
   "repository": {
@@ -39,7 +39,7 @@
     "node": ">=18.18.0"
   },
   "dependencies": {
-    "@ohlcv/core": "*"
+    "@rekurt/ohlcv-core": "*"
   },
   "peerDependencies": {
     "vue": ">=3.3"
