@@ -81,12 +81,15 @@ export const OHLCVChart = defineComponent({
       },
     );
 
-    // Watch data changes
+    // Watch data changes. Use `preserveView: true` so re-renders caused
+    // by unrelated reactive changes don't snap the viewport back to the
+    // live edge. Genuine symbol/resolution changes are handled by the
+    // separate watcher above which calls `switchSymbol()`.
     watch(
       () => props.data,
       (data) => {
         if (!chartRef.value || !data) return;
-        chartRef.value.setData(data);
+        chartRef.value.setData(data, { preserveView: true });
       },
     );
 

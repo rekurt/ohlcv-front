@@ -1,3 +1,5 @@
+import type { CandleBuffer } from './data/CandleBuffer';
+
 export interface Candle {
   o: number;
   h: number;
@@ -133,6 +135,13 @@ export interface ChartConfig {
    * via the default `ErrorReporter`.
    */
   onError?: (err: ChartError) => void;
+  /**
+   * Called when the user pans into the left edge of the buffer. Lets hosts
+   * implement virtual scroll by fetching older candles and calling
+   * `chart.prependHistory(olderCandles)`. The chart serializes calls — only
+   * one load-more request is in flight at a time.
+   */
+  onLoadMoreHistory?: (buffer: CandleBuffer) => void | Promise<void>;
 }
 
 export interface ChartLayout {

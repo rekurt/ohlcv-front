@@ -157,6 +157,41 @@ export class ChartEngine {
     this.requestRender();
   }
 
+  /**
+   * Override the resting cursor on the top canvas. Used by drawing tools
+   * in consumer code to signal "click to place a point" — e.g. `'crosshair'`
+   * for selection, `'cell'` or `'copy'` while a trend line is being drawn.
+   *
+   * PanZoomController still temporarily switches to `'grabbing'` during an
+   * active drag and back to the idle cursor on release, so mouse-up after
+   * a drag does not clobber the tool's cursor choice.
+   *
+   * Pass `null` to restore the default `'crosshair'`.
+   */
+  setIdleCursor(cursor: string | null): void {
+    this._idleCursor = cursor ?? 'crosshair';
+    if (!this._isActivelyDragging) {
+      this._crosshairCanvas.style.cursor = this._idleCursor;
+    }
+  }
+
+  /** The cursor the top canvas shows when no drag is in progress. */
+  get idleCursor(): string {
+    return this._idleCursor;
+  }
+
+  /**
+   * Called by PanZoomController on mousedown/mouseup so the engine knows
+   * whether to honor `setIdleCursor` writes or defer them. Internal API,
+   * not exported.
+   */
+  _setActivelyDragging(dragging: boolean): void {
+    this._isActivelyDragging = dragging;
+  }
+
+  private _idleCursor = 'crosshair';
+  private _isActivelyDragging = false;
+
   /** Switch the primary price-series rendering style. */
   setChartType(chartType: ChartType): void {
     if (this._chartType === chartType) return;

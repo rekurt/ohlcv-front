@@ -19,6 +19,18 @@ function prefersReducedMotion(): boolean {
 export interface PanZoomCallbacks {
   onViewportChange?: () => void;
   onPanToStart?: () => void;
+  /**
+   * Optional resolver for the idle cursor (used on mouseup after drag).
+   * Returns the CSS cursor string the canvas should show when no drag
+   * is in progress. Default: `'crosshair'`.
+   */
+  getIdleCursor?: () => string;
+  /**
+   * Optional callback fired on mousedown and mouseup so the engine can
+   * track whether a drag is currently in progress (for `setIdleCursor`
+   * defer logic).
+   */
+  onDragStateChange?: (dragging: boolean) => void;
 }
 
 export class PanZoomController {
@@ -93,6 +105,7 @@ export class PanZoomController {
       this._momentumRafId = 0;
     }
     this._canvas.style.cursor = 'grabbing';
+    this._callbacks.onDragStateChange?.(true);
     // Ensure the canvas receives keyboard events for keyboard shortcuts.
     this._canvas.focus();
     document.addEventListener('mousemove', this._onMouseMove);
@@ -120,7 +133,11 @@ export class PanZoomController {
 
   private _handleMouseUp(_e: MouseEvent): void {
     this._isDragging = false;
-    this._canvas.style.cursor = 'crosshair';
+    // Ask the engine what cursor to show in the resting state — drawing
+    // tools override this via `ChartEngine.setIdleCursor`.
+    const idle = this._callbacks.getIdleCursor?.() ?? 'crosshair';
+    this._canvas.style.cursor = idle;
+    this._callbacks.onDragStateChange?.(false);
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
 

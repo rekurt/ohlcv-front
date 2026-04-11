@@ -87,10 +87,13 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
     chartRef.current.setTheme(props.theme);
   }, [props.theme]);
 
-  // Data updates
+  // Data updates. Use `preserveView: true` so that re-renders caused by
+  // unrelated state changes (hover, indicator selection, theme) don't
+  // snap the viewport back to the live edge. A genuine symbol/resolution
+  // switch goes through `switchSymbol()` which fully resets.
   useEffect(() => {
     if (!chartRef.current || !props.data) return;
-    chartRef.current.setData(props.data);
+    chartRef.current.setData(props.data, { preserveView: true });
   }, [props.data]);
 
   return (

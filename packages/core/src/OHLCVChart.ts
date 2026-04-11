@@ -24,6 +24,7 @@ export class OHLCVChart {
   private _config: ChartConfig;
   private _clickHandler: ((e: MouseEvent) => void) | null = null;
   private _dblClickHandler: ((e: MouseEvent) => void) | null = null;
+  private _loadingMore = false;
 
   constructor(config: ChartConfig) {
     this._config = config;
@@ -76,11 +77,29 @@ export class OHLCVChart {
             config.onVisibleRangeChange(startCandle.t, endCandle.t);
           }
         }
+        // Virtual scroll: when the user pans into the left edge, dispatch
+        // a load-more request through the callback (if configured).
+        if (config.onLoadMoreHistory) {
+          const vp = this._engine.viewport;
+          if (vp.startIndex <= 0 && !this._loadingMore) {
+            this._loadingMore = true;
+            void Promise.resolve(config.onLoadMoreHistory(this._buffer)).finally(() => {
+              this._loadingMore = false;
+            });
+          }
+        }
       },
       onPanToStart: () => {
         this._dataFeed.loadMoreHistory();
       },
+      // Route the idle cursor through the engine so drawing tools can
+      // override it via `OHLCVChart.setIdleCursor`.
+      getIdleCursor: () => this._engine.idleCursor,
+      onDragStateChange: (dragging) => this._engine._setActivelyDragging(dragging),
     });
+    // Track pending load-more-history calls so we don't fire them faster
+    // than they resolve.
+    this._loadingMore = false;
 
     this._crosshair = new CrosshairController(this._engine, this._buffer, config.resolution);
     if (config.onHover) {
@@ -143,11 +162,41 @@ export class OHLCVChart {
     }
   }
 
-  /** Set data directly (without transport) */
-  setData(candles: Candle[]): void {
+  /**
+   * Set data directly (without transport).
+   *
+   * By default, fully resets the buffer and scrolls the viewport to the
+   * live edge — the correct behavior when the user has just switched
+   * symbols or timeframes.
+   *
+   * Pass `{ preserveView: true }` to keep the viewport's current
+   * `startIndex`, `candleWidth`, and `autoFollow` state. This is what
+   * framework wrappers (React/Vue) want when they re-dispatch the same
+   * data array as a prop change: the user's pan/zoom position should
+   * not jump to the right edge every time React re-renders.
+   */
+  setData(candles: Candle[], opts?: { preserveView?: boolean }): void {
+    const vp = this._engine.viewport;
+    const previousStart = vp.startIndex;
+    const previousWidth = vp.candleWidth;
+    const previousAutoFollow = vp.autoFollow;
+
     this._buffer.clear();
     this._merger.loadHistory(candles);
-    this._engine.viewport.scrollToEnd(this._buffer.length);
+
+    if (opts?.preserveView) {
+      vp.candleWidth = previousWidth;
+      vp.startIndex = previousStart;
+      vp.autoFollow = previousAutoFollow;
+      // Recalc visible window for the (possibly different) buffer length.
+      vp.setLayout(vp.layout);
+      // Only auto-scroll if autoFollow was on and buffer length actually grew.
+      if (previousAutoFollow) {
+        vp.scrollToEnd(this._buffer.length);
+      }
+    } else {
+      vp.scrollToEnd(this._buffer.length);
+    }
     this._engine.requestRender();
   }
 
@@ -226,6 +275,34 @@ export class OHLCVChart {
    */
   toPNG(): string | null {
     return this._engine.toPNG();
+  }
+
+  /**
+   * Override the resting cursor on the top canvas. Drawing tools use this
+   * to give the user visual feedback that a tool is selected — e.g.
+   * `'cell'` for "click to place a point", or `'copy'` for a ray tool.
+   * Pass `null` to restore the default `'crosshair'`.
+   */
+  setIdleCursor(cursor: string | null): void {
+    this._engine.setIdleCursor(cursor);
+  }
+
+  /**
+   * Prepend older candles to the buffer without resetting the viewport.
+   * Call this from your `onLoadMoreHistory` handler when you've fetched
+   * more historical data. The user's current `startIndex` is shifted by
+   * the number of candles that were actually added, so visually the
+   * same candles stay under the cursor.
+   */
+  prependHistory(olderCandles: Candle[]): void {
+    if (olderCandles.length === 0) return;
+    const vp = this._engine.viewport;
+    const lengthBefore = this._buffer.length;
+    const startBefore = vp.startIndex;
+    this._merger.loadHistory(olderCandles);
+    const added = this._buffer.length - lengthBefore;
+    vp.startIndex = startBefore + added;
+    this._engine.requestRender();
   }
 
   /** Install a hover callback that fires on every crosshair snap. */

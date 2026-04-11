@@ -96,6 +96,48 @@ describe('OHLCVChart facade', () => {
       expect(chart.getBuffer().length).toBe(1);
       chart.destroy();
     });
+
+    // Regression: React/Vue wrappers dispatch `setData(data, { preserveView: true })`
+    // on every [data] effect. If the user has panned away from the live edge,
+    // re-dispatching the same data (hover, indicator toggle, theme swap, etc.)
+    // must NOT snap the viewport back to the end.
+    it('setData with preserveView keeps startIndex and autoFollow after user pan', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      const candles = Array.from({ length: 500 }, (_, i) => makeCandle(i));
+      chart.setData(candles);
+
+      const vp = chart.getViewport();
+      vp.pan(-50);
+      const panStart = vp.startIndex;
+      expect(vp.autoFollow).toBe(false);
+
+      // React/Vue wrapper re-dispatches the same data array
+      chart.setData(candles, { preserveView: true });
+
+      expect(vp.startIndex).toBe(panStart);
+      expect(vp.autoFollow).toBe(false);
+      chart.destroy();
+    });
+
+    // Regression: when autoFollow=true (user is at the live edge), preserveView
+    // must still scroll to the right edge so that new realtime candles stay
+    // visible. Only the user's explicit pan state is preserved, not a stale
+    // startIndex.
+    it('setData with preserveView still follows the live edge when autoFollow=true', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      const candles = Array.from({ length: 500 }, (_, i) => makeCandle(i));
+      chart.setData(candles);
+
+      const vp = chart.getViewport();
+      expect(vp.autoFollow).toBe(true);
+      const liveStart = vp.startIndex;
+
+      chart.setData(candles, { preserveView: true });
+
+      expect(vp.autoFollow).toBe(true);
+      expect(vp.startIndex).toBe(liveStart);
+      chart.destroy();
+    });
   });
 
   describe('navigation methods', () => {
