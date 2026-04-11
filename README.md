@@ -79,14 +79,17 @@ npm run docs            # TypeDoc → docs/api/
 - Double-click: fit visible
 
 **Indicators** (`@rekurt/ohlcv-core/indicators`):
-- `SMA`, `EMA`, `BollingerBands` (overlay on main pane)
-- `RSI` (sub-pane, placement: `'pane'`)
-- Base class `Indicator` + `IndicatorSeries` — add your own by subclassing
+- Overlay on main pane: `SMA`, `EMA`, `BollingerBands`, `VWAP`
+- Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`
+- `IndicatorConfig` discriminated union + `createIndicator` factory —
+  user code never instantiates indicator classes directly; it passes
+  config objects and the core reconciles them.
+- `Indicator` base class + `IndicatorSeries` — subclass to add your own.
 
 ## Minimal usage (vanilla)
 
 ```ts
-import { OHLCVChart, SMA } from '@rekurt/ohlcv-core';
+import { OHLCVChart } from '@rekurt/ohlcv-core';
 
 const chart = new OHLCVChart({
   container: document.getElementById('chart')!,
@@ -98,14 +101,24 @@ const chart = new OHLCVChart({
 
 chart.setData(historicalCandles);
 
-// Optional: compute an indicator for your own overlay renderer
-const sma = new SMA(20);
-const [{ values }] = sma.compute(chart.getBuffer());
+// Declarative indicators via config objects — the same path the React
+// and Vue wrappers use. `saveLayoutState` round-trips these configs.
+chart.setIndicatorConfigs([
+  { type: 'sma', period: 20 },
+  { type: 'ema', period: 50 },
+  { type: 'bb', period: 20, stdDev: 2 },
+]);
 
 // Live mode
 setInterval(() => {
   chart.updateLastCandle(latestCandle);
 }, 500);
+
+// Shareable chart state — save to a query param, load from one
+const state = chart.saveLayoutState();
+const shareParam = btoa(JSON.stringify(state));
+// later, or in another tab:
+chart.loadState(JSON.parse(atob(shareParam)));
 ```
 
 ## React
