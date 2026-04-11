@@ -4,13 +4,20 @@ import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
 import { CandleMerger } from './data/CandleMerger';
 import { DataFeed } from './data/DataFeed';
+import { ValidationError } from './data/validation';
 import { ChartEngine } from './rendering/ChartEngine';
 import { Viewport } from './interaction/Viewport';
 import { PanZoomController } from './interaction/PanZoomController';
 import { CrosshairController } from './interaction/CrosshairController';
 import { KeyboardController } from './interaction/KeyboardController';
 import type { Indicator } from './indicators/Indicator';
-import type { DrawingLayer } from './drawings/DrawingLayer';
+import { createIndicator, type IndicatorConfig } from './indicators/registry';
+import { DrawingLayer } from './drawings/DrawingLayer';
+import { TrendLine } from './drawings/TrendLine';
+import { HorizontalLine } from './drawings/HorizontalLine';
+import type { DrawingSnapshot } from './drawings/Drawing';
+import type { LayoutState, FullState, ChartState } from './state/ChartState';
+import { isFullState } from './state/ChartState';
 
 export class OHLCVChart {
   private _buffer: CandleBuffer;
@@ -25,6 +32,21 @@ export class OHLCVChart {
   private _clickHandler: ((e: MouseEvent) => void) | null = null;
   private _dblClickHandler: ((e: MouseEvent) => void) | null = null;
   private _loadingMore = false;
+  /**
+   * Mirror of the most recent `IndicatorConfig[]` passed through
+   * `setIndicatorConfigs`. Needed because `saveLayoutState` must return
+   * JSON-serializable configs, not `Indicator` class instances. Stays
+   * empty when the host uses the legacy `setIndicators(Indicator[])`
+   * API with hand-constructed instances.
+   */
+  private _indicatorConfigs: IndicatorConfig[] = [];
+  /**
+   * Drawing layer created and managed by the chart itself. Hosts can
+   * either let this auto-manage (`startDrawing`, `getDrawings`) or
+   * override with a custom layer via `setDrawingLayer(customLayer)` for
+   * advanced use.
+   */
+  private _ownDrawingLayer: DrawingLayer;
 
   constructor(config: ChartConfig) {
     this._config = config;
@@ -51,6 +73,13 @@ export class OHLCVChart {
     if (config.volumeFormat) this._engine.setVolumeFormat(config.volumeFormat);
     if (config.chartType) this._engine.setChartType(config.chartType);
     config.container.style.backgroundColor = theme.background;
+
+    // Auto-managed drawing layer. Hosts that need a custom layer can
+    // still call `setDrawingLayer` to override — that path bypasses the
+    // auto-managed instance and the `startDrawing` convenience methods
+    // then no-op until a new layer is attached.
+    this._ownDrawingLayer = new DrawingLayer();
+    this._engine.setDrawingLayer(this._ownDrawingLayer);
 
     // Merger triggers render. Only scroll to the live edge if the user is
     // actively following the stream; otherwise just repaint and let the
@@ -259,14 +288,97 @@ export class OHLCVChart {
     this._engine.setChartType(chartType);
   }
 
-  /** Replace the indicator set on the chart. */
+  /**
+   * Replace the indicator set on the chart with pre-constructed instances.
+   *
+   * Advanced use only — most hosts should call `setIndicatorConfigs`
+   * instead so the chart can serialize the indicators through
+   * `saveLayoutState`. Calling this method clears the internal
+   * `IndicatorConfig[]` mirror, so subsequent `saveLayoutState` calls
+   * will return `indicators: []` even though the chart is still
+   * rendering them.
+   */
   setIndicators(indicators: Indicator[]): void {
+    this._indicatorConfigs = [];
     this._engine.setIndicators(indicators);
+  }
+
+  /**
+   * Replace the indicator set using declarative configs. This is the
+   * recommended path for React/Vue wrappers: the chart remembers the
+   * configs so `saveLayoutState()` can round-trip them without the
+   * wrapper having to track indicators out-of-band.
+   */
+  setIndicatorConfigs(configs: IndicatorConfig[]): void {
+    this._indicatorConfigs = configs.slice();
+    this._engine.setIndicators(configs.map(createIndicator));
+  }
+
+  /** Read the indicator set currently rendering. */
+  getIndicators(): readonly Indicator[] {
+    return this._engine.indicators;
+  }
+
+  /**
+   * Read the indicator configs last passed through `setIndicatorConfigs`.
+   * Returns an empty array if the host used the legacy
+   * `setIndicators(Indicator[])` path — in that case the chart has no
+   * way to reverse-engineer configs from arbitrary Indicator subclasses.
+   */
+  getIndicatorConfigs(): readonly IndicatorConfig[] {
+    return this._indicatorConfigs;
   }
 
   /** Attach (or clear) a drawing layer rendered above the price series. */
   setDrawingLayer(layer: DrawingLayer | null): void {
     this._engine.setDrawingLayer(layer);
+  }
+
+  /**
+   * Access the chart's auto-managed DrawingLayer. Returns the same
+   * instance that `startDrawing` / `getDrawings` / `loadDrawings`
+   * operate on, unless the host replaced it via `setDrawingLayer`.
+   */
+  getDrawingLayer(): DrawingLayer {
+    return this._ownDrawingLayer;
+  }
+
+  /**
+   * Begin an interactive drawing workflow. The next `click` event
+   * routed through the host's click handler should call
+   * `drawingLayer.addPoint({ index, price })`. When the drawing
+   * completes (enough anchors), it is finalized automatically.
+   */
+  startDrawing(tool: 'trendline' | 'hline'): void {
+    if (tool === 'trendline') {
+      this._ownDrawingLayer.startDrawing(new TrendLine());
+    } else {
+      this._ownDrawingLayer.startDrawing(new HorizontalLine());
+    }
+  }
+
+  /** Serialize the auto-managed drawing layer to a snapshot array. */
+  getDrawings(): DrawingSnapshot[] {
+    return this._ownDrawingLayer.toSnapshot();
+  }
+
+  /**
+   * Replace all drawings with a fresh snapshot list. Unknown drawing
+   * kinds are silently skipped (same semantics as
+   * `DrawingLayer.fromSnapshot`).
+   */
+  loadDrawings(snapshots: DrawingSnapshot[]): void {
+    const layer = DrawingLayer.fromSnapshot(snapshots);
+    this._ownDrawingLayer = layer;
+    this._engine.setDrawingLayer(layer);
+    this._engine.requestRender();
+  }
+
+  /** Remove every drawing from the auto-managed layer. */
+  clearDrawings(): void {
+    this._ownDrawingLayer.clear();
+    this._ownDrawingLayer.cancelActive();
+    this._engine.requestRender();
   }
 
   /**
@@ -312,6 +424,115 @@ export class OHLCVChart {
   }
 
   private _onHover: ((info: HoverInfo | null) => void) | null = null;
+
+  /**
+   * Serialize the chart's layout (without data) to a JSON-safe object.
+   * The result is small enough to round-trip through a URL query
+   * parameter after base64 encoding — typical size is a few hundred
+   * bytes. Use `saveFullState` when you also need the data window.
+   *
+   * `getIndicatorConfigs()` returns an empty array if the host used
+   * the legacy `setIndicators(Indicator[])` path — save/load then
+   * round-trips visual state but not indicators. Prefer
+   * `setIndicatorConfigs` for framework wrappers.
+   */
+  saveLayoutState(): LayoutState {
+    const vp = this._engine.viewport;
+    return {
+      version: 1,
+      symbol: this._config.symbol,
+      resolution: this._config.resolution,
+      chartType: this._engine.chartType,
+      theme: this._config.theme ?? 'dark',
+      viewport: {
+        startIndex: vp.startIndex,
+        candleWidth: vp.candleWidth,
+        autoFollow: vp.autoFollow,
+      },
+      indicators: this._indicatorConfigs.slice(),
+      drawings: this.getDrawings(),
+    };
+  }
+
+  /**
+   * Serialize the chart including the full data window. Use for
+   * workspace persistence or bug reproduction where the recipient
+   * should not need a transport to rehydrate. Typical size ranges
+   * from 100 KB to 1 MB depending on buffer length.
+   */
+  saveFullState(): FullState {
+    const layout = this.saveLayoutState();
+    return { ...layout, data: this._collectDataWindow() };
+  }
+
+  /**
+   * Restore chart state from a previously saved layout or full state.
+   * Accepts both `LayoutState` and `FullState` — when `data` is
+   * present it is loaded via `setData`, otherwise the current buffer
+   * is preserved and only the visual/interaction layer is updated.
+   *
+   * Throws `ValidationError` on unknown schema version.
+   *
+   * Restore order is critical — changing it can leave the viewport
+   * clamped, indicators stale, or a rogue paint frame rendered
+   * against the wrong chartType. See the M1 spec for the rationale.
+   */
+  loadState(state: ChartState): void {
+    if (state.version !== 1) {
+      throw new ValidationError(
+        'loadState',
+        state,
+        `Unsupported chart state version: ${String(state.version)}`,
+      );
+    }
+
+    // 1. Data (optional — skipped for LayoutState).
+    if (isFullState(state)) {
+      this._buffer.clear();
+      this._merger.loadHistory(state.data);
+    }
+
+    // 2. Identity + display.
+    if (state.symbol !== this._config.symbol || state.resolution !== this._config.resolution) {
+      this._config.symbol = state.symbol;
+      this._config.resolution = state.resolution;
+      this._engine.setSymbol(state.symbol);
+      this._engine.setResolution(state.resolution);
+      this._crosshair.setResolution(state.resolution);
+    }
+    this._engine.setChartType(state.chartType);
+    this.setTheme(state.theme);
+
+    // 3. Indicators — rebuild through the registry.
+    this.setIndicatorConfigs(state.indicators);
+
+    // 4. Drawings.
+    this.loadDrawings(state.drawings);
+
+    // 5. Viewport — restore width before startIndex so clamps use the
+    //    right candleStep. setLayout re-derives visibleCount.
+    const vp = this._engine.viewport;
+    vp.candleWidth = state.viewport.candleWidth;
+    if (vp.layout) vp.setLayout(vp.layout);
+    vp.startIndex = state.viewport.startIndex;
+    vp.autoFollow = state.viewport.autoFollow;
+
+    this._engine.requestRender();
+  }
+
+  /**
+   * Pull a plain-object data window out of the TypedArray buffer. Used
+   * by `saveFullState` — skipped when only a layout snapshot is needed.
+   */
+  private _collectDataWindow(): Candle[] {
+    const len = this._buffer.length;
+    const out: Candle[] = new Array(len);
+    for (let i = 0; i < len; i++) {
+      const c = this._buffer.candleAt(i);
+      if (c) out[i] = c;
+    }
+    return out;
+  }
 
   /** Clean up all resources */
   destroy(): void {
