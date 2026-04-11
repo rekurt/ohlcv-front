@@ -78,6 +78,49 @@ describe('CandleBuffer', () => {
       expect(buf.length).toBe(2);
       expect(buf.firstTime()).toBe(1);
     });
+
+    it('sorts unsorted input before prepending', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(100));
+      // Intentionally unsorted input — must end up sorted internally.
+      buf.prepend([makeCandle(50), makeCandle(10), makeCandle(30)]);
+      expect(buf.length).toBe(4);
+      expect(buf.candleAt(0)?.t).toBe(10);
+      expect(buf.candleAt(1)?.t).toBe(30);
+      expect(buf.candleAt(2)?.t).toBe(50);
+      expect(buf.candleAt(3)?.t).toBe(100);
+      // Binary search must still work across the sorted result.
+      expect(buf.findIndexByTime(30)).toBe(1);
+      expect(buf.findIndexByTime(100)).toBe(3);
+    });
+  });
+
+  describe('appendBatch monotonicity', () => {
+    it('sorts unsorted input before appending', () => {
+      const buf = new CandleBuffer();
+      buf.appendBatch([makeCandle(30), makeCandle(10), makeCandle(20)]);
+      expect(buf.length).toBe(3);
+      expect(buf.firstTime()).toBe(10);
+      expect(buf.lastTime()).toBe(30);
+      expect(buf.findIndexByTime(20)).toBe(1);
+    });
+
+    it('drops candles with time <= current last time', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(100));
+      // 50 and 100 should both be dropped; 150 should land.
+      buf.appendBatch([makeCandle(50), makeCandle(100), makeCandle(150)]);
+      expect(buf.length).toBe(2);
+      expect(buf.firstTime()).toBe(100);
+      expect(buf.lastTime()).toBe(150);
+    });
+
+    it('no-ops on empty input', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(1));
+      buf.appendBatch([]);
+      expect(buf.length).toBe(1);
+    });
   });
 
   describe('findIndexByTime', () => {

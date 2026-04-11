@@ -38,11 +38,42 @@ export class CandleBuffer {
     this._time[i] = candle.t;
   }
 
-  /** Batch append with pre-grow */
+  /**
+   * Batch append with pre-grow.
+   *
+   * Incoming candles must be sorted ASC by time. If they are not, this
+   * method sorts them in place (after copying to avoid mutating the
+   * caller's array) before writing — otherwise binary search over
+   * `_time` would silently return wrong indices. Also filters out any
+   * candles with `t <= lastTime()` to preserve strict monotonicity when
+   * combined with existing buffer data.
+   */
   appendBatch(candles: Candle[]): void {
-    const needed = this._length + candles.length;
+    if (candles.length === 0) return;
+
+    // Preserve strict monotonicity: sort if incoming is out of order, and
+    // drop any candles that would overlap or predate the current last time.
+    let monotonic = true;
+    for (let i = 1; i < candles.length; i++) {
+      if (candles[i]!.t <= candles[i - 1]!.t) {
+        monotonic = false;
+        break;
+      }
+    }
+    const sorted = monotonic ? candles : candles.slice().sort((a, b) => a.t - b.t);
+    const cutoff = this._length > 0 ? this._time[this._length - 1]! : -Infinity;
+    let firstValid = 0;
+    while (firstValid < sorted.length && sorted[firstValid]!.t <= cutoff) {
+      firstValid++;
+    }
+
+    const incoming = sorted.length - firstValid;
+    if (incoming === 0) return;
+
+    const needed = this._length + incoming;
     while (this._capacity < needed) this._grow();
-    for (const c of candles) {
+    for (let idx = firstValid; idx < sorted.length; idx++) {
+      const c = sorted[idx]!;
       const i = this._length++;
       this._open[i] = c.o;
       this._high[i] = c.h;
@@ -65,10 +96,31 @@ export class CandleBuffer {
     this._time[i] = candle.t;
   }
 
-  /** Prepend candles (for lazy history loading) */
+  /**
+   * Prepend candles (for lazy history loading).
+   *
+   * The caller is responsible for ensuring prepended candles are strictly
+   * older than the current `firstTime()`; this method additionally sorts
+   * the incoming array in place by time to guarantee internal monotonicity
+   * even if the caller passes an unsorted batch. Without this sort, a
+   * subsequent `findIndexByTime` / `lowerBound` would silently return
+   * wrong answers.
+   */
   prepend(candles: Candle[]): void {
     if (candles.length === 0) return;
-    const newLen = this._length + candles.length;
+
+    // Sort incoming by time ASC. Skip the sort if the array is already
+    // monotonic — typical for well-formed history responses.
+    let monotonic = true;
+    for (let i = 1; i < candles.length; i++) {
+      if (candles[i]!.t <= candles[i - 1]!.t) {
+        monotonic = false;
+        break;
+      }
+    }
+    const sorted = monotonic ? candles : candles.slice().sort((a, b) => a.t - b.t);
+
+    const newLen = this._length + sorted.length;
     let cap = this._capacity;
     while (cap < newLen) cap *= GROWTH_FACTOR;
 
@@ -81,8 +133,8 @@ export class CandleBuffer {
 
     // Write prepended candles first. Use direct iteration to avoid repeated
     // array lookups and satisfy noUncheckedIndexedAccess.
-    for (let i = 0; i < candles.length; i++) {
-      const c = candles[i]!;
+    for (let i = 0; i < sorted.length; i++) {
+      const c = sorted[i]!;
       newOpen[i] = c.o;
       newHigh[i] = c.h;
       newLow[i] = c.l;
@@ -92,7 +144,7 @@ export class CandleBuffer {
     }
 
     // Copy existing data after
-    const offset = candles.length;
+    const offset = sorted.length;
     newOpen.set(this._open.subarray(0, this._length), offset);
     newHigh.set(this._high.subarray(0, this._length), offset);
     newLow.set(this._low.subarray(0, this._length), offset);
