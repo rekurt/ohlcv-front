@@ -69,6 +69,10 @@ export { Stochastic } from './indicators/Stochastic';
 export { ATR } from './indicators/ATR';
 export { VWAP } from './indicators/VWAP';
 export type { VWAPAnchor } from './indicators/VWAP';
+export { WilliamsR } from './indicators/WilliamsR';
+export { OBV } from './indicators/OBV';
+export { ADX } from './indicators/ADX';
+export { CCI } from './indicators/CCI';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';

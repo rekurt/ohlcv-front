@@ -8,6 +8,13 @@ import type { CandleBuffer } from '../data/CandleBuffer';
  *   lower  = middle - stdDev * σ(close, period)
  *
  * Renders as three overlay lines on the main price pane.
+ *
+ * Performance: O(n) total via two rolling sums (sum and sum of
+ * squares). Stdev uses the population variance formula
+ *   σ² = E[x²] − (E[x])²
+ * applied to a sliding window. We clamp negative variance to zero —
+ * it can only arise from float cancellation when the window is
+ * effectively constant.
  */
 export class BollingerBands extends Indicator {
   readonly placement: IndicatorPlacement = 'overlay';
@@ -43,24 +50,39 @@ export class BollingerBands extends Indicator {
       ];
     }
 
-    // For each window ending at i (≥ period-1), compute mean and stdev.
-    // Implemented as O(n*period) for clarity; O(n) incremental with
-    // Welford's algorithm is a future optimization.
-    for (let i = this.period - 1; i < n; i++) {
-      let sum = 0;
-      for (let j = i - this.period + 1; j <= i; j++) {
-        sum += buffer.candleAt(j)!.c;
-      }
-      const mean = sum / this.period;
+    const p = this.period;
+    const invP = 1 / p;
+
+    // Prime the window with the first `period` closes.
+    let sum = 0;
+    let sqSum = 0;
+    for (let i = 0; i < p; i++) {
+      const c = buffer.candleAt(i)!.c;
+      sum += c;
+      sqSum += c * c;
+    }
+
+    // First window ending at index p-1.
+    {
+      const mean = sum * invP;
+      const variance = Math.max(0, sqSum * invP - mean * mean);
+      const sigma = Math.sqrt(variance);
+      middle[p - 1] = mean;
+      upper[p - 1] = mean + this.stdDev * sigma;
+      lower[p - 1] = mean - this.stdDev * sigma;
+    }
+
+    // Slide the window forward — drop the oldest close, add the newest.
+    for (let i = p; i < n; i++) {
+      const out = buffer.candleAt(i - p)!.c;
+      const inc = buffer.candleAt(i)!.c;
+      sum += inc - out;
+      sqSum += inc * inc - out * out;
+
+      const mean = sum * invP;
+      const variance = Math.max(0, sqSum * invP - mean * mean);
+      const sigma = Math.sqrt(variance);
       middle[i] = mean;
-
-      let sqSum = 0;
-      for (let j = i - this.period + 1; j <= i; j++) {
-        const diff = buffer.candleAt(j)!.c - mean;
-        sqSum += diff * diff;
-      }
-      const sigma = Math.sqrt(sqSum / this.period);
-
       upper[i] = mean + this.stdDev * sigma;
       lower[i] = mean - this.stdDev * sigma;
     }

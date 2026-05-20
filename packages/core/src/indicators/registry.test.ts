@@ -13,6 +13,10 @@ import { MACD } from './MACD';
 import { Stochastic } from './Stochastic';
 import { ATR } from './ATR';
 import { VWAP } from './VWAP';
+import { WilliamsR } from './WilliamsR';
+import { OBV } from './OBV';
+import { ADX } from './ADX';
+import { CCI } from './CCI';
 
 describe('indicatorId', () => {
   it('produces stable id for equivalent configs', () => {
@@ -48,6 +52,13 @@ describe('indicatorId', () => {
 
   it('encodes VWAP anchor', () => {
     expect(indicatorId({ type: 'vwap', anchor: 'session' })).toBe('vwap:session');
+  });
+
+  it('encodes the M2 extra indicators', () => {
+    expect(indicatorId({ type: 'williamsr', period: 14 })).toBe('williamsr:14');
+    expect(indicatorId({ type: 'obv' })).toBe('obv');
+    expect(indicatorId({ type: 'adx', period: 14 })).toBe('adx:14');
+    expect(indicatorId({ type: 'cci', period: 20 })).toBe('cci:20');
   });
 });
 
@@ -90,6 +101,22 @@ describe('createIndicator', () => {
     expect(createIndicator({ type: 'vwap', anchor: 'session' })).toBeInstanceOf(
       VWAP,
     );
+  });
+
+  it('creates WilliamsR instance', () => {
+    expect(createIndicator({ type: 'williamsr', period: 14 })).toBeInstanceOf(WilliamsR);
+  });
+
+  it('creates OBV instance', () => {
+    expect(createIndicator({ type: 'obv' })).toBeInstanceOf(OBV);
+  });
+
+  it('creates ADX instance', () => {
+    expect(createIndicator({ type: 'adx', period: 14 })).toBeInstanceOf(ADX);
+  });
+
+  it('creates CCI instance', () => {
+    expect(createIndicator({ type: 'cci', period: 20 })).toBeInstanceOf(CCI);
   });
 
   it('throws on unknown type (forged runtime JSON)', () => {

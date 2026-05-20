@@ -7,6 +7,10 @@ import { MACD } from './MACD';
 import { Stochastic } from './Stochastic';
 import { ATR } from './ATR';
 import { VWAP, type VWAPAnchor } from './VWAP';
+import { WilliamsR } from './WilliamsR';
+import { OBV } from './OBV';
+import { ADX } from './ADX';
+import { CCI } from './CCI';
 
 /**
  * Discriminated union of all built-in indicator configurations. Users of
@@ -30,7 +34,11 @@ export type IndicatorConfig =
   | { type: 'macd'; fast: number; slow: number; signal: number }
   | { type: 'stoch'; kPeriod: number; dPeriod: number }
   | { type: 'atr'; period: number }
-  | { type: 'vwap'; anchor: VWAPAnchor };
+  | { type: 'vwap'; anchor: VWAPAnchor }
+  | { type: 'williamsr'; period: number }
+  | { type: 'obv' }
+  | { type: 'adx'; period: number }
+  | { type: 'cci'; period: number };
 
 /**
  * Stable string id derived from an indicator config. Two configs with the
@@ -55,6 +63,14 @@ export function indicatorId(cfg: IndicatorConfig): string {
       return `atr:${cfg.period}`;
     case 'vwap':
       return `vwap:${cfg.anchor}`;
+    case 'williamsr':
+      return `williamsr:${cfg.period}`;
+    case 'obv':
+      return 'obv';
+    case 'adx':
+      return `adx:${cfg.period}`;
+    case 'cci':
+      return `cci:${cfg.period}`;
   }
 }
 
@@ -84,6 +100,14 @@ export function createIndicator(cfg: IndicatorConfig): Indicator {
       return new ATR(cfg.period);
     case 'vwap':
       return new VWAP(cfg.anchor);
+    case 'williamsr':
+      return new WilliamsR(cfg.period);
+    case 'obv':
+      return new OBV();
+    case 'adx':
+      return new ADX(cfg.period);
+    case 'cci':
+      return new CCI(cfg.period);
     default: {
       // Exhaustiveness guard for the union above — TypeScript flags any
       // missing case at compile time. The runtime throw covers forged
