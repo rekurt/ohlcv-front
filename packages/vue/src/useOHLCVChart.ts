@@ -1,6 +1,15 @@
-import { ref, onMounted, onBeforeUnmount, type Ref } from 'vue';
+import {
+  ref,
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  toValue,
+  type Ref,
+  type MaybeRefOrGetter,
+} from 'vue';
 import {
   OHLCVChart,
+  diffIndicatorConfigs,
   type Candle,
   type CandleBuffer,
   type ChartConfig,
@@ -16,19 +25,26 @@ import {
 } from '@rekurt/ohlcv-core';
 
 export interface UseOHLCVChartOptions {
-  symbol: string;
-  resolution: string;
-  transport?: ChartConfig['transport'];
-  theme?: ThemeMode | ThemeColors;
-  chartType?: ChartType;
-  locale?: string;
+  symbol: MaybeRefOrGetter<string>;
+  resolution: MaybeRefOrGetter<string>;
+  transport?: MaybeRefOrGetter<ChartConfig['transport'] | undefined>;
+  theme?: MaybeRefOrGetter<ThemeMode | ThemeColors | undefined>;
+  chartType?: MaybeRefOrGetter<ChartType | undefined>;
+  locale?: MaybeRefOrGetter<string | undefined>;
+  idleCursor?: MaybeRefOrGetter<string | null | undefined>;
+  indicators?: MaybeRefOrGetter<IndicatorConfig[] | undefined>;
   priceFormat?: (price: number) => string;
   volumeFormat?: (volume: number) => string;
-  onCandleClick?: (candle: Candle, index: number) => void;
-  onVisibleRangeChange?: (from: number, to: number) => void;
-  onHover?: (info: HoverInfo | null) => void;
-  onError?: (err: ChartError) => void;
-  onLoadMoreHistory?: (buffer: CandleBuffer) => void | Promise<void>;
+  // Callbacks are captured live — they re-register on the chart whenever
+  // the identity changes, so consumers can pass arrow functions defined
+  // inside `setup()` without worrying about stale closures.
+  onCandleClick?: MaybeRefOrGetter<((candle: Candle, index: number) => void) | undefined>;
+  onVisibleRangeChange?: MaybeRefOrGetter<((from: number, to: number) => void) | undefined>;
+  onHover?: MaybeRefOrGetter<((info: HoverInfo | null) => void) | undefined>;
+  onError?: MaybeRefOrGetter<((err: ChartError) => void) | undefined>;
+  onLoadMoreHistory?: MaybeRefOrGetter<
+    ((buffer: CandleBuffer) => void | Promise<void>) | undefined
+  >;
 }
 
 /**
@@ -37,40 +53,144 @@ export interface UseOHLCVChartOptions {
  * `<OHLCVChart>` component's default layout doesn't fit (custom wrappers,
  * non-rectangular containers, SSR hydration edge cases).
  *
+ * All reactive props accept `MaybeRefOrGetter<T>` — plain values, refs,
+ * computed refs, or getter functions. The composable watches each one
+ * and applies changes incrementally (no full chart recreation, except
+ * when `transport` changes). Callback props are also reactive — passing
+ * a new arrow function on re-render swaps the live handler without
+ * tearing down the chart.
+ *
  * API parity with `<OHLCVChart>` defineExpose — same method names and
  * signatures as the React `useOHLCVChart` hook.
  */
 export function useOHLCVChart(options: UseOHLCVChartOptions) {
   const containerRef = ref<HTMLElement | null>(null) as Ref<HTMLElement | null>;
   const chartRef = ref<OHLCVChart | null>(null) as Ref<OHLCVChart | null>;
+  let prevIndicators: IndicatorConfig[] = [];
+  let initialSymbol = true;
 
-  onMounted(() => {
+  function createChart() {
     if (!containerRef.value) return;
+    destroyChart();
 
+    const cb = {
+      onCandleClick: toValue(options.onCandleClick),
+      onVisibleRangeChange: toValue(options.onVisibleRangeChange),
+      onHover: toValue(options.onHover),
+      onError: toValue(options.onError),
+      onLoadMoreHistory: toValue(options.onLoadMoreHistory),
+    };
     const config: ChartConfig = {
       container: containerRef.value,
-      symbol: options.symbol,
-      resolution: options.resolution,
-      transport: options.transport,
-      theme: options.theme,
-      chartType: options.chartType,
-      locale: options.locale,
+      symbol: toValue(options.symbol),
+      resolution: toValue(options.resolution),
+      transport: toValue(options.transport),
+      theme: toValue(options.theme),
+      chartType: toValue(options.chartType),
+      locale: toValue(options.locale),
       priceFormat: options.priceFormat,
       volumeFormat: options.volumeFormat,
-      onCandleClick: options.onCandleClick,
-      onVisibleRangeChange: options.onVisibleRangeChange,
-      onHover: options.onHover,
-      onError: options.onError,
-      onLoadMoreHistory: options.onLoadMoreHistory,
+      // Indirection: the chart captures the references below, so updating
+      // them on re-render flows through immediately.
+      onCandleClick: (candle, index) => cb.onCandleClick?.(candle, index),
+      onVisibleRangeChange: (from, to) => cb.onVisibleRangeChange?.(from, to),
+      onHover: (info) => cb.onHover?.(info),
+      onError: (err) => cb.onError?.(err),
+      onLoadMoreHistory: (buffer) => cb.onLoadMoreHistory?.(buffer),
     };
 
     chartRef.value = new OHLCVChart(config);
-  });
+    initialSymbol = true;
+    prevIndicators = [];
 
-  onBeforeUnmount(() => {
+    const initialIndicators = toValue(options.indicators);
+    if (initialIndicators && initialIndicators.length > 0) {
+      chartRef.value.setIndicatorConfigs(initialIndicators);
+      prevIndicators = initialIndicators;
+    }
+    const initialIdle = toValue(options.idleCursor);
+    if (initialIdle !== undefined && initialIdle !== null) {
+      chartRef.value.setIdleCursor(initialIdle);
+    }
+
+    // Refresh closures whenever the callback identities change.
+    function refresh<K extends keyof typeof cb>(key: K) {
+      cb[key] = toValue(
+        options[key as unknown as keyof UseOHLCVChartOptions] as MaybeRefOrGetter<
+          (typeof cb)[K]
+        >,
+      );
+    }
+    watch(() => toValue(options.onCandleClick), () => refresh('onCandleClick'));
+    watch(() => toValue(options.onVisibleRangeChange), () => refresh('onVisibleRangeChange'));
+    watch(() => toValue(options.onHover), () => refresh('onHover'));
+    watch(() => toValue(options.onError), () => refresh('onError'));
+    watch(() => toValue(options.onLoadMoreHistory), () => refresh('onLoadMoreHistory'));
+  }
+
+  function destroyChart() {
     chartRef.value?.destroy();
     chartRef.value = null;
-  });
+  }
+
+  onMounted(() => createChart());
+  onBeforeUnmount(() => destroyChart());
+
+  // Identity — switchSymbol() resets the view.
+  watch(
+    () => [toValue(options.symbol), toValue(options.resolution)] as const,
+    ([symbol, resolution]) => {
+      if (!chartRef.value) return;
+      if (initialSymbol) {
+        initialSymbol = false;
+        return;
+      }
+      chartRef.value.switchSymbol(symbol, resolution);
+    },
+  );
+
+  watch(
+    () => toValue(options.theme),
+    (theme) => {
+      if (!chartRef.value || !theme) return;
+      chartRef.value.setTheme(theme);
+    },
+  );
+
+  watch(
+    () => toValue(options.chartType),
+    (chartType) => {
+      if (!chartRef.value || !chartType) return;
+      chartRef.value.setChartType(chartType);
+    },
+  );
+
+  watch(
+    () => toValue(options.indicators),
+    (next) => {
+      if (!chartRef.value) return;
+      const nextList = next ?? [];
+      const diff = diffIndicatorConfigs(prevIndicators, nextList);
+      if (diff.changed) {
+        chartRef.value.setIndicatorConfigs(nextList);
+      }
+      prevIndicators = nextList;
+    },
+  );
+
+  watch(
+    () => toValue(options.idleCursor),
+    (cursor) => {
+      if (!chartRef.value || cursor === undefined) return;
+      chartRef.value.setIdleCursor(cursor);
+    },
+  );
+
+  // Transport — full recreation (state is per-transport).
+  watch(
+    () => toValue(options.transport),
+    () => createChart(),
+  );
 
   // Data
   function setData(candles: Candle[], opts?: { preserveView?: boolean }) {
@@ -92,6 +212,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
   }
   function setIndicatorConfigs(configs: IndicatorConfig[]) {
     chartRef.value?.setIndicatorConfigs(configs);
+    prevIndicators = configs;
   }
   function setIdleCursor(cursor: string | null) {
     chartRef.value?.setIdleCursor(cursor);
