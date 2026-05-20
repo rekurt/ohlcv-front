@@ -37,7 +37,9 @@ export class PriceAxisRenderer {
     for (const price of values) {
       const y = viewport.priceToY(price);
       if (y >= layout.chartTop && y <= layout.chartBottom) {
-        ctx.fillText(fmt(price), axisX + AXIS_LABEL_TEXT_PAD, y);
+        // Round the baseline to whole pixels so text rasterizes
+        // sharply on DPR=1 displays.
+        ctx.fillText(fmt(price), axisX + AXIS_LABEL_TEXT_PAD, Math.round(y));
       }
     }
   }
@@ -60,15 +62,17 @@ export class PriceAxisRenderer {
     const text = fmt(price);
     const labelWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
 
-    // Background
+    // Background — round the y origin so the rectangle aligns to a
+    // whole pixel and doesn't fringe.
+    const yi = Math.round(y - AXIS_LABEL_HEIGHT / 2);
     ctx.fillStyle = isBull ? theme.bullCandle : theme.bearCandle;
-    ctx.fillRect(axisX + AXIS_LABEL_BG_INSET, y - AXIS_LABEL_HEIGHT / 2, labelWidth, AXIS_LABEL_HEIGHT);
+    ctx.fillRect(axisX + AXIS_LABEL_BG_INSET, yi, labelWidth, AXIS_LABEL_HEIGHT);
 
     // Text
     ctx.fillStyle = '#ffffff';
     ctx.font = AXIS_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, axisX + AXIS_LABEL_TEXT_PAD, y);
+    ctx.fillText(text, axisX + AXIS_LABEL_TEXT_PAD, Math.round(y));
   }
 }

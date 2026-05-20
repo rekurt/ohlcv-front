@@ -253,10 +253,23 @@ describe('Viewport integration with autoScale', () => {
 
   it('autoScale skips NaN / Infinity candles without corrupting the range', () => {
     const buf = new CandleBuffer();
-    // One sane candle then a NaN-poisoned one.
+    // One sane candle then a NaN-poisoned one. CandleBuffer.append()
+    // now rejects non-finite inputs (review-3-3), so we poke the
+    // internal arrays directly to simulate the corruption-in-flight
+    // scenario the Viewport's defense-in-depth code still guards.
     buf.append({ o: 100, h: 105, l: 95, c: 102, v: 10, t: 1 });
-    buf.append({ o: NaN, h: NaN, l: NaN, c: NaN, v: NaN, t: 2 });
+    buf.append({ o: 99, h: 99, l: 99, c: 99, v: 1, t: 2 });
     buf.append({ o: 110, h: 115, l: 108, c: 112, v: 20, t: 3 });
+    const internals = buf as unknown as {
+      _open: Float64Array;
+      _high: Float64Array;
+      _low: Float64Array;
+      _close: Float64Array;
+    };
+    internals._open[1] = NaN;
+    internals._high[1] = NaN;
+    internals._low[1] = NaN;
+    internals._close[1] = NaN;
     vp.scrollToEnd(buf.length);
     vp.autoScale(buf);
     expect(Number.isFinite(vp.priceMin)).toBe(true);
@@ -276,7 +289,17 @@ describe('Viewport integration with autoScale', () => {
     const prevMax = vp.priceMax;
 
     const buf2 = new CandleBuffer();
-    buf2.append({ o: NaN, h: NaN, l: NaN, c: NaN, v: NaN, t: 2 });
+    buf2.append({ o: 99, h: 99, l: 99, c: 99, v: 1, t: 2 });
+    const i2 = buf2 as unknown as {
+      _open: Float64Array;
+      _high: Float64Array;
+      _low: Float64Array;
+      _close: Float64Array;
+    };
+    i2._open[0] = NaN;
+    i2._high[0] = NaN;
+    i2._low[0] = NaN;
+    i2._close[0] = NaN;
     vp.autoScale(buf2);
     expect(vp.priceMin).toBe(prevMin);
     expect(vp.priceMax).toBe(prevMax);

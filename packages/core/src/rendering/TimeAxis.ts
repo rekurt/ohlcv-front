@@ -41,7 +41,7 @@ export class TimeAxisRenderer {
       if (!candle) continue;
 
       const label = formatTime(candle.t, resolution);
-      ctx.fillText(label, x, axisY + TIME_AXIS_LABEL_GAP);
+      ctx.fillText(label, Math.round(x), Math.round(axisY + TIME_AXIS_LABEL_GAP));
     }
   }
 }

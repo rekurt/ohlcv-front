@@ -24,6 +24,29 @@ describe('CandleBuffer', () => {
       expect(buf.length).toBe(3);
       expect(buf.candleAt(2)?.t).toBe(3);
     });
+
+    it('rejects candles with non-finite OHLCVT fields', () => {
+      const buf = new CandleBuffer();
+      expect(() =>
+        buf.append({ o: NaN, h: 1, l: 1, c: 1, v: 1, t: 1 }),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(() =>
+        buf.append({ o: 1, h: 1, l: 1, c: 1, v: 1, t: Infinity }),
+      ).toThrow(/non-finite OHLCVT/);
+      // The buffer must be unchanged after a rejected append.
+      expect(buf.length).toBe(0);
+    });
+
+    it('rejects non-finite candles in batch and updateLast too', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(1));
+      expect(() =>
+        buf.updateLast({ o: NaN, h: 1, l: 1, c: 1, v: 1, t: 1 }),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(() =>
+        buf.appendBatch([{ o: 1, h: 1, l: 1, c: 1, v: 1, t: 2 }, { o: 1, h: 1, l: 1, c: 1, v: NaN, t: 3 }]),
+      ).toThrow(/non-finite OHLCVT/);
+    });
   });
 
   describe('appendBatch', () => {

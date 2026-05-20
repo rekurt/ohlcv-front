@@ -18,6 +18,7 @@ import { HorizontalLine } from './drawings/HorizontalLine';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
+import { migrateState } from './state/migrations';
 
 /**
  * High-level facade over the chart engine + data feed + interaction
@@ -508,13 +509,13 @@ export class OHLCVChart {
     if (typeof state !== 'object' || state === null) {
       throw new ValidationError('loadState', state, 'state must be an object');
     }
-    if (state.version !== 1) {
-      throw new ValidationError(
-        'loadState',
-        state,
-        `Unsupported chart state version: ${String(state.version)}`,
-      );
-    }
+    // Step older snapshots up to the current schema version. This is
+    // a no-op for v1 (no historical versions exist yet) but lets
+    // shipped clients survive future v2/v3 migrations without code
+    // changes in the wrappers. migrateState throws ValidationError on
+    // newer-than-current versions, so we don't need to re-check
+    // state.version === CURRENT_STATE_VERSION below.
+    state = migrateState(state);
     if (typeof state.symbol !== 'string' || typeof state.resolution !== 'string') {
       throw new ValidationError(
         'loadState',

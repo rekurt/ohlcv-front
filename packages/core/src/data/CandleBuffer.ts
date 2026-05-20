@@ -2,6 +2,32 @@ import type { Candle, CandleView } from '../types';
 import { INITIAL_CAPACITY, GROWTH_FACTOR } from '../constants';
 import { lowerBound } from '../utils';
 
+/**
+ * Lightweight runtime assertion for a single candle. Faster than
+ * `validateCandle` (which constructs a fresh object and checks for
+ * extras) — we only catch the corruption modes that produce hard
+ * NaN/Infinity in downstream renderers.
+ *
+ * Always runs (not gated on dev mode) because the cost is six numeric
+ * checks per candle — negligible next to the cost of rendering a
+ * single bar — and silent NaN propagation is much more expensive to
+ * debug later.
+ */
+function assertCandleNumeric(c: Candle, where: string): void {
+  if (
+    !Number.isFinite(c.o) ||
+    !Number.isFinite(c.h) ||
+    !Number.isFinite(c.l) ||
+    !Number.isFinite(c.c) ||
+    !Number.isFinite(c.v) ||
+    !Number.isFinite(c.t)
+  ) {
+    throw new RangeError(
+      `[ohlcv] CandleBuffer.${where}: candle contains a non-finite OHLCVT field: ${JSON.stringify(c)}`,
+    );
+  }
+}
+
 export class CandleBuffer {
   private _open: Float64Array;
   private _high: Float64Array;
@@ -28,6 +54,7 @@ export class CandleBuffer {
 
   /** O(1) amortized append */
   append(candle: Candle): void {
+    assertCandleNumeric(candle, 'append');
     if (this._length >= this._capacity) this._grow();
     const i = this._length++;
     this._open[i] = candle.o;
@@ -74,6 +101,7 @@ export class CandleBuffer {
     while (this._capacity < needed) this._grow();
     for (let idx = firstValid; idx < sorted.length; idx++) {
       const c = sorted[idx]!;
+      assertCandleNumeric(c, 'appendBatch');
       const i = this._length++;
       this._open[i] = c.o;
       this._high[i] = c.h;
@@ -87,6 +115,7 @@ export class CandleBuffer {
   /** O(1) in-place update of the last candle */
   updateLast(candle: Candle): void {
     if (this._length === 0) return;
+    assertCandleNumeric(candle, 'updateLast');
     const i = this._length - 1;
     this._open[i] = candle.o;
     this._high[i] = candle.h;
@@ -135,6 +164,7 @@ export class CandleBuffer {
     // array lookups and satisfy noUncheckedIndexedAccess.
     for (let i = 0; i < sorted.length; i++) {
       const c = sorted[i]!;
+      assertCandleNumeric(c, 'prepend');
       newOpen[i] = c.o;
       newHigh[i] = c.h;
       newLow[i] = c.l;

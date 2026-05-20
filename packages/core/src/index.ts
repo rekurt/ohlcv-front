@@ -44,6 +44,12 @@ export type { PaneKind, YScale } from './rendering/Pane';
 // State persistence
 export type { ChartState, LayoutState, FullState } from './state/ChartState';
 export { isFullState } from './state/ChartState';
+export {
+  CURRENT_STATE_VERSION,
+  migrateState,
+  migrations,
+  type StateMigration,
+} from './state/migrations';
 
 // Indicators
 export { Indicator, nanArray } from './indicators/Indicator';

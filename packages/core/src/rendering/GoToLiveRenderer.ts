@@ -66,7 +66,7 @@ export class GoToLiveRenderer {
     ctx.fillStyle = '#ffffff';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
-    ctx.fillText(label, x + width / 2, y + height / 2);
+    ctx.fillText(label, Math.round(x + width / 2), Math.round(y + height / 2));
 
     ctx.restore();
 
