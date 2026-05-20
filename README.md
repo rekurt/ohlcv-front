@@ -56,7 +56,8 @@ npm run docs            # TypeDoc → docs/api/
 - Candlesticks, volume bars, grid, price axis, time axis, crosshair with snap-to-candle, current price label, legend, "Go to live" pill
 - Alternative chart types: line, area (with gradient), OHLC bars
 - Hi-DPI canvas with three-layer split (chart / UI / interaction) for cheap crosshair redraws
-- `Pane` + `PaneLayout` abstraction for multi-pane charts with independent Y-axes (linear or log)
+- `Pane` + `PaneLayout` abstraction for multi-pane charts with independent Y-axes (linear or log).
+  The class API is stable, but full integration of sub-pane indicator rendering is scheduled for M2.
 - Theme system: dark, light, or `'auto'` following `prefers-color-scheme`
 
 **Data layer**:
@@ -65,7 +66,9 @@ npm run docs            # TypeDoc → docs/api/
 - `DataFeed` — stale-response protection via version counter
 - `PollingTransport` — HTTP polling with custom parser
 - `WebSocketTransport` — abstract base for WS adapters
-- `BinanceWsTransport` — concrete WS adapter for Binance klines (skeleton)
+- `BinanceWsTransport` — concrete WS adapter for Binance klines (unverified
+  skeleton; wire-level validation against the live server is deferred to M2 —
+  not recommended for production use yet)
 - `ExponentialBackoff` — jittered reconnect policy
 - `validateCandle` / `validateCandles` — runtime shape & invariant checks
 - `ErrorReporter` + `onError` callback — structured error dispatch, no silent catches
