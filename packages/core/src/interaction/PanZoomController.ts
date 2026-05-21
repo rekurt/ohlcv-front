@@ -106,14 +106,22 @@ export class PanZoomController {
     if (e.button !== 0) return;
     this._isDragging = true;
 
-    // Detect drag-start in the price-axis strip (right-edge column
-    // reserved for price labels). Dragging there rescales Y instead
-    // of panning candles.
+    // Detect drag-start in the price-axis strip — the right-edge column
+    // reserved for the MAIN price labels only. Restricting to the exact
+    // rectangle [chartRight, chartRight+priceAxisWidth] × [chartTop,
+    // chartBottom] avoids hijacking drags that start in the sub-pane
+    // Y-axis gutters or the bottom time-axis strip (those should still
+    // pan, not rescale the main price range).
     const rect = this._canvas.getBoundingClientRect();
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
     const layout = this._viewport.layout;
-    this._isPriceScaleDrag = !!layout && localX >= layout.chartRight;
+    this._isPriceScaleDrag =
+      !!layout &&
+      localX >= layout.chartRight &&
+      localX <= layout.chartRight + layout.priceAxisWidth &&
+      localY >= layout.chartTop &&
+      localY <= layout.chartBottom;
     this._priceScaleAnchorY = localY;
 
     this._lastMouseX = e.clientX;

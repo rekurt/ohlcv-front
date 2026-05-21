@@ -36,16 +36,20 @@ export interface UseOHLCVChartOptions {
   indicators?: MaybeRefOrGetter<IndicatorConfig[] | undefined>;
   priceFormat?: (price: number) => string;
   volumeFormat?: (volume: number) => string;
-  // Callbacks are captured live — they re-register on the chart whenever
-  // the identity changes, so consumers can pass arrow functions defined
-  // inside `setup()` without worrying about stale closures.
-  onCandleClick?: MaybeRefOrGetter<((candle: Candle, index: number) => void) | undefined>;
-  onVisibleRangeChange?: MaybeRefOrGetter<((from: number, to: number) => void) | undefined>;
-  onHover?: MaybeRefOrGetter<((info: HoverInfo | null) => void) | undefined>;
-  onError?: MaybeRefOrGetter<((err: ChartError) => void) | undefined>;
-  onLoadMoreHistory?: MaybeRefOrGetter<
-    ((buffer: CandleBuffer) => void | Promise<void>) | undefined
-  >;
+  // Callbacks are PLAIN functions, never MaybeRefOrGetter. In Vue's
+  // Composition API `setup()` runs once, so the `options` object and
+  // its function references are stable for the component's lifetime —
+  // there's no re-render churn to guard against (unlike React). The
+  // config closures below read `options.onX` live at call time, so a
+  // reassignment to the same options object would also be picked up.
+  // (Wrapping callbacks in `toValue` would be a bug: toValue treats a
+  // function as a getter and invokes it immediately, losing the
+  // handler — see PR #1 review.)
+  onCandleClick?: (candle: Candle, index: number) => void;
+  onVisibleRangeChange?: (from: number, to: number) => void;
+  onHover?: (info: HoverInfo | null) => void;
+  onError?: (err: ChartError) => void;
+  onLoadMoreHistory?: (buffer: CandleBuffer) => void | Promise<void>;
 }
 
 /**
@@ -68,32 +72,15 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
   const containerRef = ref<HTMLElement | null>(null) as Ref<HTMLElement | null>;
   const chartRef = ref<OHLCVChart | null>(null) as Ref<OHLCVChart | null>;
   let prevIndicators: IndicatorConfig[] = [];
-
-  // Shared callback bag. The chart's config closures capture this
-  // object by reference so updates here flow through to the live
-  // chart without recreating it. We register the watchers ONCE at
-  // composable scope (below) — never inside createChart, which would
-  // leak a fresh set of watchers on every transport change.
-  const cb = {
-    onCandleClick: toValue(options.onCandleClick),
-    onVisibleRangeChange: toValue(options.onVisibleRangeChange),
-    onHover: toValue(options.onHover),
-    onError: toValue(options.onError),
-    onLoadMoreHistory: toValue(options.onLoadMoreHistory),
-  };
+  // Set to true while createChart() is running and for the same tick
+  // afterward, so the symbol/resolution watcher doesn't ALSO call
+  // switchSymbol when a transport change recreated the chart in the
+  // same tick (which would reconnect twice).
+  let justRecreated = false;
 
   function createChart() {
     if (!containerRef.value) return;
     destroyChart();
-
-    // Refresh the shared bag with current option values — transport
-    // recreation should pick up any callback changes that happened
-    // while the previous chart was alive.
-    cb.onCandleClick = toValue(options.onCandleClick);
-    cb.onVisibleRangeChange = toValue(options.onVisibleRangeChange);
-    cb.onHover = toValue(options.onHover);
-    cb.onError = toValue(options.onError);
-    cb.onLoadMoreHistory = toValue(options.onLoadMoreHistory);
 
     const config: ChartConfig = {
       container: containerRef.value,
@@ -105,13 +92,14 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
       locale: toValue(options.locale),
       priceFormat: options.priceFormat,
       volumeFormat: options.volumeFormat,
-      // Indirection: the chart captures the references below, so updating
-      // them on re-render flows through immediately.
-      onCandleClick: (candle, index) => cb.onCandleClick?.(candle, index),
-      onVisibleRangeChange: (from, to) => cb.onVisibleRangeChange?.(from, to),
-      onHover: (info) => cb.onHover?.(info),
-      onError: (err) => cb.onError?.(err),
-      onLoadMoreHistory: (buffer) => cb.onLoadMoreHistory?.(buffer),
+      // Delegate to options.onX live — `options` is stable for the
+      // component's lifetime (setup runs once), so this always calls
+      // the current handler without any toValue/watcher machinery.
+      onCandleClick: (candle, index) => options.onCandleClick?.(candle, index),
+      onVisibleRangeChange: (from, to) => options.onVisibleRangeChange?.(from, to),
+      onHover: (info) => options.onHover?.(info),
+      onError: (err) => options.onError?.(err),
+      onLoadMoreHistory: (buffer) => options.onLoadMoreHistory?.(buffer),
     };
 
     chartRef.value = new OHLCVChart(config);
@@ -136,35 +124,31 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
   onMounted(() => createChart());
   onBeforeUnmount(() => destroyChart());
 
-  // Callback identity watchers — registered ONCE at composable scope
-  // and update the shared `cb` bag in place. Stop handles aren't
-  // retained because Vue auto-disposes watchers on the owning
-  // component's unmount; what we explicitly avoid is creating these
-  // inside `createChart` (a transport change would otherwise leak
-  // one extra set of watchers per recreation).
-  watch(() => toValue(options.onCandleClick), (v) => {
-    cb.onCandleClick = v;
-  });
-  watch(() => toValue(options.onVisibleRangeChange), (v) => {
-    cb.onVisibleRangeChange = v;
-  });
-  watch(() => toValue(options.onHover), (v) => {
-    cb.onHover = v;
-  });
-  watch(() => toValue(options.onError), (v) => {
-    cb.onError = v;
-  });
-  watch(() => toValue(options.onLoadMoreHistory), (v) => {
-    cb.onLoadMoreHistory = v;
-  });
-
   // Identity — switchSymbol() resets the view. Vue 3 `watch` does not
   // fire on initial setup by default, so we don't need to skip a
-  // synthetic first invocation.
+  // synthetic first invocation. We DO skip when the chart was just
+  // recreated by a transport change in the same tick — the new chart
+  // already connected with the current symbol/resolution.
+  //
+  // The transport watcher is registered FIRST (above this one) so that
+  // when transport + symbol both change in the same flush, the
+  // recreation runs before this watcher checks `justRecreated`.
+  watch(
+    () => toValue(options.transport),
+    () => {
+      justRecreated = true;
+      createChart();
+      void Promise.resolve().then(() => {
+        justRecreated = false;
+      });
+    },
+  );
+
   watch(
     () => [toValue(options.symbol), toValue(options.resolution)] as const,
     ([symbol, resolution]) => {
       if (!chartRef.value) return;
+      if (justRecreated) return;
       chartRef.value.switchSymbol(symbol, resolution);
     },
   );
@@ -204,12 +188,6 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
       if (!chartRef.value || cursor === undefined) return;
       chartRef.value.setIdleCursor(cursor);
     },
-  );
-
-  // Transport — full recreation (state is per-transport).
-  watch(
-    () => toValue(options.transport),
-    () => createChart(),
   );
 
   // Data

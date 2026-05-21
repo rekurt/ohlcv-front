@@ -194,3 +194,60 @@ describe('PanZoomController two-finger touch gestures', () => {
     expect(viewport.candleWidth).toBeLessThan(widthBefore);
   });
 });
+
+describe('PanZoomController price-axis drag region', () => {
+  let canvas: HTMLCanvasElement;
+  let viewport: Viewport;
+  let controller: PanZoomController;
+
+  beforeEach(() => {
+    canvas = document.createElement('canvas');
+    canvas.width = 2000;
+    canvas.height = 1000;
+    canvas.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    document.body.appendChild(canvas);
+    viewport = new Viewport();
+    viewport.setLayout(computeLayout(1000, 500, 1)); // 1 pane → chartBottom < paneAreaBottom
+    viewport.scrollToEnd(500);
+    viewport.priceMin = 100;
+    viewport.priceMax = 200;
+    controller = new PanZoomController(canvas, viewport);
+  });
+
+  afterEach(() => {
+    controller.destroy();
+    canvas.remove();
+  });
+
+  function down(localX: number, localY: number): void {
+    (controller as unknown as { _handleMouseDown(e: MouseEvent): void })._handleMouseDown({
+      button: 0,
+      clientX: localX,
+      clientY: localY,
+    } as MouseEvent);
+  }
+  function isPriceScaleDrag(): boolean {
+    return (controller as unknown as { _isPriceScaleDrag: boolean })._isPriceScaleDrag;
+  }
+
+  it('enables price-scale drag inside the main price-axis strip', () => {
+    const layout = viewport.layout;
+    // x in [chartRight, chartRight+priceAxisWidth], y in main area.
+    down(layout.chartRight + 5, layout.chartTop + 10);
+    expect(isPriceScaleDrag()).toBe(true);
+  });
+
+  it('does NOT enable price-scale drag in the sub-pane Y-axis gutter', () => {
+    const layout = viewport.layout;
+    // Right column but below chartBottom (in the pane band).
+    down(layout.chartRight + 5, layout.chartBottom + 10);
+    expect(isPriceScaleDrag()).toBe(false);
+  });
+
+  it('does NOT enable price-scale drag inside the main chart body', () => {
+    const layout = viewport.layout;
+    down(layout.chartLeft + 100, layout.chartTop + 50);
+    expect(isPriceScaleDrag()).toBe(false);
+  });
+});

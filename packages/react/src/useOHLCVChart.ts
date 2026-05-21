@@ -89,6 +89,17 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     };
 
     chartRef.current = new OHLCVChart(config);
+    // Record the pair the chart was constructed with so the
+    // symbol/resolution effect skips its next run (the constructor
+    // already connected). This must be refreshed on EVERY (re)creation
+    // — including transport-driven recreations — otherwise a render
+    // that changes transport + symbol together would recreate the
+    // chart and then still call switchSymbol with the same pair,
+    // double-connecting.
+    initialSymbolRef.current = {
+      symbol: options.symbol,
+      resolution: options.resolution,
+    };
 
     return () => {
       chartRef.current?.destroy();
