@@ -17,6 +17,9 @@ import { WilliamsR } from './WilliamsR';
 import { OBV } from './OBV';
 import { ADX } from './ADX';
 import { CCI } from './CCI';
+import { PivotPoints } from './PivotPoints';
+import { Ichimoku } from './Ichimoku';
+import { MFI } from './MFI';
 
 describe('indicatorId', () => {
   it('produces stable id for equivalent configs', () => {
@@ -59,6 +62,22 @@ describe('indicatorId', () => {
     expect(indicatorId({ type: 'obv' })).toBe('obv');
     expect(indicatorId({ type: 'adx', period: 14 })).toBe('adx:14');
     expect(indicatorId({ type: 'cci', period: 20 })).toBe('cci:20');
+  });
+
+  it('encodes the wave-13 indicators with default and explicit args', () => {
+    expect(indicatorId({ type: 'pp' })).toBe('pp:86400');
+    expect(indicatorId({ type: 'pp', period: 3600 })).toBe('pp:3600');
+    expect(indicatorId({ type: 'ichimoku' })).toBe('ichimoku:9:26:52:26');
+    expect(
+      indicatorId({
+        type: 'ichimoku',
+        tenkanPeriod: 7,
+        kijunPeriod: 22,
+        senkouBPeriod: 44,
+        displacement: 22,
+      }),
+    ).toBe('ichimoku:7:22:44:22');
+    expect(indicatorId({ type: 'mfi', period: 14 })).toBe('mfi:14');
   });
 });
 
@@ -117,6 +136,13 @@ describe('createIndicator', () => {
 
   it('creates CCI instance', () => {
     expect(createIndicator({ type: 'cci', period: 20 })).toBeInstanceOf(CCI);
+  });
+
+  it('creates PivotPoints / Ichimoku / MFI from their configs', () => {
+    expect(createIndicator({ type: 'pp' })).toBeInstanceOf(PivotPoints);
+    expect(createIndicator({ type: 'pp', period: 3600 })).toBeInstanceOf(PivotPoints);
+    expect(createIndicator({ type: 'ichimoku' })).toBeInstanceOf(Ichimoku);
+    expect(createIndicator({ type: 'mfi', period: 14 })).toBeInstanceOf(MFI);
   });
 
   it('throws on unknown type (forged runtime JSON)', () => {

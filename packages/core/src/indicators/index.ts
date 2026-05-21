@@ -27,3 +27,6 @@ export { WilliamsR } from './WilliamsR';
 export { OBV } from './OBV';
 export { ADX } from './ADX';
 export { CCI } from './CCI';
+export { PivotPoints } from './PivotPoints';
+export { Ichimoku } from './Ichimoku';
+export { MFI } from './MFI';

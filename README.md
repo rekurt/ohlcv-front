@@ -87,8 +87,10 @@ npm run docs            # TypeDoc → docs/api/
 
 **Indicators** (`@rekurt/ohlcv-core/indicators`):
 - Overlay on main pane: `SMA`, `EMA`, `BollingerBands`, `VWAP`
+  (session / cumulative / anchored), `PivotPoints` (pivot + R1/R2/S1/S2),
+  `Ichimoku` (tenkan / kijun / senkou A&B / chikou)
 - Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`,
-  `WilliamsR`, `OBV`, `ADX`, `CCI`
+  `WilliamsR`, `OBV`, `ADX`, `CCI`, `MFI`
 - `IndicatorConfig` discriminated union + `createIndicator` factory —
   user code never instantiates indicator classes directly; it passes
   config objects and the core reconciles them.

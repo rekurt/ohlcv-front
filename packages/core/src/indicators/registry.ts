@@ -11,6 +11,9 @@ import { WilliamsR } from './WilliamsR';
 import { OBV } from './OBV';
 import { ADX } from './ADX';
 import { CCI } from './CCI';
+import { PivotPoints } from './PivotPoints';
+import { Ichimoku } from './Ichimoku';
+import { MFI } from './MFI';
 
 /**
  * Discriminated union of all built-in indicator configurations. Users of
@@ -38,7 +41,16 @@ export type IndicatorConfig =
   | { type: 'williamsr'; period: number }
   | { type: 'obv' }
   | { type: 'adx'; period: number }
-  | { type: 'cci'; period: number };
+  | { type: 'cci'; period: number }
+  | { type: 'pp'; period?: number }
+  | {
+      type: 'ichimoku';
+      tenkanPeriod?: number;
+      kijunPeriod?: number;
+      senkouBPeriod?: number;
+      displacement?: number;
+    }
+  | { type: 'mfi'; period: number };
 
 /**
  * Stable string id derived from an indicator config. Two configs with the
@@ -76,6 +88,12 @@ export function indicatorId(cfg: IndicatorConfig): string {
       return `adx:${cfg.period}`;
     case 'cci':
       return `cci:${cfg.period}`;
+    case 'pp':
+      return `pp:${cfg.period ?? 86400}`;
+    case 'ichimoku':
+      return `ichimoku:${cfg.tenkanPeriod ?? 9}:${cfg.kijunPeriod ?? 26}:${cfg.senkouBPeriod ?? 52}:${cfg.displacement ?? 26}`;
+    case 'mfi':
+      return `mfi:${cfg.period}`;
   }
 }
 
@@ -113,6 +131,17 @@ export function createIndicator(cfg: IndicatorConfig): Indicator {
       return new ADX(cfg.period);
     case 'cci':
       return new CCI(cfg.period);
+    case 'pp':
+      return new PivotPoints(cfg.period);
+    case 'ichimoku':
+      return new Ichimoku(
+        cfg.tenkanPeriod,
+        cfg.kijunPeriod,
+        cfg.senkouBPeriod,
+        cfg.displacement,
+      );
+    case 'mfi':
+      return new MFI(cfg.period);
     default: {
       // Exhaustiveness guard for the union above — TypeScript flags any
       // missing case at compile time. The runtime throw covers forged

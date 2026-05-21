@@ -74,6 +74,9 @@ export { WilliamsR } from './indicators/WilliamsR';
 export { OBV } from './indicators/OBV';
 export { ADX } from './indicators/ADX';
 export { CCI } from './indicators/CCI';
+export { PivotPoints } from './indicators/PivotPoints';
+export { Ichimoku } from './indicators/Ichimoku';
+export { MFI } from './indicators/MFI';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';
