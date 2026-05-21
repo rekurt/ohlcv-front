@@ -77,6 +77,10 @@ export { CCI } from './indicators/CCI';
 export { PivotPoints } from './indicators/PivotPoints';
 export { Ichimoku } from './indicators/Ichimoku';
 export { MFI } from './indicators/MFI';
+export { WMA } from './indicators/WMA';
+export { HMA } from './indicators/HMA';
+export { Donchian } from './indicators/Donchian';
+export { Keltner } from './indicators/Keltner';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';

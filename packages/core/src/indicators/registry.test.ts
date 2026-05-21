@@ -20,6 +20,10 @@ import { CCI } from './CCI';
 import { PivotPoints } from './PivotPoints';
 import { Ichimoku } from './Ichimoku';
 import { MFI } from './MFI';
+import { WMA } from './WMA';
+import { HMA } from './HMA';
+import { Donchian } from './Donchian';
+import { Keltner } from './Keltner';
 
 describe('indicatorId', () => {
   it('produces stable id for equivalent configs', () => {
@@ -78,6 +82,16 @@ describe('indicatorId', () => {
       }),
     ).toBe('ichimoku:7:22:44:22');
     expect(indicatorId({ type: 'mfi', period: 14 })).toBe('mfi:14');
+  });
+
+  it('encodes the wave-17 MA / channel indicators', () => {
+    expect(indicatorId({ type: 'wma', period: 9 })).toBe('wma:9');
+    expect(indicatorId({ type: 'hma', period: 16 })).toBe('hma:16');
+    expect(indicatorId({ type: 'donchian', period: 20 })).toBe('donchian:20');
+    expect(indicatorId({ type: 'keltner' })).toBe('keltner:20:2:10');
+    expect(
+      indicatorId({ type: 'keltner', period: 30, mult: 3, atrPeriod: 14 }),
+    ).toBe('keltner:30:3:14');
   });
 });
 
@@ -143,6 +157,13 @@ describe('createIndicator', () => {
     expect(createIndicator({ type: 'pp', period: 3600 })).toBeInstanceOf(PivotPoints);
     expect(createIndicator({ type: 'ichimoku' })).toBeInstanceOf(Ichimoku);
     expect(createIndicator({ type: 'mfi', period: 14 })).toBeInstanceOf(MFI);
+  });
+
+  it('creates WMA / HMA / Donchian / Keltner from their configs', () => {
+    expect(createIndicator({ type: 'wma', period: 9 })).toBeInstanceOf(WMA);
+    expect(createIndicator({ type: 'hma', period: 16 })).toBeInstanceOf(HMA);
+    expect(createIndicator({ type: 'donchian', period: 20 })).toBeInstanceOf(Donchian);
+    expect(createIndicator({ type: 'keltner' })).toBeInstanceOf(Keltner);
   });
 
   it('throws on unknown type (forged runtime JSON)', () => {

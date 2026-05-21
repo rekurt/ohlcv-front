@@ -30,3 +30,7 @@ export { CCI } from './CCI';
 export { PivotPoints } from './PivotPoints';
 export { Ichimoku } from './Ichimoku';
 export { MFI } from './MFI';
+export { WMA } from './WMA';
+export { HMA } from './HMA';
+export { Donchian } from './Donchian';
+export { Keltner } from './Keltner';

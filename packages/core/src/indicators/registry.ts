@@ -14,6 +14,10 @@ import { CCI } from './CCI';
 import { PivotPoints } from './PivotPoints';
 import { Ichimoku } from './Ichimoku';
 import { MFI } from './MFI';
+import { WMA } from './WMA';
+import { HMA } from './HMA';
+import { Donchian } from './Donchian';
+import { Keltner } from './Keltner';
 
 /**
  * Discriminated union of all built-in indicator configurations. Users of
@@ -50,7 +54,11 @@ export type IndicatorConfig =
       senkouBPeriod?: number;
       displacement?: number;
     }
-  | { type: 'mfi'; period: number };
+  | { type: 'mfi'; period: number }
+  | { type: 'wma'; period: number }
+  | { type: 'hma'; period: number }
+  | { type: 'donchian'; period: number }
+  | { type: 'keltner'; period?: number; mult?: number; atrPeriod?: number };
 
 /**
  * Stable string id derived from an indicator config. Two configs with the
@@ -94,6 +102,14 @@ export function indicatorId(cfg: IndicatorConfig): string {
       return `ichimoku:${cfg.tenkanPeriod ?? 9}:${cfg.kijunPeriod ?? 26}:${cfg.senkouBPeriod ?? 52}:${cfg.displacement ?? 26}`;
     case 'mfi':
       return `mfi:${cfg.period}`;
+    case 'wma':
+      return `wma:${cfg.period}`;
+    case 'hma':
+      return `hma:${cfg.period}`;
+    case 'donchian':
+      return `donchian:${cfg.period}`;
+    case 'keltner':
+      return `keltner:${cfg.period ?? 20}:${cfg.mult ?? 2}:${cfg.atrPeriod ?? 10}`;
   }
 }
 
@@ -142,6 +158,14 @@ export function createIndicator(cfg: IndicatorConfig): Indicator {
       );
     case 'mfi':
       return new MFI(cfg.period);
+    case 'wma':
+      return new WMA(cfg.period);
+    case 'hma':
+      return new HMA(cfg.period);
+    case 'donchian':
+      return new Donchian(cfg.period);
+    case 'keltner':
+      return new Keltner(cfg.period, cfg.mult, cfg.atrPeriod);
     default: {
       // Exhaustiveness guard for the union above — TypeScript flags any
       // missing case at compile time. The runtime throw covers forged
