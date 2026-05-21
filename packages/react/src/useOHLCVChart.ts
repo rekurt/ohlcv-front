@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import {
   OHLCVChart,
+  type DrawingTool,
   type ChartConfig,
   type Candle,
   type CandleBuffer,
@@ -161,7 +162,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     chartRef.current?.loadState(state);
   }, []);
 
-  const startDrawing = useCallback((tool: 'trendline' | 'hline') => {
+  const startDrawing = useCallback((tool: DrawingTool) => {
     chartRef.current?.startDrawing(tool);
   }, []);
   const getDrawings = useCallback((): DrawingSnapshot[] => {

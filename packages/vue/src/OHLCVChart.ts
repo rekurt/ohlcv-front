@@ -2,6 +2,7 @@ import { defineComponent, h, ref, onMounted, onBeforeUnmount, watch, type PropTy
 import {
   OHLCVChart as CoreChart,
   diffIndicatorConfigs,
+  type DrawingTool,
   type Candle,
   type CandleBuffer,
   type ChartConfig,
@@ -208,7 +209,7 @@ export const OHLCVChart = defineComponent({
       loadState: (state: LayoutState | FullState) => chartRef.value?.loadState(state),
 
       // Drawings
-      startDrawing: (tool: 'trendline' | 'hline') =>
+      startDrawing: (tool: DrawingTool) =>
         chartRef.value?.startDrawing(tool),
       getDrawings: (): DrawingSnapshot[] => chartRef.value?.getDrawings() ?? [],
       loadDrawings: (snapshots: DrawingSnapshot[]) =>

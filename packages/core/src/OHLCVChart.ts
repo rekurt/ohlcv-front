@@ -15,6 +15,10 @@ import { createIndicator, type IndicatorConfig } from './indicators/registry';
 import { DrawingLayer } from './drawings/DrawingLayer';
 import { TrendLine } from './drawings/TrendLine';
 import { HorizontalLine } from './drawings/HorizontalLine';
+import { Rectangle } from './drawings/Rectangle';
+import { Ray } from './drawings/Ray';
+import { VerticalLine } from './drawings/VerticalLine';
+import { FibRetracement } from './drawings/FibRetracement';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
@@ -43,6 +47,19 @@ import { migrateState } from './state/migrations';
  * dispatched through `ChartConfig.onError` instead of being
  * silently swallowed.
  */
+
+/**
+ * Drawing tool identifiers accepted by {@link OHLCVChart.startDrawing}.
+ * Exported so the React/Vue wrappers share a single source of truth.
+ */
+export type DrawingTool =
+  | 'trendline'
+  | 'hline'
+  | 'vline'
+  | 'rectangle'
+  | 'ray'
+  | 'fib';
+
 export class OHLCVChart {
   private _buffer: CandleBuffer;
   private _merger: CandleMerger;
@@ -372,12 +389,35 @@ export class OHLCVChart {
    * routed through the host's click handler should call
    * `drawingLayer.addPoint({ index, price })`. When the drawing
    * completes (enough anchors), it is finalized automatically.
+   *
+   * Supported tools (see {@link DrawingTool}):
+   *  - `trendline` (2 points)
+   *  - `hline` (1 point — horizontal price line)
+   *  - `vline` (1 point — vertical index line)
+   *  - `rectangle` (2 points — diagonal corners)
+   *  - `ray` (2 points — semi-infinite line)
+   *  - `fib` (2 points — Fibonacci retracement levels)
    */
-  startDrawing(tool: 'trendline' | 'hline'): void {
-    if (tool === 'trendline') {
-      this._ownDrawingLayer.startDrawing(new TrendLine());
-    } else {
-      this._ownDrawingLayer.startDrawing(new HorizontalLine());
+  startDrawing(tool: DrawingTool): void {
+    switch (tool) {
+      case 'trendline':
+        this._ownDrawingLayer.startDrawing(new TrendLine());
+        return;
+      case 'hline':
+        this._ownDrawingLayer.startDrawing(new HorizontalLine());
+        return;
+      case 'vline':
+        this._ownDrawingLayer.startDrawing(new VerticalLine());
+        return;
+      case 'rectangle':
+        this._ownDrawingLayer.startDrawing(new Rectangle());
+        return;
+      case 'ray':
+        this._ownDrawingLayer.startDrawing(new Ray());
+        return;
+      case 'fib':
+        this._ownDrawingLayer.startDrawing(new FibRetracement());
+        return;
     }
   }
 

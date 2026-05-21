@@ -1,5 +1,6 @@
 // Main facade
 export { OHLCVChart } from './OHLCVChart';
+export type { DrawingTool } from './OHLCVChart';
 
 // Types
 export type {
@@ -79,11 +80,15 @@ export { LineRenderer } from './rendering/LineRenderer';
 export { AreaRenderer } from './rendering/AreaRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
 
-// Drawing tools (MVP: trend line + horizontal line + DrawingLayer)
+// Drawing tools
 export { Drawing } from './drawings/Drawing';
 export type { AnchorPoint, DrawingSnapshot } from './drawings/Drawing';
 export { TrendLine } from './drawings/TrendLine';
 export { HorizontalLine } from './drawings/HorizontalLine';
+export { Rectangle } from './drawings/Rectangle';
+export { Ray } from './drawings/Ray';
+export { VerticalLine } from './drawings/VerticalLine';
+export { FibRetracement } from './drawings/FibRetracement';
 export { DrawingLayer } from './drawings/DrawingLayer';
 
 // Data transforms (Heikin Ashi, Renko)

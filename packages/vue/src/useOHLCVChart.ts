@@ -10,6 +10,7 @@ import {
 import {
   OHLCVChart,
   diffIndicatorConfigs,
+  type DrawingTool,
   type Candle,
   type CandleBuffer,
   type ChartConfig,
@@ -246,7 +247,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
   }
 
   // Drawings
-  function startDrawing(tool: 'trendline' | 'hline') {
+  function startDrawing(tool: DrawingTool) {
     chartRef.value?.startDrawing(tool);
   }
   function getDrawings(): DrawingSnapshot[] {
