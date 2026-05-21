@@ -82,6 +82,7 @@ export { MFI } from './indicators/MFI';
 export { LineRenderer } from './rendering/LineRenderer';
 export { AreaRenderer } from './rendering/AreaRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
+export { HeikinAshiRenderer } from './rendering/HeikinAshiRenderer';
 
 // Drawing tools
 export { Drawing } from './drawings/Drawing';

@@ -16,6 +16,7 @@ import { LegendRenderer } from './LegendRenderer';
 import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
+import { HeikinAshiRenderer } from './HeikinAshiRenderer';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 
@@ -56,6 +57,7 @@ export class ChartEngine {
   // Renderers
   private _gridRenderer = new GridRenderer();
   private _candleRenderer = new CandleRenderer();
+  private _heikinAshiRenderer = new HeikinAshiRenderer();
   private _lineRenderer = new LineRenderer();
   private _areaRenderer = new AreaRenderer();
   private _ohlcBarRenderer = new OHLCBarRenderer();
@@ -451,6 +453,17 @@ export class ChartEngine {
           break;
         case 'ohlc':
           this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          break;
+        case 'heikinashi':
+          this._heikinAshiRenderer.render(
+            ctx,
+            this._layout,
+            this.viewport,
+            this._buffer,
+            start,
+            end,
+            this._theme,
+          );
           break;
         case 'candles':
         default:

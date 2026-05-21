@@ -144,7 +144,7 @@ export interface ChartError {
  * - `area` — close-price line with a gradient fill to chartBottom
  * - `ohlc` — OHLC bars (vertical line with open/close ticks)
  */
-export type ChartType = 'candles' | 'line' | 'area' | 'ohlc';
+export type ChartType = 'candles' | 'line' | 'area' | 'ohlc' | 'heikinashi';
 
 /**
  * Hover callback payload — invoked by CrosshairController on every

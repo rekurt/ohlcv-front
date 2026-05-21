@@ -54,7 +54,9 @@ npm run docs            # TypeDoc → docs/api/
 
 **Rendering** (`@rekurt/ohlcv-core`):
 - Candlesticks, volume bars, grid, price axis, time axis, crosshair with snap-to-candle, current price label, legend, "Go to live" pill
-- Alternative chart types: line, area (with gradient), OHLC bars
+- Alternative chart types: line, area (with gradient), OHLC bars,
+  Heikin-Ashi (first-class `chartType: 'heikinashi'` — no manual
+  data transform needed)
 - Hi-DPI canvas with three-layer split (chart / UI / interaction) for cheap crosshair redraws
 - Multi-pane rendering: sub-pane indicators (RSI, MACD, Stochastic,
   ATR, WilliamsR, OBV, ADX, CCI) render in their own auto-sized
