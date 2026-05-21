@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`maxCandles` memory cap.** New `ChartConfig.maxCandles` evicts the
+  oldest candles (O(1) via `CandleBuffer.evictHead`, with in-place
+  compaction so capacity stays bounded) once live updates push past the
+  cap. The viewport and drawings shift in lockstep
+  (`DrawingLayer.shiftIndices`) so they stay anchored to the same candles.
+  Prepended history is never auto-evicted.
 - **Drawing selection, deletion, and undo/redo.** Every drawing now
   implements `hitTest(x, y, layout, viewport, tolerance)` with geometry
   matching its rendered shape (segments, full-width/height lines, rays,
@@ -37,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`@rekurt/ohlcv-core` is now a `peerDependency`** (not a regular
   dependency) of `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue`, preventing
   duplicate core copies / version mismatches in consumer bundles.
+
+### Changed
+
+- **Crosshair moves within a single candle no longer redraw the UI layer.**
+  `ChartEngine.setCrosshair` marks the UI layer (legend, price line, pill)
+  dirty only when the snapped candle actually changes; sub-candle mouse
+  moves repaint just the crosshair layer. Cuts per-move work on hover.
 
 ### Fixed
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { OHLCVChart } from './OHLCVChart';
 import { installCanvasStub } from './test-utils/canvasStub';
+import { TrendLine } from './drawings/TrendLine';
 import type { Candle, ChartError, DataTransport, HistoryRequest } from './types';
 
 function makeCandle(i: number): Candle {
@@ -259,6 +260,50 @@ describe('OHLCVChart facade', () => {
       });
       chart.destroy();
       expect(transport.destroyed).toBe(true);
+    });
+  });
+
+  describe('maxCandles eviction', () => {
+    it('caps the buffer and keeps the latest candles', () => {
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        maxCandles: 100,
+      });
+      const data = Array.from({ length: 250 }, (_, i) => makeCandle(i));
+      chart.setData(data);
+      expect(chart.getBuffer().length).toBe(100);
+      // Newest candle is retained.
+      expect(chart.getBuffer().lastTime()).toBe(makeCandle(249).t);
+      chart.destroy();
+    });
+
+    it('shifts drawing anchors so they stay pinned after eviction', () => {
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const line = new TrendLine('t1');
+      line.addPoint({ index: 90, price: 100 });
+      line.addPoint({ index: 95, price: 101 });
+      chart.getDrawingLayer().add(line);
+      // Load 150 candles → evict 50 → every anchor index shifts by -50.
+      chart.setData(Array.from({ length: 150 }, (_, i) => makeCandle(i)));
+      const snap = chart.getDrawings().find((d) => d.id === 't1');
+      expect(snap?.points[0]?.index).toBe(40);
+      expect(snap?.points[1]?.index).toBe(45);
+      chart.destroy();
+    });
+
+    it('does not evict when uncapped', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 500 }, (_, i) => makeCandle(i)));
+      expect(chart.getBuffer().length).toBe(500);
+      chart.destroy();
     });
   });
 });

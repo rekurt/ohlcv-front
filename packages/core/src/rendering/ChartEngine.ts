@@ -90,6 +90,8 @@ export class ChartEngine {
    */
   private _a11yLiveRegion!: HTMLDivElement;
   private _lastA11yAnnouncement = '';
+  /** Snapped candle index last shown in the legend; -1 when crosshair hidden. */
+  private _lastLegendIndex = -1;
 
   constructor(container: HTMLElement, theme: ThemeColors) {
     this._container = container;
@@ -318,8 +320,16 @@ export class ChartEngine {
       visible: true,
       inMainPane: y <= this._layout.chartBottom,
     };
+    // The legend (in the UI layer) only changes when the snapped candle
+    // changes. Moving the cursor within a single candle just moves the
+    // crosshair lines, so redraw only the cheap crosshair layer and skip
+    // the UI layer (legend, price line, pill) until the candle changes.
     if (candle) {
       this._legendCandle = candle;
+      if (snapIndex !== this._lastLegendIndex) {
+        this._lastLegendIndex = snapIndex;
+        this._uiDirty = true;
+      }
       // Update the aria-live region with an OHLC summary for screen
       // readers. We dedupe identical announcements so hovering inside a
       // single candle doesn't flood the live region every RAF.
@@ -330,7 +340,6 @@ export class ChartEngine {
       }
     }
     this._crosshairDirty = true;
-    this._uiDirty = true;
     this._scheduleRaf();
   }
 
@@ -345,6 +354,9 @@ export class ChartEngine {
     if (this._buffer && this._buffer.length > 0) {
       this._legendCandle = this._buffer.candleAt(this._buffer.length - 1);
     }
+    // Reset so re-entering the chart always refreshes the legend, and mark
+    // the UI layer dirty to revert the legend to the latest candle.
+    this._lastLegendIndex = -1;
     this._crosshairDirty = true;
     this._uiDirty = true;
     this._scheduleRaf();

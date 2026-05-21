@@ -242,6 +242,22 @@ export class DrawingLayer {
     }
   }
 
+  /**
+   * Shift every anchor's buffer index by `delta`. Called after the buffer
+   * evicts old candles (eviction lowers every remaining candle's logical
+   * index) so drawings stay pinned to the same candles. Affects completed
+   * drawings and the in-progress one; undo history is not rewritten.
+   */
+  shiftIndices(delta: number): void {
+    if (delta === 0) return;
+    for (const d of this._drawings) {
+      for (const p of d.points) p.index += delta;
+    }
+    if (this._active) {
+      for (const p of this._active.points) p.index += delta;
+    }
+  }
+
   /** Render all completed drawings plus the in-progress one. */
   render(
     ctx: CanvasRenderingContext2D,

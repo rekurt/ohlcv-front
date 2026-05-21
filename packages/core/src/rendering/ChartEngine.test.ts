@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { ChartEngine } from './ChartEngine';
 import { CandleBuffer } from '../data/CandleBuffer';
 import { DARK_THEME } from '../constants';
@@ -149,6 +149,33 @@ describe('ChartEngine sub-panes', () => {
   it('renders sub-panes (RSI line + MACD histogram) without throwing', () => {
     engine.setIndicators([new RSI(14), new MACD()]);
     expect(() => forceRender(engine)).not.toThrow();
+  });
+
+  it('redraws the legend only when the hovered candle changes, not on sub-candle moves', () => {
+    const legend = (engine as unknown as { _legendRenderer: { render: () => void } })
+      ._legendRenderer;
+    const crosshair = (engine as unknown as { _crosshairRenderer: { render: () => void } })
+      ._crosshairRenderer;
+    const legendSpy = vi.spyOn(legend, 'render');
+    const crosshairSpy = vi.spyOn(crosshair, 'render');
+
+    const candle = buffer.candleAt(5)!;
+    // First hover on candle index 5 → legend (UI layer) must redraw.
+    engine.setCrosshair(100, 100, 5, candle, '12:00');
+    forceRender(engine);
+    expect(legendSpy).toHaveBeenCalledTimes(1);
+    expect(crosshairSpy).toHaveBeenCalledTimes(1);
+
+    // Move within the same candle (index 5) → only the crosshair layer.
+    engine.setCrosshair(104, 108, 5, candle, '12:00');
+    forceRender(engine);
+    expect(legendSpy).toHaveBeenCalledTimes(1); // unchanged
+    expect(crosshairSpy).toHaveBeenCalledTimes(2);
+
+    // Move to a different candle → legend redraws again.
+    engine.setCrosshair(140, 100, 6, buffer.candleAt(6)!, '12:01');
+    forceRender(engine);
+    expect(legendSpy).toHaveBeenCalledTimes(2);
   });
 
   it('reports indicator compute errors through the ErrorReporter instead of swallowing', () => {

@@ -206,6 +206,14 @@ export interface ChartConfig {
    * one load-more request is in flight at a time.
    */
   onLoadMoreHistory?: (buffer: CandleBuffer) => void | Promise<void>;
+  /**
+   * Cap on the number of candles retained in the buffer. When live updates
+   * push the length past this, the oldest candles are evicted (O(1)) and
+   * the viewport + drawings shift to stay anchored to the same candles.
+   * Bounds memory for long-running live charts. Omit for unlimited.
+   * History prepended via `prependHistory` is never auto-evicted.
+   */
+  maxCandles?: number;
 }
 
 export interface ChartLayout {

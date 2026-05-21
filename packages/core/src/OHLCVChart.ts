@@ -145,6 +145,7 @@ export class OHLCVChart {
     // viewport stay wherever the user has scrolled.
     this._merger.onUpdate(() => {
       const vp = this._engine.viewport;
+      this._enforceMaxCandles();
       if (vp.autoFollow || this._buffer.length <= vp.visibleCount) {
         vp.scrollToEnd(this._buffer.length);
       }
@@ -279,6 +280,7 @@ export class OHLCVChart {
 
     this._buffer.clear();
     this._merger.loadHistory(candles);
+    this._enforceMaxCandles();
 
     if (opts?.preserveView) {
       vp.candleWidth = previousWidth;
@@ -299,6 +301,23 @@ export class OHLCVChart {
   /** Update the last (forming) candle */
   updateLastCandle(candle: Candle): void {
     this._merger.mergeRealtime([candle]);
+  }
+
+  /**
+   * Evict oldest candles past `config.maxCandles`, keeping the viewport and
+   * drawings anchored to the same candles (eviction lowers every remaining
+   * candle's logical index by the evicted count). No-op when uncapped.
+   */
+  private _enforceMaxCandles(): void {
+    const max = this._config.maxCandles;
+    if (max === undefined || max <= 0) return;
+    const over = this._buffer.length - max;
+    if (over <= 0) return;
+    const evicted = this._buffer.evictHead(over);
+    if (evicted <= 0) return;
+    const vp = this._engine.viewport;
+    vp.startIndex = Math.max(0, vp.startIndex - evicted);
+    this._ownDrawingLayer.shiftIndices(-evicted);
   }
 
   /** Switch to a different symbol/resolution */

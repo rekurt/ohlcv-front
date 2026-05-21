@@ -156,3 +156,31 @@ describe('DrawingLayer undo/redo', () => {
     expect(layer.redo()).toBe(false);
   });
 });
+
+describe('DrawingLayer.shiftIndices', () => {
+  it('shifts every anchor index by delta (completed + active)', () => {
+    const layer = new DrawingLayer();
+    const t = new TrendLine('t1');
+    t.addPoint({ index: 90, price: 100 });
+    t.addPoint({ index: 95, price: 101 });
+    layer.add(t);
+    const active = new TrendLine('a1');
+    active.addPoint({ index: 80, price: 100 });
+    layer.startDrawing(active);
+
+    layer.shiftIndices(-50);
+
+    expect(layer.drawings[0]!.points.map((p) => p.index)).toEqual([40, 45]);
+    expect(layer.active!.points[0]!.index).toBe(30);
+  });
+
+  it('is a no-op for delta 0', () => {
+    const layer = new DrawingLayer();
+    const t = new TrendLine('t1');
+    t.addPoint({ index: 5, price: 100 });
+    t.addPoint({ index: 6, price: 101 });
+    layer.add(t);
+    layer.shiftIndices(0);
+    expect(layer.drawings[0]!.points.map((p) => p.index)).toEqual([5, 6]);
+  });
+});
