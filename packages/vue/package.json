@@ -44,6 +44,6 @@
   },
   "devDependencies": {
     "@rekurt/ohlcv-core": "*",
-    "vue": "^3.5.0"
+    "vue": "^3.5.34"
   }
 }
