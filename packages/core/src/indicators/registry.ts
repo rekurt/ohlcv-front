@@ -22,6 +22,7 @@ import { Supertrend } from './Supertrend';
 import { ParabolicSAR } from './ParabolicSAR';
 import { StochRSI } from './StochRSI';
 import { ROC } from './ROC';
+import { ZigZag } from './ZigZag';
 
 /**
  * Discriminated union of all built-in indicator configurations. Users of
@@ -72,7 +73,8 @@ export type IndicatorConfig =
       kSmooth?: number;
       dSmooth?: number;
     }
-  | { type: 'roc'; period: number };
+  | { type: 'roc'; period: number }
+  | { type: 'zigzag'; deviation?: number };
 
 /**
  * Stable string id derived from an indicator config. Two configs with the
@@ -132,6 +134,8 @@ export function indicatorId(cfg: IndicatorConfig): string {
       return `stochrsi:${cfg.rsiPeriod ?? 14}:${cfg.stochPeriod ?? 14}:${cfg.kSmooth ?? 3}:${cfg.dSmooth ?? 3}`;
     case 'roc':
       return `roc:${cfg.period}`;
+    case 'zigzag':
+      return `zigzag:${cfg.deviation ?? 5}`;
   }
 }
 
@@ -196,6 +200,8 @@ export function createIndicator(cfg: IndicatorConfig): Indicator {
       return new StochRSI(cfg.rsiPeriod, cfg.stochPeriod, cfg.kSmooth, cfg.dSmooth);
     case 'roc':
       return new ROC(cfg.period);
+    case 'zigzag':
+      return new ZigZag(cfg.deviation);
     default: {
       // Exhaustiveness guard for the union above — TypeScript flags any
       // missing case at compile time. The runtime throw covers forged

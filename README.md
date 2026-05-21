@@ -92,7 +92,7 @@ npm run docs            # TypeDoc → docs/api/
   `Keltner`, `Donchian`, `VWAP` (session / cumulative / anchored),
   `PivotPoints` (pivot + R1/R2/S1/S2),
   `Ichimoku` (tenkan / kijun / senkou A&B / chikou),
-  `Supertrend`, `ParabolicSAR`
+  `Supertrend`, `ParabolicSAR`, `ZigZag`
 - Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`,
   `WilliamsR`, `OBV`, `ADX`, `CCI`, `MFI`, `StochRSI`, `ROC`
 - `IndicatorConfig` discriminated union + `createIndicator` factory —

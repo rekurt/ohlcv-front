@@ -85,6 +85,7 @@ export { Supertrend } from './indicators/Supertrend';
 export { ParabolicSAR } from './indicators/ParabolicSAR';
 export { StochRSI } from './indicators/StochRSI';
 export { ROC } from './indicators/ROC';
+export { ZigZag } from './indicators/ZigZag';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';

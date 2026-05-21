@@ -38,3 +38,4 @@ export { Supertrend } from './Supertrend';
 export { ParabolicSAR } from './ParabolicSAR';
 export { StochRSI } from './StochRSI';
 export { ROC } from './ROC';
+export { ZigZag } from './ZigZag';
