@@ -19,6 +19,9 @@ import { Rectangle } from './drawings/Rectangle';
 import { Ray } from './drawings/Ray';
 import { VerticalLine } from './drawings/VerticalLine';
 import { FibRetracement } from './drawings/FibRetracement';
+import { FibExtension } from './drawings/FibExtension';
+import { Channel } from './drawings/Channel';
+import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
@@ -58,7 +61,10 @@ export type DrawingTool =
   | 'vline'
   | 'rectangle'
   | 'ray'
-  | 'fib';
+  | 'fib'
+  | 'fibext'
+  | 'channel'
+  | 'arrow';
 
 export class OHLCVChart {
   private _buffer: CandleBuffer;
@@ -425,6 +431,15 @@ export class OHLCVChart {
         return;
       case 'fib':
         this._ownDrawingLayer.startDrawing(new FibRetracement());
+        return;
+      case 'fibext':
+        this._ownDrawingLayer.startDrawing(new FibExtension());
+        return;
+      case 'channel':
+        this._ownDrawingLayer.startDrawing(new Channel());
+        return;
+      case 'arrow':
+        this._ownDrawingLayer.startDrawing(new Arrow());
         return;
     }
   }

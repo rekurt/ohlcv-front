@@ -96,10 +96,12 @@ npm run docs            # TypeDoc → docs/api/
   config objects and the core reconciles them.
 - `Indicator` base class + `IndicatorSeries` — subclass to add your own.
 
-**Drawing tools** (`@rekurt/ohlcv-core`):
+**Drawing tools** (`@rekurt/ohlcv-core/drawings`):
 - `TrendLine`, `HorizontalLine`, `VerticalLine`, `Ray`, `Rectangle`,
-  `FibRetracement` (8 levels) — all anchored in buffer space so they
-  stick to underlying candles on pan / zoom.
+  `FibRetracement` (8 levels), `FibExtension` (3-point projection),
+  `Channel` (3-point parallel boundaries with fill), `Arrow`
+  (directional with scaled arrowhead) — all anchored in buffer
+  space so they stick to underlying candles on pan / zoom.
 - `DrawingLayer` for ordered collection + active-creation slot.
 - `Drawing` abstract base — subclass to add custom tools and
   register via `DrawingLayer.registerKind`. Snapshots round-trip

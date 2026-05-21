@@ -92,6 +92,9 @@ export { Rectangle } from './drawings/Rectangle';
 export { Ray } from './drawings/Ray';
 export { VerticalLine } from './drawings/VerticalLine';
 export { FibRetracement } from './drawings/FibRetracement';
+export { FibExtension } from './drawings/FibExtension';
+export { Channel } from './drawings/Channel';
+export { Arrow } from './drawings/Arrow';
 export { DrawingLayer } from './drawings/DrawingLayer';
 
 // Data transforms (Heikin Ashi, Renko)

@@ -13,4 +13,7 @@ export { Rectangle } from './Rectangle';
 export { Ray } from './Ray';
 export { VerticalLine } from './VerticalLine';
 export { FibRetracement } from './FibRetracement';
+export { FibExtension } from './FibExtension';
+export { Channel } from './Channel';
+export { Arrow } from './Arrow';
 export { DrawingLayer } from './DrawingLayer';
