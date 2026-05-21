@@ -225,4 +225,47 @@ describe('VWAP', () => {
     const [vwap] = new VWAP('cumulative').compute(buf);
     expect(Number.isNaN(vwap!.values[0]!)).toBe(true);
   });
+
+  describe('anchored mode', () => {
+    it('id encodes the anchor timestamp', () => {
+      expect(new VWAP({ type: 'anchored', t: 1700000000 }).id).toBe(
+        'vwap(anchored:1700000000)',
+      );
+    });
+
+    it('throws on a non-positive or non-finite anchor t', () => {
+      expect(() => new VWAP({ type: 'anchored', t: 0 })).toThrow();
+      expect(() => new VWAP({ type: 'anchored', t: -1 })).toThrow();
+      expect(() => new VWAP({ type: 'anchored', t: NaN })).toThrow();
+    });
+
+    it('emits NaN for candles before the anchor and accumulates from the anchor', () => {
+      const buf = new CandleBuffer();
+      // Three pre-anchor candles, then three post-anchor candles.
+      const anchor = 1_700_000_180; // candle index 3
+      buf.append(candle(0, 100, 100, 100, 100, 100));
+      buf.append(candle(1, 100, 100, 100, 100, 100));
+      buf.append(candle(2, 100, 100, 100, 100, 100));
+      buf.append(candle(3, 200, 200, 200, 200, 100));
+      buf.append(candle(4, 210, 210, 210, 210, 100));
+      buf.append(candle(5, 190, 190, 190, 190, 100));
+      const [vwap] = new VWAP({ type: 'anchored', t: anchor }).compute(buf);
+      expect(Number.isNaN(vwap!.values[0]!)).toBe(true);
+      expect(Number.isNaN(vwap!.values[2]!)).toBe(true);
+      // First post-anchor candle: vwap = typical = 200.
+      expect(vwap!.values[3]).toBeCloseTo(200);
+      // Cumulative from anchor: (200+210)/2 = 205.
+      expect(vwap!.values[4]).toBeCloseTo(205);
+      // (200+210+190)/3 = 200.
+      expect(vwap!.values[5]).toBeCloseTo(200);
+    });
+
+    it('anchor in the future leaves all values NaN', () => {
+      const buf = new CandleBuffer();
+      buf.append(candle(0, 100, 100, 100, 100, 10));
+      buf.append(candle(1, 100, 100, 100, 100, 10));
+      const [vwap] = new VWAP({ type: 'anchored', t: 9_999_999_999 }).compute(buf);
+      expect(vwap!.values.every((v) => Number.isNaN(v))).toBe(true);
+    });
+  });
 });

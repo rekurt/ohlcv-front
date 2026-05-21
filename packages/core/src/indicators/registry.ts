@@ -62,7 +62,12 @@ export function indicatorId(cfg: IndicatorConfig): string {
     case 'atr':
       return `atr:${cfg.period}`;
     case 'vwap':
-      return `vwap:${cfg.anchor}`;
+      // Anchor may be a string literal ('session'/'cumulative') or
+      // an object `{ type: 'anchored', t }`. Encode both so the diff
+      // key still distinguishes them.
+      return typeof cfg.anchor === 'string'
+        ? `vwap:${cfg.anchor}`
+        : `vwap:anchored:${cfg.anchor.t}`;
     case 'williamsr':
       return `williamsr:${cfg.period}`;
     case 'obv':
