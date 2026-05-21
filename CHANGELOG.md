@@ -46,6 +46,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`CandleBuffer.prepend` is O(1) per candle** after the first
+  growth instead of O(n) every time. The buffer now maintains a
+  logical `_head` offset into the raw arrays; prepends shift
+  `_head` left in-place when leftPad headroom is available, and
+  reserve `max(incoming, currentLength)` of leftPad on growth so
+  subsequent equal-sized history pages also hit the fast path.
+  Eliminates the 6× Float64Array allocation per prepend that
+  previously dominated TradingView-style infinite scroll.
+- **Y-axis drag-to-scale** on the price-axis strip rescales the
+  visible price range around the cursor (TradingView/Lightweight
+  Charts parity). Double-click in the price axis resets to
+  auto-scale; double-click in the main chart still fits visible.
+  New `Viewport.scalePriceRangeBy(factor, anchorY)` and
+  `resetPriceScale()` expose this programmatically.
 - `useOHLCVChart` (React + Vue) now reacts to every option after
   mount — previously the headless hook ignored post-mount changes
   to `symbol`, `resolution`, `theme`, `chartType`, `indicators`,
@@ -75,11 +89,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
-- 461 → 515 (+54) across this cycle, covering: callback identity
+- 461 → 530 (+69) across this cycle, covering: callback identity
   preservation, BB O(n) correctness, 4 new indicators, 4 new
   drawings + snapshot round-trip, IndicatorPaneRenderer,
-  sub-pane layout reservation, state migrations, and
-  CandleBuffer numeric guards.
+  sub-pane layout reservation, state migrations, CandleBuffer
+  numeric guards, CandleBuffer O(1) prepend fast-path,
+  Viewport.scalePriceRangeBy + resetPriceScale, and the Vue
+  headless hook reactivity contract.
 
 ## [0.1.0] - 2026-04-11
 

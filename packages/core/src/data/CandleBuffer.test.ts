@@ -116,6 +116,53 @@ describe('CandleBuffer', () => {
       expect(buf.findIndexByTime(30)).toBe(1);
       expect(buf.findIndexByTime(100)).toBe(3);
     });
+
+    it('uses O(1) leftPad shift after the first growth (no realloc on repeat)', () => {
+      const buf = new CandleBuffer();
+      // First page: triggers slow-path allocation; reserves leftPad.
+      const page = (start: number) =>
+        Array.from({ length: 100 }, (_, i) => makeCandle(start + i, 100 + i));
+      buf.appendBatch(page(1000));
+      buf.prepend(page(900));
+
+      // Grab the underlying TypedArray identities. Subsequent
+      // prepends within leftPad capacity must NOT reallocate.
+      const internals = buf as unknown as {
+        _open: Float64Array;
+        _head: number;
+        _length: number;
+      };
+      const openId = internals._open;
+      const headBefore = internals._head;
+
+      buf.prepend(page(800));
+      // Same array reference — proves no allocation happened.
+      expect(internals._open).toBe(openId);
+      // _head decreased by 100 (one full page worth).
+      expect(internals._head).toBe(headBefore - 100);
+      expect(buf.length).toBe(300);
+      expect(buf.firstTime()).toBe(800);
+      expect(buf.lastTime()).toBe(1099);
+    });
+
+    it('candleAt + findIndexByTime stay correct across mixed append/prepend cycles', () => {
+      const buf = new CandleBuffer();
+      const make = (t: number) => makeCandle(t);
+      buf.appendBatch([make(100), make(101), make(102), make(103)]);
+      buf.prepend([make(98), make(99)]);
+      buf.append(make(104));
+      buf.prepend([make(95), make(96), make(97)]);
+      buf.append(make(105));
+
+      expect(buf.length).toBe(11);
+      expect(buf.firstTime()).toBe(95);
+      expect(buf.lastTime()).toBe(105);
+      expect(buf.candleAt(0)?.t).toBe(95);
+      expect(buf.candleAt(10)?.t).toBe(105);
+      expect(buf.findIndexByTime(100)).toBe(5);
+      expect(buf.findIndexByTime(95)).toBe(0);
+      expect(buf.findIndexByTime(105)).toBe(10);
+    });
   });
 
   describe('appendBatch monotonicity', () => {

@@ -28,6 +28,20 @@ function assertCandleNumeric(c: Candle, where: string): void {
   }
 }
 
+/**
+ * Storage for OHLCVT candles backed by parallel Float64Arrays.
+ *
+ * Internal model: the raw arrays have a logical `_head` offset. Logical
+ * index `i` reads `_open[_head + i]` etc. This lets `prepend()` run in
+ * O(1) when there's leftPad headroom — the raw arrays don't have to
+ * be re-allocated and copied on every history-page load. When headroom
+ * runs out we grow with extra leftPad reserved for future prepends,
+ * amortizing the cost to O(1) per candle.
+ *
+ * Invariants:
+ *   _head >= 0
+ *   _head + _length <= _capacity
+ */
 export class CandleBuffer {
   private _open: Float64Array;
   private _high: Float64Array;
@@ -37,6 +51,7 @@ export class CandleBuffer {
   private _time: Float64Array;
   private _length = 0;
   private _capacity: number;
+  private _head = 0;
 
   constructor(capacity = INITIAL_CAPACITY) {
     this._capacity = capacity;
@@ -55,8 +70,9 @@ export class CandleBuffer {
   /** O(1) amortized append */
   append(candle: Candle): void {
     assertCandleNumeric(candle, 'append');
-    if (this._length >= this._capacity) this._grow();
-    const i = this._length++;
+    if (this._head + this._length >= this._capacity) this._growTail();
+    const i = this._head + this._length;
+    this._length++;
     this._open[i] = candle.o;
     this._high[i] = candle.h;
     this._low[i] = candle.l;
@@ -88,7 +104,8 @@ export class CandleBuffer {
       }
     }
     const sorted = monotonic ? candles : candles.slice().sort((a, b) => a.t - b.t);
-    const cutoff = this._length > 0 ? this._time[this._length - 1]! : -Infinity;
+    const cutoff =
+      this._length > 0 ? this._time[this._head + this._length - 1]! : -Infinity;
     let firstValid = 0;
     while (firstValid < sorted.length && sorted[firstValid]!.t <= cutoff) {
       firstValid++;
@@ -97,12 +114,14 @@ export class CandleBuffer {
     const incoming = sorted.length - firstValid;
     if (incoming === 0) return;
 
-    const needed = this._length + incoming;
-    while (this._capacity < needed) this._grow();
+    // Ensure trailing capacity. _growTail enlarges the right side; if
+    // there's plenty of right-side room already we don't allocate.
+    while (this._head + this._length + incoming > this._capacity) this._growTail();
     for (let idx = firstValid; idx < sorted.length; idx++) {
       const c = sorted[idx]!;
       assertCandleNumeric(c, 'appendBatch');
-      const i = this._length++;
+      const i = this._head + this._length;
+      this._length++;
       this._open[i] = c.o;
       this._high[i] = c.h;
       this._low[i] = c.l;
@@ -116,7 +135,7 @@ export class CandleBuffer {
   updateLast(candle: Candle): void {
     if (this._length === 0) return;
     assertCandleNumeric(candle, 'updateLast');
-    const i = this._length - 1;
+    const i = this._head + this._length - 1;
     this._open[i] = candle.o;
     this._high[i] = candle.h;
     this._low[i] = candle.l;
@@ -126,20 +145,19 @@ export class CandleBuffer {
   }
 
   /**
-   * Prepend candles (for lazy history loading).
+   * Prepend candles (for lazy history loading). O(1) per candle when
+   * leftPad headroom is available; O(n) when growth is required. The
+   * growth path reserves leftPad equal to the current length so a
+   * sequence of equal-sized history pages amortizes to O(1) per candle
+   * — TradingView-style infinite scroll without GC churn.
    *
-   * The caller is responsible for ensuring prepended candles are strictly
-   * older than the current `firstTime()`; this method additionally sorts
-   * the incoming array in place by time to guarantee internal monotonicity
-   * even if the caller passes an unsorted batch. Without this sort, a
-   * subsequent `findIndexByTime` / `lowerBound` would silently return
-   * wrong answers.
+   * Strict monotonicity: incoming is sorted ASC if not already, and
+   * the entire prepended block must be older than the current first
+   * candle. Candles violating that invariant are dropped.
    */
   prepend(candles: Candle[]): void {
     if (candles.length === 0) return;
 
-    // Sort incoming by time ASC. Skip the sort if the array is already
-    // monotonic — typical for well-formed history responses.
     let monotonic = true;
     for (let i = 1; i < candles.length; i++) {
       if (candles[i]!.t <= candles[i - 1]!.t) {
@@ -149,9 +167,41 @@ export class CandleBuffer {
     }
     const sorted = monotonic ? candles : candles.slice().sort((a, b) => a.t - b.t);
 
-    const newLen = this._length + sorted.length;
-    let cap = this._capacity;
-    while (cap < newLen) cap *= GROWTH_FACTOR;
+    // Drop candles that overlap or come after the current first.
+    const cutoff = this._length > 0 ? this._time[this._head]! : Infinity;
+    let lastValid = sorted.length;
+    while (lastValid > 0 && sorted[lastValid - 1]!.t >= cutoff) lastValid--;
+    if (lastValid === 0) return;
+
+    const incoming = lastValid;
+
+    if (this._head >= incoming) {
+      // Fast path: enough leftPad headroom — shift _head left and write
+      // in place. No allocations, no copies.
+      const newHead = this._head - incoming;
+      for (let i = 0; i < incoming; i++) {
+        const c = sorted[i]!;
+        assertCandleNumeric(c, 'prepend');
+        const idx = newHead + i;
+        this._open[idx] = c.o;
+        this._high[idx] = c.h;
+        this._low[idx] = c.l;
+        this._close[idx] = c.c;
+        this._volume[idx] = c.v;
+        this._time[idx] = c.t;
+      }
+      this._head = newHead;
+      this._length += incoming;
+      return;
+    }
+
+    // Slow path: not enough left headroom. Allocate fresh arrays with
+    // extra leftPad reserved for future prepends. New leftPad =
+    // max(incoming, current length) so the next page should be O(1).
+    const reservedLeftPad = Math.max(incoming, this._length);
+    const usedRight = this._length;
+    let cap = Math.max(this._capacity, reservedLeftPad + usedRight + incoming);
+    while (cap < reservedLeftPad + usedRight + incoming) cap *= GROWTH_FACTOR;
 
     const newOpen = new Float64Array(cap);
     const newHigh = new Float64Array(cap);
@@ -160,27 +210,29 @@ export class CandleBuffer {
     const newVolume = new Float64Array(cap);
     const newTime = new Float64Array(cap);
 
-    // Write prepended candles first. Use direct iteration to avoid repeated
-    // array lookups and satisfy noUncheckedIndexedAccess.
-    for (let i = 0; i < sorted.length; i++) {
+    const newHead = reservedLeftPad;
+
+    // Write prepended block at [newHead .. newHead + incoming).
+    for (let i = 0; i < incoming; i++) {
       const c = sorted[i]!;
       assertCandleNumeric(c, 'prepend');
-      newOpen[i] = c.o;
-      newHigh[i] = c.h;
-      newLow[i] = c.l;
-      newClose[i] = c.c;
-      newVolume[i] = c.v;
-      newTime[i] = c.t;
+      const idx = newHead + i;
+      newOpen[idx] = c.o;
+      newHigh[idx] = c.h;
+      newLow[idx] = c.l;
+      newClose[idx] = c.c;
+      newVolume[idx] = c.v;
+      newTime[idx] = c.t;
     }
 
-    // Copy existing data after
-    const offset = sorted.length;
-    newOpen.set(this._open.subarray(0, this._length), offset);
-    newHigh.set(this._high.subarray(0, this._length), offset);
-    newLow.set(this._low.subarray(0, this._length), offset);
-    newClose.set(this._close.subarray(0, this._length), offset);
-    newVolume.set(this._volume.subarray(0, this._length), offset);
-    newTime.set(this._time.subarray(0, this._length), offset);
+    // Append the existing block right after.
+    const existingDst = newHead + incoming;
+    newOpen.set(this._open.subarray(this._head, this._head + this._length), existingDst);
+    newHigh.set(this._high.subarray(this._head, this._head + this._length), existingDst);
+    newLow.set(this._low.subarray(this._head, this._head + this._length), existingDst);
+    newClose.set(this._close.subarray(this._head, this._head + this._length), existingDst);
+    newVolume.set(this._volume.subarray(this._head, this._head + this._length), existingDst);
+    newTime.set(this._time.subarray(this._head, this._head + this._length), existingDst);
 
     this._open = newOpen;
     this._high = newHigh;
@@ -188,14 +240,22 @@ export class CandleBuffer {
     this._close = newClose;
     this._volume = newVolume;
     this._time = newTime;
+    this._head = newHead;
+    this._length = usedRight + incoming;
     this._capacity = cap;
-    this._length = newLen;
   }
 
   /** Binary search for index by timestamp. Returns exact index or -1 */
   findIndexByTime(timestamp: number): number {
-    const idx = lowerBound(this._time, timestamp, 0, this._length);
-    if (idx < this._length && this._time[idx] === timestamp) return idx;
+    const rawIdx = lowerBound(
+      this._time,
+      timestamp,
+      this._head,
+      this._head + this._length,
+    );
+    if (rawIdx < this._head + this._length && this._time[rawIdx] === timestamp) {
+      return rawIdx - this._head;
+    }
     return -1;
   }
 
@@ -203,13 +263,15 @@ export class CandleBuffer {
   sliceView(start: number, end: number): CandleView {
     const s = Math.max(0, start);
     const e = Math.min(this._length, end);
+    const rs = this._head + s;
+    const re = this._head + e;
     return {
-      open: this._open.subarray(s, e),
-      high: this._high.subarray(s, e),
-      low: this._low.subarray(s, e),
-      close: this._close.subarray(s, e),
-      volume: this._volume.subarray(s, e),
-      time: this._time.subarray(s, e),
+      open: this._open.subarray(rs, re),
+      high: this._high.subarray(rs, re),
+      low: this._low.subarray(rs, re),
+      close: this._close.subarray(rs, re),
+      volume: this._volume.subarray(rs, re),
+      time: this._time.subarray(rs, re),
       length: Math.max(0, e - s),
       offset: s,
     };
@@ -218,34 +280,39 @@ export class CandleBuffer {
   /** Get a single candle by index */
   candleAt(index: number): Candle | null {
     if (index < 0 || index >= this._length) return null;
-    // Index bounds are validated above; TypedArray access is guaranteed safe.
+    const i = this._head + index;
     return {
-      o: this._open[index]!,
-      h: this._high[index]!,
-      l: this._low[index]!,
-      c: this._close[index]!,
-      v: this._volume[index]!,
-      t: this._time[index]!,
+      o: this._open[i]!,
+      h: this._high[i]!,
+      l: this._low[i]!,
+      c: this._close[i]!,
+      v: this._volume[i]!,
+      t: this._time[i]!,
     };
   }
 
   lastTime(): number {
-    return this._length > 0 ? this._time[this._length - 1]! : 0;
+    return this._length > 0 ? this._time[this._head + this._length - 1]! : 0;
   }
 
   firstTime(): number {
-    return this._length > 0 ? this._time[0]! : 0;
+    return this._length > 0 ? this._time[this._head]! : 0;
   }
 
   lastClose(): number {
-    return this._length > 0 ? this._close[this._length - 1]! : 0;
+    return this._length > 0 ? this._close[this._head + this._length - 1]! : 0;
   }
 
   clear(): void {
     this._length = 0;
+    this._head = 0;
   }
 
-  private _grow(): void {
+  /**
+   * Grow the trailing capacity. Preserves `_head` so leftPad
+   * headroom for future prepends is not lost.
+   */
+  private _growTail(): void {
     const newCap = this._capacity * GROWTH_FACTOR;
     this._open = this._copyGrow(this._open, newCap);
     this._high = this._copyGrow(this._high, newCap);
@@ -258,7 +325,9 @@ export class CandleBuffer {
 
   private _copyGrow(arr: Float64Array, newCap: number): Float64Array {
     const newArr = new Float64Array(newCap);
-    newArr.set(arr.subarray(0, this._length));
+    // Copy the entire used range (head + length) so trailing growth
+    // doesn't change logical indices.
+    newArr.set(arr.subarray(0, this._head + this._length));
     return newArr;
   }
 }
