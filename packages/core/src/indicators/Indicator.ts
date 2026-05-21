@@ -47,11 +47,20 @@ export abstract class Indicator {
    */
   abstract compute(buffer: CandleBuffer): IndicatorSeries[];
 
-  private _cache: { version: number; length: number; series: IndicatorSeries[] } | null = null;
+  private _cache: {
+    buffer: CandleBuffer;
+    version: number;
+    length: number;
+    series: IndicatorSeries[];
+  } | null = null;
 
   /**
    * Memoized wrapper around `compute`. Returns the same cached array
-   * reference while the buffer's `version` and `length` are unchanged.
+   * reference while the SAME buffer's `version` and `length` are unchanged.
+   * The buffer identity is part of the key so reusing one indicator
+   * instance across two buffers (or swapping a chart's buffer) never
+   * returns another buffer's stale series — important right after init when
+   * distinct buffers can share `version: 0` and the same length.
    * Use this on render paths; use `compute` directly to force a fresh
    * computation.
    */
@@ -59,11 +68,11 @@ export abstract class Indicator {
     const version = buffer.version;
     const length = buffer.length;
     const cache = this._cache;
-    if (cache && cache.version === version && cache.length === length) {
+    if (cache && cache.buffer === buffer && cache.version === version && cache.length === length) {
       return cache.series;
     }
     const series = this.compute(buffer);
-    this._cache = { version, length, series };
+    this._cache = { buffer, version, length, series };
     return series;
   }
 }

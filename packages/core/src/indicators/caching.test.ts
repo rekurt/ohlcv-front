@@ -75,6 +75,21 @@ describe('Indicator.computeCached', () => {
     expect(Array.from(b[0]!.values)).toEqual(Array.from(a[0]!.values));
   });
 
+  it('does not return another buffer\'s series when version+length collide', () => {
+    // Two distinct buffers, both version 0 after construction, same length,
+    // but different data. The cache must not serve buf A's series for buf B.
+    const a = bufferOf([1, 2, 3, 4, 5]);
+    const b = bufferOf([100, 200, 300, 400, 500]);
+    expect(a.version).toBe(b.version);
+    expect(a.length).toBe(b.length);
+    const sma = new SMA(3);
+    const ra = sma.computeCached(a);
+    const rb = sma.computeCached(b);
+    expect(rb).not.toBe(ra);
+    expect(rb[0]!.values[4]).toBeCloseTo(400); // (300+400+500)/3
+    expect(ra[0]!.values[4]).toBeCloseTo(4); // (3+4+5)/3
+  });
+
   it('matches the un-cached compute() output', () => {
     const buf = bufferOf([10, 20, 30]);
     const ema = new EMA(2);
