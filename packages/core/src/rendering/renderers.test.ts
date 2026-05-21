@@ -136,7 +136,7 @@ describe('renderers — smoke (empty / 1 / 1000)', () => {
       it('CrosshairRenderer hidden does not throw', () => {
         const { viewport } = buildViewportWith(c.buffer);
         const r = new CrosshairRenderer();
-        const state: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false };
+        const state: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false, inMainPane: true };
         expect(() => r.render(ctx, LAYOUT, viewport, state, DARK_THEME)).not.toThrow();
       });
 
@@ -149,8 +149,13 @@ describe('renderers — smoke (empty / 1 / 1000)', () => {
           price: 100,
           time: '12:00',
           visible: true,
+          inMainPane: true,
         };
         expect(() => r.render(ctx, LAYOUT, viewport, state, DARK_THEME)).not.toThrow();
+
+        // Over a sub-pane: still renders (vertical line + time label only).
+        const subPaneState: CrosshairState = { ...state, inMainPane: false };
+        expect(() => r.render(ctx, LAYOUT, viewport, subPaneState, DARK_THEME)).not.toThrow();
       });
 
       it('PriceLineRenderer does not throw', () => {

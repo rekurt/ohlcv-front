@@ -75,7 +75,7 @@ export class ChartEngine {
   readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
-  private _crosshairState: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false };
+  private _crosshairState: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false, inMainPane: true };
   private _legendCandle: Candle | null = null;
   private _chartDirty = true;
   private _uiDirty = true;
@@ -316,6 +316,7 @@ export class ChartEngine {
       price: this.viewport.yToPrice(y),
       time: timeLabel,
       visible: true,
+      inMainPane: y <= this._layout.chartBottom,
     };
     if (candle) {
       this._legendCandle = candle;

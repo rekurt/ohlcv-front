@@ -81,8 +81,10 @@ export class CrosshairController {
     const x = this._lastX;
     const y = this._lastY;
 
-    // Only show crosshair in chart area
-    if (x < layout.chartLeft || x > layout.chartRight || y < layout.chartTop || y > layout.chartBottom) {
+    // Show the crosshair across the whole plot area — the main price pane
+    // plus any indicator sub-panes (down to paneAreaBottom) — so the user
+    // can read pane indicator values at the hovered time index.
+    if (x < layout.chartLeft || x > layout.chartRight || y < layout.chartTop || y > layout.paneAreaBottom) {
       this._engine.hideCrosshair();
       this._onHover?.(null);
       return;
