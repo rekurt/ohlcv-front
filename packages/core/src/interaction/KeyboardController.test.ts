@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { KeyboardController } from './KeyboardController';
 import { Viewport } from './Viewport';
 import { CandleBuffer } from '../data/CandleBuffer';
@@ -29,10 +29,10 @@ describe('KeyboardController', () => {
   let el: HTMLElement;
   let viewport: Viewport;
   let buffer: CandleBuffer;
-  let onViewportChange: ReturnType<typeof vi.fn>;
-  let onGoToLive: ReturnType<typeof vi.fn>;
-  let onFitVisible: ReturnType<typeof vi.fn>;
-  let onFitAll: ReturnType<typeof vi.fn>;
+  let onViewportChange: Mock<() => void>;
+  let onGoToLive: Mock<() => void>;
+  let onFitVisible: Mock<() => void>;
+  let onFitAll: Mock<() => void>;
   let controller: KeyboardController;
 
   beforeEach(() => {
@@ -45,10 +45,10 @@ describe('KeyboardController', () => {
     buffer = makeBuffer(500);
     viewport.scrollToEnd(buffer.length);
 
-    onViewportChange = vi.fn();
-    onGoToLive = vi.fn();
-    onFitVisible = vi.fn();
-    onFitAll = vi.fn();
+    onViewportChange = vi.fn<() => void>();
+    onGoToLive = vi.fn<() => void>();
+    onFitVisible = vi.fn<() => void>();
+    onFitAll = vi.fn<() => void>();
 
     controller = new KeyboardController(el, viewport, buffer, {
       onViewportChange,
