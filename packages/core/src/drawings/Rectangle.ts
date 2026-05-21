@@ -1,6 +1,7 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
 
 /**
  * Axis-aligned rectangle anchored by two diagonal corners. Useful for
@@ -58,6 +59,34 @@ export class Rectangle extends Drawing {
     ctx.strokeRect(x + 0.5, y + 0.5, w, h);
 
     ctx.restore();
+  }
+
+  override hitTest(
+    px: number,
+    py: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    if (this.points.length < 2) return false;
+    if (px < layout.chartLeft || px > layout.chartRight) return false;
+    if (py < layout.chartTop || py > layout.chartBottom) return false;
+    const [a, b] = this.points as [AnchorPoint, AnchorPoint];
+    const x1 = viewport.indexToX(a.index);
+    const y1 = viewport.priceToY(a.price);
+    const x2 = viewport.indexToX(b.index);
+    const y2 = viewport.priceToY(b.price);
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const top = Math.min(y1, y2);
+    const bottom = Math.max(y1, y2);
+    // A hit is anywhere inside the box or within tolerance of any edge.
+    return (
+      px >= left - tolerance &&
+      px <= right + tolerance &&
+      py >= top - tolerance &&
+      py <= bottom + tolerance
+    );
   }
 }
 

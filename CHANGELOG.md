@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Drawing selection, deletion, and undo/redo.** Every drawing now
+  implements `hitTest(x, y, layout, viewport, tolerance)` with geometry
+  matching its rendered shape (segments, full-width/height lines, rays,
+  rectangles, channels, fib levels). `DrawingLayer` gains `hitTest`,
+  `selectAt`, `select`, `removeSelected`, `undo`/`redo` (`canUndo`/
+  `canRedo`), and renders square handles on the selected drawing.
+  `OHLCVChart` exposes `selectDrawingAt`, `selectDrawing`,
+  `getSelectedDrawingId`, `deleteSelectedDrawing`, `undoDrawing`,
+  `redoDrawing` — input wiring stays in the consumer, consistent with the
+  render-only drawing-layer design.
 - **Gap detection utilities.** `findGaps(buffer, intervalSeconds)` reports
   runs of missing candles (weekends, exchange close, dropped ticks) as
   `CandleGap[]`; `resolutionToSeconds(resolution)` maps a resolution string

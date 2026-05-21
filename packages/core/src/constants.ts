@@ -51,6 +51,12 @@ export const PILL_MARGIN = 12;
 export const LEGEND_MARGIN_LEFT = 10;
 export const LEGEND_MARGIN_TOP = 16;
 
+// Drawings
+/** Pixel radius within which a click is considered a hit on a drawing. */
+export const DRAWING_HIT_TOLERANCE_PX = 6;
+/** Side length (px) of the square handles drawn on a selected drawing. */
+export const DRAWING_HANDLE_PX = 7;
+
 // Themes
 export const DARK_THEME: ThemeColors = {
   background: '#131722',

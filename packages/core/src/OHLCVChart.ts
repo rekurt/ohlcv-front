@@ -481,6 +481,56 @@ export class OHLCVChart {
   }
 
   /**
+   * Hit-test the auto-managed drawings at a canvas point (in CSS pixels
+   * relative to the chart container) and select the topmost match — or
+   * clear the selection if nothing is hit. Returns the selected drawing's
+   * id, or null. Wire this to a `click`/`pointerdown` handler.
+   */
+  selectDrawingAt(x: number, y: number, tolerance?: number): string | null {
+    const hit = this._ownDrawingLayer.selectAt(
+      x,
+      y,
+      this._engine.layout,
+      this._engine.viewport,
+      tolerance,
+    );
+    this._engine.requestRender();
+    return hit ? hit.id : null;
+  }
+
+  /** Id of the currently-selected drawing, or null. */
+  getSelectedDrawingId(): string | null {
+    return this._ownDrawingLayer.selectedId;
+  }
+
+  /** Select a drawing by id, or clear the selection with null. */
+  selectDrawing(id: string | null): void {
+    this._ownDrawingLayer.select(id);
+    this._engine.requestRender();
+  }
+
+  /** Delete the selected drawing, if any. Returns true if one was removed. */
+  deleteSelectedDrawing(): boolean {
+    const removed = this._ownDrawingLayer.removeSelected();
+    if (removed) this._engine.requestRender();
+    return removed;
+  }
+
+  /** Undo the last drawing add/remove/clear. Returns true if applied. */
+  undoDrawing(): boolean {
+    const applied = this._ownDrawingLayer.undo();
+    if (applied) this._engine.requestRender();
+    return applied;
+  }
+
+  /** Redo the last undone drawing mutation. Returns true if applied. */
+  redoDrawing(): boolean {
+    const applied = this._ownDrawingLayer.redo();
+    if (applied) this._engine.requestRender();
+    return applied;
+  }
+
+  /**
    * Snapshot the chart as a PNG data URL. Returns `null` if the
    * browser cannot provide a 2D context (sandboxed iframe).
    */

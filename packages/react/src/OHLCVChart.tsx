@@ -79,6 +79,12 @@ export interface OHLCVChartRef {
   getDrawings(): DrawingSnapshot[];
   loadDrawings(snapshots: DrawingSnapshot[]): void;
   clearDrawings(): void;
+  selectDrawingAt(x: number, y: number, tolerance?: number): string | null;
+  selectDrawing(id: string | null): void;
+  getSelectedDrawingId(): string | null;
+  deleteSelectedDrawing(): boolean;
+  undoDrawing(): boolean;
+  redoDrawing(): boolean;
 
   // Export
   toPNG(): string | null;
@@ -234,6 +240,13 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
       loadDrawings: (snapshots: DrawingSnapshot[]) =>
         chartRef.current?.loadDrawings(snapshots),
       clearDrawings: () => chartRef.current?.clearDrawings(),
+      selectDrawingAt: (x: number, y: number, tolerance?: number) =>
+        chartRef.current?.selectDrawingAt(x, y, tolerance) ?? null,
+      selectDrawing: (id: string | null) => chartRef.current?.selectDrawing(id),
+      getSelectedDrawingId: () => chartRef.current?.getSelectedDrawingId() ?? null,
+      deleteSelectedDrawing: () => chartRef.current?.deleteSelectedDrawing() ?? false,
+      undoDrawing: () => chartRef.current?.undoDrawing() ?? false,
+      redoDrawing: () => chartRef.current?.redoDrawing() ?? false,
       toPNG: () => chartRef.current?.toPNG() ?? null,
     }),
     [],

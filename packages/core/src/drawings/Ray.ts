@@ -1,6 +1,8 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
+import { distanceToSegment } from './geometry';
 
 /**
  * A semi-infinite line starting at the first anchor, passing through
@@ -74,5 +76,36 @@ export class Ray extends Drawing {
     ctx.stroke();
 
     ctx.restore();
+  }
+
+  override hitTest(
+    px: number,
+    py: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    if (this.points.length < 2) return false;
+    if (px < layout.chartLeft || px > layout.chartRight) return false;
+    if (py < layout.chartTop || py > layout.chartBottom) return false;
+    const [a, b] = this.points as [AnchorPoint, AnchorPoint];
+    const x1 = viewport.indexToX(a.index);
+    const y1 = viewport.priceToY(a.price);
+    const x2 = viewport.indexToX(b.index);
+    const y2 = viewport.priceToY(b.price);
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    if (dx === 0 && dy === 0) return false;
+    // Mirror render(): project from the first anchor to the chart edge.
+    let endX: number;
+    let endY: number;
+    if (dx !== 0) {
+      endX = dx > 0 ? layout.chartRight : layout.chartLeft;
+      endY = y1 + (dy / dx) * (endX - x1);
+    } else {
+      endX = x1;
+      endY = dy > 0 ? layout.chartBottom : layout.chartTop;
+    }
+    return distanceToSegment(px, py, x1, y1, endX, endY) <= tolerance;
   }
 }

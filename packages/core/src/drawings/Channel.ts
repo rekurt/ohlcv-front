@@ -1,6 +1,8 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
+import { distanceToSegment } from './geometry';
 
 /**
  * Equidistant channel — three anchor points: two on one boundary
@@ -90,6 +92,33 @@ export class Channel extends Drawing {
     ctx.stroke();
 
     ctx.restore();
+  }
+
+  override hitTest(
+    px: number,
+    py: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    if (this.points.length < 3) return false;
+    if (px < layout.chartLeft || px > layout.chartRight) return false;
+    if (py < layout.chartTop || py > layout.chartBottom) return false;
+    const [a, b, c] = this.points as [AnchorPoint, AnchorPoint, AnchorPoint];
+    if (b.index === a.index) return false;
+    const slope = (b.price - a.price) / (b.index - a.index);
+    const offset = c.price - (a.price + slope * (c.index - a.index));
+    const startIndex = viewport.startIndex;
+    const endIndex = viewport.startIndex + viewport.visibleCount;
+    const xL = viewport.indexToX(startIndex);
+    const xR = viewport.indexToX(endIndex);
+    const yPriA = viewport.priceToY(a.price + slope * (startIndex - a.index));
+    const yPriB = viewport.priceToY(a.price + slope * (endIndex - a.index));
+    const ySecA = viewport.priceToY(a.price + slope * (startIndex - a.index) + offset);
+    const ySecB = viewport.priceToY(a.price + slope * (endIndex - a.index) + offset);
+    const d1 = distanceToSegment(px, py, xL, yPriA, xR, yPriB);
+    const d2 = distanceToSegment(px, py, xL, ySecA, xR, ySecB);
+    return Math.min(d1, d2) <= tolerance;
   }
 }
 
