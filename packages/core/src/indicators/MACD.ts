@@ -70,7 +70,7 @@ export class MACD extends Indicator {
     // signal = EMA of macd starting at slowPeriod - 1.
     // We feed only the valid macd tail to ema().
     const validStart = this.slowPeriod - 1;
-    const macdTail = macd.subarray(validStart) as unknown as Float64Array;
+    const macdTail = macd.subarray(validStart);
     const signalTail = ema(macdTail, this.signalPeriod);
     for (let i = 0; i < signalTail.length; i++) {
       const idx = validStart + i;
