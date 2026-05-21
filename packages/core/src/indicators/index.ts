@@ -34,3 +34,7 @@ export { WMA } from './WMA';
 export { HMA } from './HMA';
 export { Donchian } from './Donchian';
 export { Keltner } from './Keltner';
+export { Supertrend } from './Supertrend';
+export { ParabolicSAR } from './ParabolicSAR';
+export { StochRSI } from './StochRSI';
+export { ROC } from './ROC';

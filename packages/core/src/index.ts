@@ -81,6 +81,10 @@ export { WMA } from './indicators/WMA';
 export { HMA } from './indicators/HMA';
 export { Donchian } from './indicators/Donchian';
 export { Keltner } from './indicators/Keltner';
+export { Supertrend } from './indicators/Supertrend';
+export { ParabolicSAR } from './indicators/ParabolicSAR';
+export { StochRSI } from './indicators/StochRSI';
+export { ROC } from './indicators/ROC';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';

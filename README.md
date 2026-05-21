@@ -91,9 +91,10 @@ npm run docs            # TypeDoc → docs/api/
 - Overlay on main pane: `SMA`, `EMA`, `WMA`, `HMA`, `BollingerBands`,
   `Keltner`, `Donchian`, `VWAP` (session / cumulative / anchored),
   `PivotPoints` (pivot + R1/R2/S1/S2),
-  `Ichimoku` (tenkan / kijun / senkou A&B / chikou)
+  `Ichimoku` (tenkan / kijun / senkou A&B / chikou),
+  `Supertrend`, `ParabolicSAR`
 - Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`,
-  `WilliamsR`, `OBV`, `ADX`, `CCI`, `MFI`
+  `WilliamsR`, `OBV`, `ADX`, `CCI`, `MFI`, `StochRSI`, `ROC`
 - `IndicatorConfig` discriminated union + `createIndicator` factory —
   user code never instantiates indicator classes directly; it passes
   config objects and the core reconciles them.

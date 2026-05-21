@@ -24,6 +24,10 @@ import { WMA } from './WMA';
 import { HMA } from './HMA';
 import { Donchian } from './Donchian';
 import { Keltner } from './Keltner';
+import { Supertrend } from './Supertrend';
+import { ParabolicSAR } from './ParabolicSAR';
+import { StochRSI } from './StochRSI';
+import { ROC } from './ROC';
 
 describe('indicatorId', () => {
   it('produces stable id for equivalent configs', () => {
@@ -92,6 +96,13 @@ describe('indicatorId', () => {
     expect(
       indicatorId({ type: 'keltner', period: 30, mult: 3, atrPeriod: 14 }),
     ).toBe('keltner:30:3:14');
+  });
+
+  it('encodes the wave-18 trend / momentum indicators', () => {
+    expect(indicatorId({ type: 'supertrend' })).toBe('supertrend:10:3');
+    expect(indicatorId({ type: 'psar' })).toBe('psar:0.02:0.2');
+    expect(indicatorId({ type: 'stochrsi' })).toBe('stochrsi:14:14:3:3');
+    expect(indicatorId({ type: 'roc', period: 12 })).toBe('roc:12');
   });
 });
 
@@ -164,6 +175,13 @@ describe('createIndicator', () => {
     expect(createIndicator({ type: 'hma', period: 16 })).toBeInstanceOf(HMA);
     expect(createIndicator({ type: 'donchian', period: 20 })).toBeInstanceOf(Donchian);
     expect(createIndicator({ type: 'keltner' })).toBeInstanceOf(Keltner);
+  });
+
+  it('creates Supertrend / ParabolicSAR / StochRSI / ROC from their configs', () => {
+    expect(createIndicator({ type: 'supertrend' })).toBeInstanceOf(Supertrend);
+    expect(createIndicator({ type: 'psar' })).toBeInstanceOf(ParabolicSAR);
+    expect(createIndicator({ type: 'stochrsi' })).toBeInstanceOf(StochRSI);
+    expect(createIndicator({ type: 'roc', period: 12 })).toBeInstanceOf(ROC);
   });
 
   it('throws on unknown type (forged runtime JSON)', () => {

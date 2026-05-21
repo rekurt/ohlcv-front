@@ -18,6 +18,10 @@ import { WMA } from './WMA';
 import { HMA } from './HMA';
 import { Donchian } from './Donchian';
 import { Keltner } from './Keltner';
+import { Supertrend } from './Supertrend';
+import { ParabolicSAR } from './ParabolicSAR';
+import { StochRSI } from './StochRSI';
+import { ROC } from './ROC';
 
 /**
  * Discriminated union of all built-in indicator configurations. Users of
@@ -58,7 +62,17 @@ export type IndicatorConfig =
   | { type: 'wma'; period: number }
   | { type: 'hma'; period: number }
   | { type: 'donchian'; period: number }
-  | { type: 'keltner'; period?: number; mult?: number; atrPeriod?: number };
+  | { type: 'keltner'; period?: number; mult?: number; atrPeriod?: number }
+  | { type: 'supertrend'; period?: number; mult?: number }
+  | { type: 'psar'; step?: number; max?: number }
+  | {
+      type: 'stochrsi';
+      rsiPeriod?: number;
+      stochPeriod?: number;
+      kSmooth?: number;
+      dSmooth?: number;
+    }
+  | { type: 'roc'; period: number };
 
 /**
  * Stable string id derived from an indicator config. Two configs with the
@@ -110,6 +124,14 @@ export function indicatorId(cfg: IndicatorConfig): string {
       return `donchian:${cfg.period}`;
     case 'keltner':
       return `keltner:${cfg.period ?? 20}:${cfg.mult ?? 2}:${cfg.atrPeriod ?? 10}`;
+    case 'supertrend':
+      return `supertrend:${cfg.period ?? 10}:${cfg.mult ?? 3}`;
+    case 'psar':
+      return `psar:${cfg.step ?? 0.02}:${cfg.max ?? 0.2}`;
+    case 'stochrsi':
+      return `stochrsi:${cfg.rsiPeriod ?? 14}:${cfg.stochPeriod ?? 14}:${cfg.kSmooth ?? 3}:${cfg.dSmooth ?? 3}`;
+    case 'roc':
+      return `roc:${cfg.period}`;
   }
 }
 
@@ -166,6 +188,14 @@ export function createIndicator(cfg: IndicatorConfig): Indicator {
       return new Donchian(cfg.period);
     case 'keltner':
       return new Keltner(cfg.period, cfg.mult, cfg.atrPeriod);
+    case 'supertrend':
+      return new Supertrend(cfg.period, cfg.mult);
+    case 'psar':
+      return new ParabolicSAR(cfg.step, cfg.max);
+    case 'stochrsi':
+      return new StochRSI(cfg.rsiPeriod, cfg.stochPeriod, cfg.kSmooth, cfg.dSmooth);
+    case 'roc':
+      return new ROC(cfg.period);
     default: {
       // Exhaustiveness guard for the union above — TypeScript flags any
       // missing case at compile time. The runtime throw covers forged
