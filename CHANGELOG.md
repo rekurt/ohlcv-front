@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Gap detection utilities.** `findGaps(buffer, intervalSeconds)` reports
+  runs of missing candles (weekends, exchange close, dropped ticks) as
+  `CandleGap[]`; `resolutionToSeconds(resolution)` maps a resolution string
+  to its interval (null for calendar months). Detection only — consumers
+  decide whether to backfill or draw session breaks.
 - **Indicator compute memoization.** `Indicator.computeCached(buffer)`
   wraps `compute()` and caches the result keyed on the new
   `CandleBuffer.version` revision counter. The render loop now uses

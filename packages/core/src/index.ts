@@ -32,6 +32,8 @@ export { WebSocketTransport } from './data/WebSocketTransport';
 export { ExponentialBackoff } from './data/ExponentialBackoff';
 export type { ExponentialBackoffOptions } from './data/ExponentialBackoff';
 export { ValidationError, validateCandle, validateCandles } from './data/validation';
+export { findGaps, resolutionToSeconds } from './data/gaps';
+export type { CandleGap } from './data/gaps';
 
 // Rendering
 export { ChartEngine } from './rendering/ChartEngine';
