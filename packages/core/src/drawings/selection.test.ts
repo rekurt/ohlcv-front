@@ -183,4 +183,23 @@ describe('DrawingLayer.shiftIndices', () => {
     layer.shiftIndices(0);
     expect(layer.drawings[0]!.points.map((p) => p.index)).toEqual([5, 6]);
   });
+
+  it('reindexes undo snapshots so undo after a shift restores correct indices', () => {
+    const layer = new DrawingLayer();
+    const a = new TrendLine('a');
+    a.addPoint({ index: 90, price: 100 });
+    a.addPoint({ index: 95, price: 101 });
+    layer.add(a); // undo snapshot: [] (pre-add)
+    const b = new TrendLine('b');
+    b.addPoint({ index: 80, price: 100 });
+    b.addPoint({ index: 85, price: 101 });
+    layer.add(b); // undo snapshot: [a@90,95]
+
+    layer.shiftIndices(-50); // live a@40,45 b@30,35; snapshot a must shift too
+
+    expect(layer.undo()).toBe(true); // restore the [a] snapshot
+    expect(layer.drawings.map((d) => d.id)).toEqual(['a']);
+    // Without snapshot reindexing this would restore the stale 90/95.
+    expect(layer.drawings[0]!.points.map((p) => p.index)).toEqual([40, 45]);
+  });
 });

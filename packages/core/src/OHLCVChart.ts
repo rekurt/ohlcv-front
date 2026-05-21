@@ -144,9 +144,11 @@ export class OHLCVChart {
     // Merger triggers render. Only scroll to the live edge if the user is
     // actively following the stream; otherwise just repaint and let the
     // viewport stay wherever the user has scrolled.
-    this._merger.onUpdate(() => {
+    this._merger.onUpdate((info) => {
       const vp = this._engine.viewport;
-      this._enforceMaxCandles();
+      // Only evict on realtime appends — never after a loadHistory/prepend,
+      // which would immediately drop the page the user just paged in.
+      if (info.realtime) this._enforceMaxCandles();
       if (vp.autoFollow || this._buffer.length <= vp.visibleCount) {
         vp.scrollToEnd(this._buffer.length);
       }
@@ -318,7 +320,10 @@ export class OHLCVChart {
     if (evicted <= 0) return;
     const vp = this._engine.viewport;
     vp.startIndex = Math.max(0, vp.startIndex - evicted);
-    this._ownDrawingLayer.shiftIndices(-evicted);
+    // Shift the layer the engine is actually rendering (a host may have
+    // swapped in a custom one via setDrawingLayer), not just the
+    // auto-managed instance, so drawings stay pinned to their candles.
+    this._engine.drawingLayer?.shiftIndices(-evicted);
   }
 
   /** Switch to a different symbol/resolution */

@@ -81,7 +81,6 @@ export class ChartEngine {
 
   // State
   private _crosshairState: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false, inMainPane: true };
-  private _legendCandle: Candle | null = null;
   private _chartDirty = true;
   private _uiDirty = true;
   private _crosshairDirty = false;
@@ -308,6 +307,11 @@ export class ChartEngine {
     this.requestRender();
   }
 
+  /** The drawing layer currently being rendered, or null. */
+  get drawingLayer(): DrawingLayer | null {
+    return this._drawingLayer;
+  }
+
   /** Replace the set of candle-anchored markers. */
   setMarkers(markers: Marker[]): void {
     this._markers = markers;
@@ -341,7 +345,6 @@ export class ChartEngine {
     // crosshair lines, so redraw only the cheap crosshair layer and skip
     // the UI layer (legend, price line, pill) until the candle changes.
     if (candle) {
-      this._legendCandle = candle;
       if (snapIndex !== this._lastLegendIndex) {
         this._lastLegendIndex = snapIndex;
         this._uiDirty = true;
@@ -367,9 +370,6 @@ export class ChartEngine {
   /** Hide crosshair and show last candle in legend */
   hideCrosshair(): void {
     this._crosshairState.visible = false;
-    if (this._buffer && this._buffer.length > 0) {
-      this._legendCandle = this._buffer.candleAt(this._buffer.length - 1);
-    }
     // Reset so re-entering the chart always refreshes the legend, and mark
     // the UI layer dirty to revert the legend to the latest candle.
     this._lastLegendIndex = -1;
@@ -590,8 +590,16 @@ export class ChartEngine {
         this._priceAxisRenderer.drawCurrentPrice(ctx, this._layout, this.viewport, lastClose, isBull, this._theme, this._priceFormat);
       }
 
-      // Legend
-      const legendCandle = this._legendCandle || (this._buffer.length > 0 ? this._buffer.candleAt(this._buffer.length - 1) : null);
+      // Legend. Read the hovered candle fresh from the buffer (not a stale
+      // snapshot) so a realtime tick updating the forming candle the user
+      // is hovering refreshes its OHLC. Falls back to the latest candle.
+      const hoveredIndex = this._crosshairState.visible ? this._lastLegendIndex : -1;
+      const legendCandle =
+        hoveredIndex >= 0 && hoveredIndex < this._buffer.length
+          ? this._buffer.candleAt(hoveredIndex)
+          : this._buffer.length > 0
+            ? this._buffer.candleAt(this._buffer.length - 1)
+            : null;
       this._legendRenderer.render(
         ctx, this._layout, legendCandle, this._symbol, this._resolution, this._theme, this._priceFormat, this._volumeFormat,
       );

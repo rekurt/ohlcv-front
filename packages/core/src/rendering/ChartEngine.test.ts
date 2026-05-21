@@ -178,6 +178,30 @@ describe('ChartEngine sub-panes', () => {
     expect(legendSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('refreshes the legend for the hovered forming candle on data change', () => {
+    const legend = (engine as unknown as {
+      _legendRenderer: { render: (...args: unknown[]) => void };
+    })._legendRenderer;
+    const legendSpy = vi.spyOn(legend, 'render');
+    const lastCallCandle = (): { c: number } => {
+      const calls = legendSpy.mock.calls;
+      return calls[calls.length - 1]![2] as { c: number };
+    };
+
+    const lastIdx = buffer.length - 1;
+    engine.setCrosshair(200, 100, lastIdx, buffer.candleAt(lastIdx)!, '12:00');
+    forceRender(engine);
+    const firstClose = lastCallCandle().c;
+
+    // A realtime tick mutates the forming (last) candle the user is hovering.
+    const cur = buffer.candleAt(lastIdx)!;
+    buffer.updateLast({ ...cur, c: cur.c + 50, h: cur.h + 50 });
+    engine.requestRender(); // what the live-update path does
+    forceRender(engine);
+
+    expect(lastCallCandle().c).toBe(firstClose + 50);
+  });
+
   it('reports indicator compute errors through the ErrorReporter instead of swallowing', () => {
     const errors: ChartError[] = [];
     engine.setErrorReporter(new ErrorReporter((e) => errors.push(e)));

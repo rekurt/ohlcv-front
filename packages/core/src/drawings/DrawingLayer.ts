@@ -256,6 +256,15 @@ export class DrawingLayer {
     if (this._active) {
       for (const p of this._active.points) p.index += delta;
     }
+    // Reindex saved undo/redo snapshots too, so a later undo()/redo() after
+    // eviction restores drawings to the correct (post-shift) candles.
+    for (const stack of [this._undoStack, this._redoStack]) {
+      for (const snaps of stack) {
+        for (const snap of snaps) {
+          for (const p of snap.points) p.index += delta;
+        }
+      }
+    }
   }
 
   /** Render all completed drawings plus the in-progress one. */
