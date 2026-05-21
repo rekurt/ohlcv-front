@@ -114,12 +114,19 @@ export class CandleBuffer {
     const incoming = sorted.length - firstValid;
     if (incoming === 0) return;
 
+    // Validate the entire range BEFORE mutating buffer state. A
+    // failed call must leave the buffer untouched so callers that
+    // treat the exception as a full rejection can retry without
+    // ending up with silent partial ingestion.
+    for (let idx = firstValid; idx < sorted.length; idx++) {
+      assertCandleNumeric(sorted[idx]!, 'appendBatch');
+    }
+
     // Ensure trailing capacity. _growTail enlarges the right side; if
     // there's plenty of right-side room already we don't allocate.
     while (this._head + this._length + incoming > this._capacity) this._growTail();
     for (let idx = firstValid; idx < sorted.length; idx++) {
       const c = sorted[idx]!;
-      assertCandleNumeric(c, 'appendBatch');
       const i = this._head + this._length;
       this._length++;
       this._open[i] = c.o;
@@ -175,13 +182,18 @@ export class CandleBuffer {
 
     const incoming = lastValid;
 
+    // Validate the entire range BEFORE mutating buffer state — same
+    // atomicity contract as appendBatch.
+    for (let i = 0; i < incoming; i++) {
+      assertCandleNumeric(sorted[i]!, 'prepend');
+    }
+
     if (this._head >= incoming) {
       // Fast path: enough leftPad headroom — shift _head left and write
       // in place. No allocations, no copies.
       const newHead = this._head - incoming;
       for (let i = 0; i < incoming; i++) {
         const c = sorted[i]!;
-        assertCandleNumeric(c, 'prepend');
         const idx = newHead + i;
         this._open[idx] = c.o;
         this._high[idx] = c.h;
@@ -213,9 +225,9 @@ export class CandleBuffer {
     const newHead = reservedLeftPad;
 
     // Write prepended block at [newHead .. newHead + incoming).
+    // Range already validated above.
     for (let i = 0; i < incoming; i++) {
       const c = sorted[i]!;
-      assertCandleNumeric(c, 'prepend');
       const idx = newHead + i;
       newOpen[idx] = c.o;
       newHigh[idx] = c.h;

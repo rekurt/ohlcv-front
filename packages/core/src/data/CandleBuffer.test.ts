@@ -47,6 +47,39 @@ describe('CandleBuffer', () => {
         buf.appendBatch([{ o: 1, h: 1, l: 1, c: 1, v: 1, t: 2 }, { o: 1, h: 1, l: 1, c: 1, v: NaN, t: 3 }]),
       ).toThrow(/non-finite OHLCVT/);
     });
+
+    it('appendBatch is atomic — a thrown validation leaves length unchanged', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(100, 100));
+      const lengthBefore = buf.length;
+      // Mixed payload: two valid candles followed by one NaN-poisoned one.
+      // Previous implementation would have written the first two before
+      // throwing, leaving the buffer in a partially-mutated state.
+      expect(() =>
+        buf.appendBatch([
+          { o: 1, h: 1, l: 1, c: 1, v: 1, t: 200 },
+          { o: 2, h: 2, l: 2, c: 2, v: 2, t: 300 },
+          { o: NaN, h: 1, l: 1, c: 1, v: 1, t: 400 },
+        ]),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(buf.length).toBe(lengthBefore);
+      expect(buf.lastTime()).toBe(100);
+    });
+
+    it('prepend is atomic — a thrown validation leaves length unchanged', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(1000));
+      const lengthBefore = buf.length;
+      expect(() =>
+        buf.prepend([
+          { o: 1, h: 1, l: 1, c: 1, v: 1, t: 100 },
+          { o: 1, h: 1, l: 1, c: NaN, v: 1, t: 200 },
+          { o: 1, h: 1, l: 1, c: 1, v: 1, t: 300 },
+        ]),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(buf.length).toBe(lengthBefore);
+      expect(buf.firstTime()).toBe(1000);
+    });
   });
 
   describe('appendBatch', () => {

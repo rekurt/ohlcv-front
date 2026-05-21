@@ -50,6 +50,12 @@ export interface UseOHLCVChartOptions {
 export function useOHLCVChart(options: UseOHLCVChartOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<OHLCVChart | null>(null);
+  // Track the symbol/resolution the chart was constructed with so we
+  // can skip the initial switchSymbol() call (the constructor already
+  // connected with these values). Without this guard a transport-backed
+  // chart would issue a duplicate fetchHistory + buffer reset on every
+  // mount.
+  const initialSymbolRef = useRef({ symbol: options.symbol, resolution: options.resolution });
 
   // Callback trampolines — keep the latest closure live without
   // rebuilding the chart on every parent re-render.
@@ -97,8 +103,17 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     chartRef.current?.setOnHover(options.onHover ?? null);
   }, [options.onHover]);
 
-  // Symbol / resolution — switchSymbol() resets the view.
+  // Symbol / resolution — switchSymbol() resets the view. Skip the
+  // initial run for the values the chart was constructed with so we
+  // don't issue a duplicate connect() right after mount.
   useEffect(() => {
+    const initial = initialSymbolRef.current;
+    if (initial.symbol === options.symbol && initial.resolution === options.resolution) {
+      // Clear after first invocation so a later change back to the
+      // original values still re-triggers switchSymbol.
+      initialSymbolRef.current = { symbol: '', resolution: '' };
+      return;
+    }
     chartRef.current?.switchSymbol(options.symbol, options.resolution);
   }, [options.symbol, options.resolution]);
 

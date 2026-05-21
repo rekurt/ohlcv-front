@@ -42,10 +42,11 @@ export class CrosshairRenderer {
     ctx.lineTo(layout.chartRight, Math.round(y) + 0.5);
     ctx.stroke();
 
-    // Vertical line
+    // Vertical line — extends through any sub-pane bands so the user
+    // can read pane indicator values at the same time index.
     ctx.beginPath();
     ctx.moveTo(Math.round(x) + 0.5, layout.chartTop);
-    ctx.lineTo(Math.round(x) + 0.5, layout.chartBottom);
+    ctx.lineTo(Math.round(x) + 0.5, layout.paneAreaBottom);
     ctx.stroke();
 
     ctx.setLineDash([]);
@@ -75,7 +76,7 @@ export class CrosshairRenderer {
     ctx.fillStyle = theme.crosshair;
     ctx.fillRect(
       timeBgX,
-      layout.chartBottom + AXIS_LABEL_BG_INSET,
+      layout.paneAreaBottom + AXIS_LABEL_BG_INSET,
       timeWidth,
       AXIS_LABEL_HEIGHT,
     );
@@ -85,7 +86,7 @@ export class CrosshairRenderer {
     ctx.fillText(
       time,
       Math.round(x),
-      Math.round(layout.chartBottom + AXIS_LABEL_BG_INSET + AXIS_LABEL_TEXT_PAD / 2),
+      Math.round(layout.paneAreaBottom + AXIS_LABEL_BG_INSET + AXIS_LABEL_TEXT_PAD / 2),
     );
   }
 }
