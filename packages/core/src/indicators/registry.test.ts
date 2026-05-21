@@ -13,6 +13,21 @@ import { MACD } from './MACD';
 import { Stochastic } from './Stochastic';
 import { ATR } from './ATR';
 import { VWAP } from './VWAP';
+import { WilliamsR } from './WilliamsR';
+import { OBV } from './OBV';
+import { ADX } from './ADX';
+import { CCI } from './CCI';
+import { PivotPoints } from './PivotPoints';
+import { Ichimoku } from './Ichimoku';
+import { MFI } from './MFI';
+import { WMA } from './WMA';
+import { HMA } from './HMA';
+import { Donchian } from './Donchian';
+import { Keltner } from './Keltner';
+import { Supertrend } from './Supertrend';
+import { ParabolicSAR } from './ParabolicSAR';
+import { StochRSI } from './StochRSI';
+import { ROC } from './ROC';
 
 describe('indicatorId', () => {
   it('produces stable id for equivalent configs', () => {
@@ -48,6 +63,46 @@ describe('indicatorId', () => {
 
   it('encodes VWAP anchor', () => {
     expect(indicatorId({ type: 'vwap', anchor: 'session' })).toBe('vwap:session');
+  });
+
+  it('encodes the M2 extra indicators', () => {
+    expect(indicatorId({ type: 'williamsr', period: 14 })).toBe('williamsr:14');
+    expect(indicatorId({ type: 'obv' })).toBe('obv');
+    expect(indicatorId({ type: 'adx', period: 14 })).toBe('adx:14');
+    expect(indicatorId({ type: 'cci', period: 20 })).toBe('cci:20');
+  });
+
+  it('encodes the wave-13 indicators with default and explicit args', () => {
+    expect(indicatorId({ type: 'pp' })).toBe('pp:86400');
+    expect(indicatorId({ type: 'pp', period: 3600 })).toBe('pp:3600');
+    expect(indicatorId({ type: 'ichimoku' })).toBe('ichimoku:9:26:52:26');
+    expect(
+      indicatorId({
+        type: 'ichimoku',
+        tenkanPeriod: 7,
+        kijunPeriod: 22,
+        senkouBPeriod: 44,
+        displacement: 22,
+      }),
+    ).toBe('ichimoku:7:22:44:22');
+    expect(indicatorId({ type: 'mfi', period: 14 })).toBe('mfi:14');
+  });
+
+  it('encodes the wave-17 MA / channel indicators', () => {
+    expect(indicatorId({ type: 'wma', period: 9 })).toBe('wma:9');
+    expect(indicatorId({ type: 'hma', period: 16 })).toBe('hma:16');
+    expect(indicatorId({ type: 'donchian', period: 20 })).toBe('donchian:20');
+    expect(indicatorId({ type: 'keltner' })).toBe('keltner:20:2:10');
+    expect(
+      indicatorId({ type: 'keltner', period: 30, mult: 3, atrPeriod: 14 }),
+    ).toBe('keltner:30:3:14');
+  });
+
+  it('encodes the wave-18 trend / momentum indicators', () => {
+    expect(indicatorId({ type: 'supertrend' })).toBe('supertrend:10:3');
+    expect(indicatorId({ type: 'psar' })).toBe('psar:0.02:0.2');
+    expect(indicatorId({ type: 'stochrsi' })).toBe('stochrsi:14:14:3:3');
+    expect(indicatorId({ type: 'roc', period: 12 })).toBe('roc:12');
   });
 });
 
@@ -90,6 +145,43 @@ describe('createIndicator', () => {
     expect(createIndicator({ type: 'vwap', anchor: 'session' })).toBeInstanceOf(
       VWAP,
     );
+  });
+
+  it('creates WilliamsR instance', () => {
+    expect(createIndicator({ type: 'williamsr', period: 14 })).toBeInstanceOf(WilliamsR);
+  });
+
+  it('creates OBV instance', () => {
+    expect(createIndicator({ type: 'obv' })).toBeInstanceOf(OBV);
+  });
+
+  it('creates ADX instance', () => {
+    expect(createIndicator({ type: 'adx', period: 14 })).toBeInstanceOf(ADX);
+  });
+
+  it('creates CCI instance', () => {
+    expect(createIndicator({ type: 'cci', period: 20 })).toBeInstanceOf(CCI);
+  });
+
+  it('creates PivotPoints / Ichimoku / MFI from their configs', () => {
+    expect(createIndicator({ type: 'pp' })).toBeInstanceOf(PivotPoints);
+    expect(createIndicator({ type: 'pp', period: 3600 })).toBeInstanceOf(PivotPoints);
+    expect(createIndicator({ type: 'ichimoku' })).toBeInstanceOf(Ichimoku);
+    expect(createIndicator({ type: 'mfi', period: 14 })).toBeInstanceOf(MFI);
+  });
+
+  it('creates WMA / HMA / Donchian / Keltner from their configs', () => {
+    expect(createIndicator({ type: 'wma', period: 9 })).toBeInstanceOf(WMA);
+    expect(createIndicator({ type: 'hma', period: 16 })).toBeInstanceOf(HMA);
+    expect(createIndicator({ type: 'donchian', period: 20 })).toBeInstanceOf(Donchian);
+    expect(createIndicator({ type: 'keltner' })).toBeInstanceOf(Keltner);
+  });
+
+  it('creates Supertrend / ParabolicSAR / StochRSI / ROC from their configs', () => {
+    expect(createIndicator({ type: 'supertrend' })).toBeInstanceOf(Supertrend);
+    expect(createIndicator({ type: 'psar' })).toBeInstanceOf(ParabolicSAR);
+    expect(createIndicator({ type: 'stochrsi' })).toBeInstanceOf(StochRSI);
+    expect(createIndicator({ type: 'roc', period: 12 })).toBeInstanceOf(ROC);
   });
 
   it('throws on unknown type (forged runtime JSON)', () => {

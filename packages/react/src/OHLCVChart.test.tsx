@@ -164,6 +164,38 @@ describe('React <OHLCVChart>', () => {
     expect(ref.current!.chart!.getIndicators()).toHaveLength(0);
   });
 
+  it('does not recreate the chart when only callback identities change', () => {
+    const ref = createRef<OHLCVChartRef>();
+    const handlerA = () => undefined;
+    const handlerB = () => undefined;
+
+    act(() => {
+      root.render(
+        <OHLCVChart ref={ref} symbol="BTC/USDT" resolution="1H" onHover={handlerA} />,
+      );
+    });
+    const chartInstance = ref.current!.chart;
+    expect(chartInstance).toBeTruthy();
+
+    // Re-render with new closure identities for every callback. The
+    // chart instance must be preserved — callbacks flow through
+    // trampoline refs and setOnHover, not full recreation.
+    act(() => {
+      root.render(
+        <OHLCVChart
+          ref={ref}
+          symbol="BTC/USDT"
+          resolution="1H"
+          onHover={handlerB}
+          onCandleClick={() => undefined}
+          onError={() => undefined}
+          onVisibleRangeChange={() => undefined}
+        />,
+      );
+    });
+    expect(ref.current!.chart).toBe(chartInstance);
+  });
+
   it('round-trips saveLayoutState / loadState through the ref', () => {
     const ref = createRef<OHLCVChartRef>();
     act(() => {

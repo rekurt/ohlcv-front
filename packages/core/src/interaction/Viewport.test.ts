@@ -253,10 +253,23 @@ describe('Viewport integration with autoScale', () => {
 
   it('autoScale skips NaN / Infinity candles without corrupting the range', () => {
     const buf = new CandleBuffer();
-    // One sane candle then a NaN-poisoned one.
+    // One sane candle then a NaN-poisoned one. CandleBuffer.append()
+    // now rejects non-finite inputs (review-3-3), so we poke the
+    // internal arrays directly to simulate the corruption-in-flight
+    // scenario the Viewport's defense-in-depth code still guards.
     buf.append({ o: 100, h: 105, l: 95, c: 102, v: 10, t: 1 });
-    buf.append({ o: NaN, h: NaN, l: NaN, c: NaN, v: NaN, t: 2 });
+    buf.append({ o: 99, h: 99, l: 99, c: 99, v: 1, t: 2 });
     buf.append({ o: 110, h: 115, l: 108, c: 112, v: 20, t: 3 });
+    const internals = buf as unknown as {
+      _open: Float64Array;
+      _high: Float64Array;
+      _low: Float64Array;
+      _close: Float64Array;
+    };
+    internals._open[1] = NaN;
+    internals._high[1] = NaN;
+    internals._low[1] = NaN;
+    internals._close[1] = NaN;
     vp.scrollToEnd(buf.length);
     vp.autoScale(buf);
     expect(Number.isFinite(vp.priceMin)).toBe(true);
@@ -276,7 +289,17 @@ describe('Viewport integration with autoScale', () => {
     const prevMax = vp.priceMax;
 
     const buf2 = new CandleBuffer();
-    buf2.append({ o: NaN, h: NaN, l: NaN, c: NaN, v: NaN, t: 2 });
+    buf2.append({ o: 99, h: 99, l: 99, c: 99, v: 1, t: 2 });
+    const i2 = buf2 as unknown as {
+      _open: Float64Array;
+      _high: Float64Array;
+      _low: Float64Array;
+      _close: Float64Array;
+    };
+    i2._open[0] = NaN;
+    i2._high[0] = NaN;
+    i2._low[0] = NaN;
+    i2._close[0] = NaN;
     vp.autoScale(buf2);
     expect(vp.priceMin).toBe(prevMin);
     expect(vp.priceMax).toBe(prevMax);
@@ -292,5 +315,99 @@ describe('Viewport integration with autoScale', () => {
     // priceToY must return a finite number in the chart area.
     const y = vp.priceToY(0.5);
     expect(Number.isFinite(y)).toBe(true);
+  });
+});
+
+describe('Viewport.scalePriceRangeBy (Y-axis drag-to-scale)', () => {
+  let vp: Viewport;
+
+  beforeEach(() => {
+    vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    vp.priceMin = 100;
+    vp.priceMax = 200;
+  });
+
+  it('defaults to autoScale (manualPriceScale = false)', () => {
+    expect(vp.manualPriceScale).toBe(false);
+  });
+
+  it('factor > 1 expands the range around the anchor', () => {
+    const anchorY = vp.priceToY(150); // mid-point
+    vp.scalePriceRangeBy(2, anchorY);
+    expect(vp.manualPriceScale).toBe(true);
+    expect(vp.priceMin).toBeLessThan(100);
+    expect(vp.priceMax).toBeGreaterThan(200);
+  });
+
+  it('factor < 1 contracts the range around the anchor', () => {
+    const anchorY = vp.priceToY(150);
+    vp.scalePriceRangeBy(0.5, anchorY);
+    expect(vp.priceMin).toBeGreaterThan(100);
+    expect(vp.priceMax).toBeLessThan(200);
+  });
+
+  it('preserves the price under the anchor', () => {
+    const anchorPrice = 150;
+    const anchorY = vp.priceToY(anchorPrice);
+    vp.scalePriceRangeBy(2, anchorY);
+    // The price under the same Y should still be ~150 (the anchor
+    // is fixed during a scale).
+    const after = vp.yToPrice(anchorY);
+    expect(after).toBeCloseTo(anchorPrice, 5);
+  });
+
+  it('rejects invalid factors silently', () => {
+    const anchorY = vp.priceToY(150);
+    vp.scalePriceRangeBy(0, anchorY);
+    expect(vp.priceMin).toBe(100);
+    expect(vp.priceMax).toBe(200);
+    vp.scalePriceRangeBy(-1, anchorY);
+    expect(vp.priceMin).toBe(100);
+    vp.scalePriceRangeBy(NaN, anchorY);
+    expect(vp.priceMin).toBe(100);
+  });
+
+  it('clamps extreme factors to [0.05, 20]', () => {
+    const anchorY = vp.priceToY(150);
+    vp.scalePriceRangeBy(1000, anchorY);
+    const range1 = vp.priceMax - vp.priceMin;
+    vp.priceMin = 100;
+    vp.priceMax = 200;
+    vp.scalePriceRangeBy(20, anchorY);
+    const range2 = vp.priceMax - vp.priceMin;
+    expect(range1).toBeCloseTo(range2, 5);
+  });
+
+  it('autoScale skips priceMin/priceMax when manualPriceScale=true', () => {
+    vp.scalePriceRangeBy(2, vp.priceToY(150));
+    const min = vp.priceMin;
+    const max = vp.priceMax;
+
+    const buf = fillBuffer(50);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    expect(vp.priceMin).toBe(min);
+    expect(vp.priceMax).toBe(max);
+  });
+
+  it('resetPriceScale re-enables auto-scaling', () => {
+    vp.scalePriceRangeBy(2, vp.priceToY(150));
+    vp.resetPriceScale();
+    expect(vp.manualPriceScale).toBe(false);
+
+    const buf = fillBuffer(50);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    // After autoScale on a freshly-filled buffer, the range should
+    // have changed away from the manually-frozen one.
+    expect(vp.priceMin !== 0 || vp.priceMax !== 0).toBe(true);
+  });
+
+  it('fitVisible clears manualPriceScale', () => {
+    vp.scalePriceRangeBy(2, vp.priceToY(150));
+    expect(vp.manualPriceScale).toBe(true);
+    vp.fitVisible(50);
+    expect(vp.manualPriceScale).toBe(false);
   });
 });

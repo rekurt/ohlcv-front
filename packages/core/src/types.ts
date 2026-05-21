@@ -144,7 +144,7 @@ export interface ChartError {
  * - `area` — close-price line with a gradient fill to chartBottom
  * - `ohlc` — OHLC bars (vertical line with open/close ticks)
  */
-export type ChartType = 'candles' | 'line' | 'area' | 'ohlc';
+export type ChartType = 'candles' | 'line' | 'area' | 'ohlc' | 'heikinashi';
 
 /**
  * Hover callback payload — invoked by CrosshairController on every
@@ -211,6 +211,11 @@ export interface ChartLayout {
   width: number;
   height: number;
   chartTop: number;
+  /**
+   * Bottom of the candle / price area. When sub-pane indicators are
+   * present this value sits ABOVE the time axis with one or more
+   * indicator panes between it and `paneAreaBottom`.
+   */
   chartBottom: number;
   chartLeft: number;
   chartRight: number;
@@ -218,4 +223,13 @@ export interface ChartLayout {
   volumeBottom: number;
   priceAxisWidth: number;
   timeAxisHeight: number;
+  /** Top of the first sub-pane band (== chartBottom). */
+  paneAreaTop: number;
+  /**
+   * Bottom of the last sub-pane band (== height − timeAxisHeight).
+   * When no sub-panes are active this equals `chartBottom`.
+   */
+  paneAreaBottom: number;
+  /** Number of pane-placement indicator bands stacked under the main chart. */
+  paneCount: number;
 }

@@ -20,17 +20,17 @@ export class LegendRenderer {
 
     const isBull = candle.c >= candle.o;
     const x = layout.chartLeft + LEGEND_MARGIN_LEFT;
-    const y = layout.chartTop + LEGEND_MARGIN_TOP;
+    const y = Math.round(layout.chartTop + LEGEND_MARGIN_TOP);
 
     ctx.font = LEGEND_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
-    // Symbol & resolution
+    // Symbol & resolution — pixel-snap X too as we accumulate widths.
     ctx.fillStyle = theme.text;
-    let offsetX = x;
+    let offsetX = Math.round(x);
     ctx.fillText(`${symbol} ${resolution}`, offsetX, y);
-    offsetX += ctx.measureText(`${symbol} ${resolution}  `).width;
+    offsetX = Math.round(offsetX + ctx.measureText(`${symbol} ${resolution}  `).width);
 
     // OHLCV values with color
     const color = isBull ? theme.bullCandle : theme.bearCandle;
@@ -46,7 +46,7 @@ export class LegendRenderer {
 
     for (const part of parts) {
       ctx.fillText(part, offsetX, y);
-      offsetX += ctx.measureText(part + '  ').width;
+      offsetX = Math.round(offsetX + ctx.measureText(part + '  ').width);
     }
   }
 }

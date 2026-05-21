@@ -10,6 +10,7 @@ React and Vue wrappers with full API parity.
 
 - 🎮 **Playground**: https://rekurt.github.io/ohlcv-front/
 - 📖 **API reference**: https://rekurt.github.io/ohlcv-front/api/
+- 📚 **Guides** (SSR, performance, theming, transports, recipes): [docs/GUIDES.md](./docs/GUIDES.md)
 - 📝 **Changelog**: [CHANGELOG.md](./CHANGELOG.md)
 
 ## Packages
@@ -54,9 +55,16 @@ npm run docs            # TypeDoc → docs/api/
 
 **Rendering** (`@rekurt/ohlcv-core`):
 - Candlesticks, volume bars, grid, price axis, time axis, crosshair with snap-to-candle, current price label, legend, "Go to live" pill
-- Alternative chart types: line, area (with gradient), OHLC bars
+- Alternative chart types: line, area (with gradient), OHLC bars,
+  Heikin-Ashi (first-class `chartType: 'heikinashi'` — no manual
+  data transform needed)
 - Hi-DPI canvas with three-layer split (chart / UI / interaction) for cheap crosshair redraws
-- `Pane` + `PaneLayout` abstraction for multi-pane charts with independent Y-axes (linear or log)
+- Multi-pane rendering: sub-pane indicators (RSI, MACD, Stochastic,
+  ATR, WilliamsR, OBV, ADX, CCI) render in their own auto-sized
+  vertical bands with independent Y-axes, label, and zero-line for
+  oscillators that straddle zero. The legacy `Pane` + `PaneLayout`
+  classes remain available for callers that want finer control over
+  pane heights.
 - Theme system: dark, light, or `'auto'` following `prefers-color-scheme`
 
 **Data layer**:
@@ -65,7 +73,9 @@ npm run docs            # TypeDoc → docs/api/
 - `DataFeed` — stale-response protection via version counter
 - `PollingTransport` — HTTP polling with custom parser
 - `WebSocketTransport` — abstract base for WS adapters
-- `BinanceWsTransport` — concrete WS adapter for Binance klines (skeleton)
+- `BinanceWsTransport` — concrete WS adapter for Binance klines (unverified
+  skeleton; wire-level validation against the live server is deferred to M2 —
+  not recommended for production use yet)
 - `ExponentialBackoff` — jittered reconnect policy
 - `validateCandle` / `validateCandles` — runtime shape & invariant checks
 - `ErrorReporter` + `onError` callback — structured error dispatch, no silent catches
@@ -79,12 +89,28 @@ npm run docs            # TypeDoc → docs/api/
 - Double-click: fit visible
 
 **Indicators** (`@rekurt/ohlcv-core/indicators`):
-- Overlay on main pane: `SMA`, `EMA`, `BollingerBands`, `VWAP`
-- Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`
+- Overlay on main pane: `SMA`, `EMA`, `WMA`, `HMA`, `BollingerBands`,
+  `Keltner`, `Donchian`, `VWAP` (session / cumulative / anchored),
+  `PivotPoints` (pivot + R1/R2/S1/S2),
+  `Ichimoku` (tenkan / kijun / senkou A&B / chikou),
+  `Supertrend`, `ParabolicSAR`, `ZigZag`
+- Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`,
+  `WilliamsR`, `OBV`, `ADX`, `CCI`, `MFI`, `StochRSI`, `ROC`
 - `IndicatorConfig` discriminated union + `createIndicator` factory —
   user code never instantiates indicator classes directly; it passes
   config objects and the core reconciles them.
 - `Indicator` base class + `IndicatorSeries` — subclass to add your own.
+
+**Drawing tools** (`@rekurt/ohlcv-core/drawings`):
+- `TrendLine`, `HorizontalLine`, `VerticalLine`, `Ray`, `Rectangle`,
+  `FibRetracement` (8 levels), `FibExtension` (3-point projection),
+  `Channel` (3-point parallel boundaries with fill), `Arrow`
+  (directional with scaled arrowhead) — all anchored in buffer
+  space so they stick to underlying candles on pan / zoom.
+- `DrawingLayer` for ordered collection + active-creation slot.
+- `Drawing` abstract base — subclass to add custom tools and
+  register via `DrawingLayer.registerKind`. Snapshots round-trip
+  through `saveLayoutState` / `loadState`.
 
 ## Minimal usage (vanilla)
 

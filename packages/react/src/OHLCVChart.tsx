@@ -2,6 +2,7 @@ import { useEffect, useRef, forwardRef, useImperativeHandle, type CSSProperties 
 import {
   OHLCVChart as CoreChart,
   diffIndicatorConfigs,
+  type DrawingTool,
   type ChartConfig,
   type Candle,
   type CandleBuffer,
@@ -74,7 +75,7 @@ export interface OHLCVChartRef {
   loadState(state: LayoutState | FullState): void;
 
   // Drawings (imperative — interactive workflow, not declarative data)
-  startDrawing(tool: 'trendline' | 'hline'): void;
+  startDrawing(tool: DrawingTool): void;
   getDrawings(): DrawingSnapshot[];
   loadDrawings(snapshots: DrawingSnapshot[]): void;
   clearDrawings(): void;
@@ -227,7 +228,7 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
       saveLayoutState: () => chartRef.current?.saveLayoutState() ?? null,
       saveFullState: () => chartRef.current?.saveFullState() ?? null,
       loadState: (state: LayoutState | FullState) => chartRef.current?.loadState(state),
-      startDrawing: (tool: 'trendline' | 'hline') =>
+      startDrawing: (tool: DrawingTool) =>
         chartRef.current?.startDrawing(tool),
       getDrawings: () => chartRef.current?.getDrawings() ?? [],
       loadDrawings: (snapshots: DrawingSnapshot[]) =>

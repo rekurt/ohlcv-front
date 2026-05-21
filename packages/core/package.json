@@ -35,6 +35,26 @@
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
       }
+    },
+    "./indicators": {
+      "import": {
+        "types": "./dist/indicators.d.ts",
+        "default": "./dist/indicators.js"
+      },
+      "require": {
+        "types": "./dist/indicators.d.cts",
+        "default": "./dist/indicators.cjs"
+      }
+    },
+    "./drawings": {
+      "import": {
+        "types": "./dist/drawings.d.ts",
+        "default": "./dist/drawings.js"
+      },
+      "require": {
+        "types": "./dist/drawings.d.cts",
+        "default": "./dist/drawings.cjs"
+      }
     }
   },
   "main": "./dist/index.cjs",

@@ -3,6 +3,13 @@ import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
 import { TrendLine } from './TrendLine';
 import { HorizontalLine } from './HorizontalLine';
+import { Rectangle } from './Rectangle';
+import { Ray } from './Ray';
+import { VerticalLine } from './VerticalLine';
+import { FibRetracement } from './FibRetracement';
+import { FibExtension } from './FibExtension';
+import { Channel } from './Channel';
+import { Arrow } from './Arrow';
 
 /**
  * Factory that resurrects a Drawing from its serialized snapshot.
@@ -23,6 +30,13 @@ function hydrate<T extends Drawing>(ctor: new (id?: string) => T): DrawingFactor
 
 FACTORIES.set(TrendLine.KIND, hydrate(TrendLine));
 FACTORIES.set(HorizontalLine.KIND, hydrate(HorizontalLine));
+FACTORIES.set(Rectangle.KIND, hydrate(Rectangle));
+FACTORIES.set(Ray.KIND, hydrate(Ray));
+FACTORIES.set(VerticalLine.KIND, hydrate(VerticalLine));
+FACTORIES.set(FibRetracement.KIND, hydrate(FibRetracement));
+FACTORIES.set(FibExtension.KIND, hydrate(FibExtension));
+FACTORIES.set(Channel.KIND, hydrate(Channel));
+FACTORIES.set(Arrow.KIND, hydrate(Arrow));
 
 /**
  * Ordered collection of drawings with a single "active" slot for

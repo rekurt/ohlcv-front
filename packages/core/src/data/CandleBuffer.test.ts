@@ -24,6 +24,62 @@ describe('CandleBuffer', () => {
       expect(buf.length).toBe(3);
       expect(buf.candleAt(2)?.t).toBe(3);
     });
+
+    it('rejects candles with non-finite OHLCVT fields', () => {
+      const buf = new CandleBuffer();
+      expect(() =>
+        buf.append({ o: NaN, h: 1, l: 1, c: 1, v: 1, t: 1 }),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(() =>
+        buf.append({ o: 1, h: 1, l: 1, c: 1, v: 1, t: Infinity }),
+      ).toThrow(/non-finite OHLCVT/);
+      // The buffer must be unchanged after a rejected append.
+      expect(buf.length).toBe(0);
+    });
+
+    it('rejects non-finite candles in batch and updateLast too', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(1));
+      expect(() =>
+        buf.updateLast({ o: NaN, h: 1, l: 1, c: 1, v: 1, t: 1 }),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(() =>
+        buf.appendBatch([{ o: 1, h: 1, l: 1, c: 1, v: 1, t: 2 }, { o: 1, h: 1, l: 1, c: 1, v: NaN, t: 3 }]),
+      ).toThrow(/non-finite OHLCVT/);
+    });
+
+    it('appendBatch is atomic — a thrown validation leaves length unchanged', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(100, 100));
+      const lengthBefore = buf.length;
+      // Mixed payload: two valid candles followed by one NaN-poisoned one.
+      // Previous implementation would have written the first two before
+      // throwing, leaving the buffer in a partially-mutated state.
+      expect(() =>
+        buf.appendBatch([
+          { o: 1, h: 1, l: 1, c: 1, v: 1, t: 200 },
+          { o: 2, h: 2, l: 2, c: 2, v: 2, t: 300 },
+          { o: NaN, h: 1, l: 1, c: 1, v: 1, t: 400 },
+        ]),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(buf.length).toBe(lengthBefore);
+      expect(buf.lastTime()).toBe(100);
+    });
+
+    it('prepend is atomic — a thrown validation leaves length unchanged', () => {
+      const buf = new CandleBuffer();
+      buf.append(makeCandle(1000));
+      const lengthBefore = buf.length;
+      expect(() =>
+        buf.prepend([
+          { o: 1, h: 1, l: 1, c: 1, v: 1, t: 100 },
+          { o: 1, h: 1, l: 1, c: NaN, v: 1, t: 200 },
+          { o: 1, h: 1, l: 1, c: 1, v: 1, t: 300 },
+        ]),
+      ).toThrow(/non-finite OHLCVT/);
+      expect(buf.length).toBe(lengthBefore);
+      expect(buf.firstTime()).toBe(1000);
+    });
   });
 
   describe('appendBatch', () => {
@@ -92,6 +148,53 @@ describe('CandleBuffer', () => {
       // Binary search must still work across the sorted result.
       expect(buf.findIndexByTime(30)).toBe(1);
       expect(buf.findIndexByTime(100)).toBe(3);
+    });
+
+    it('uses O(1) leftPad shift after the first growth (no realloc on repeat)', () => {
+      const buf = new CandleBuffer();
+      // First page: triggers slow-path allocation; reserves leftPad.
+      const page = (start: number) =>
+        Array.from({ length: 100 }, (_, i) => makeCandle(start + i, 100 + i));
+      buf.appendBatch(page(1000));
+      buf.prepend(page(900));
+
+      // Grab the underlying TypedArray identities. Subsequent
+      // prepends within leftPad capacity must NOT reallocate.
+      const internals = buf as unknown as {
+        _open: Float64Array;
+        _head: number;
+        _length: number;
+      };
+      const openId = internals._open;
+      const headBefore = internals._head;
+
+      buf.prepend(page(800));
+      // Same array reference — proves no allocation happened.
+      expect(internals._open).toBe(openId);
+      // _head decreased by 100 (one full page worth).
+      expect(internals._head).toBe(headBefore - 100);
+      expect(buf.length).toBe(300);
+      expect(buf.firstTime()).toBe(800);
+      expect(buf.lastTime()).toBe(1099);
+    });
+
+    it('candleAt + findIndexByTime stay correct across mixed append/prepend cycles', () => {
+      const buf = new CandleBuffer();
+      const make = (t: number) => makeCandle(t);
+      buf.appendBatch([make(100), make(101), make(102), make(103)]);
+      buf.prepend([make(98), make(99)]);
+      buf.append(make(104));
+      buf.prepend([make(95), make(96), make(97)]);
+      buf.append(make(105));
+
+      expect(buf.length).toBe(11);
+      expect(buf.firstTime()).toBe(95);
+      expect(buf.lastTime()).toBe(105);
+      expect(buf.candleAt(0)?.t).toBe(95);
+      expect(buf.candleAt(10)?.t).toBe(105);
+      expect(buf.findIndexByTime(100)).toBe(5);
+      expect(buf.findIndexByTime(95)).toBe(0);
+      expect(buf.findIndexByTime(105)).toBe(10);
     });
   });
 

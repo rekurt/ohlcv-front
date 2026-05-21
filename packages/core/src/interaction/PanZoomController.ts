@@ -40,12 +40,21 @@ export class PanZoomController {
 
   // Mouse state
   private _isDragging = false;
+  /**
+   * True when the active drag started inside the right-edge price
+   * axis strip — drag direction adjusts price-scale instead of
+   * panning candles.
+   */
+  private _isPriceScaleDrag = false;
+  private _priceScaleAnchorY = 0;
   private _lastMouseX = 0;
   private _lastMouseY = 0;
 
   // Touch state
   private _lastTouchDist = 0;
   private _touchStartX = 0;
+  /** Center X of a two-finger gesture, for simultaneous pan + pinch. */
+  private _lastTouchCenterX = 0;
 
   // Momentum
   private _velocity = 0;
@@ -96,6 +105,25 @@ export class PanZoomController {
   private _handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
     this._isDragging = true;
+
+    // Detect drag-start in the price-axis strip — the right-edge column
+    // reserved for the MAIN price labels only. Restricting to the exact
+    // rectangle [chartRight, chartRight+priceAxisWidth] × [chartTop,
+    // chartBottom] avoids hijacking drags that start in the sub-pane
+    // Y-axis gutters or the bottom time-axis strip (those should still
+    // pan, not rescale the main price range).
+    const rect = this._canvas.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    const layout = this._viewport.layout;
+    this._isPriceScaleDrag =
+      !!layout &&
+      localX >= layout.chartRight &&
+      localX <= layout.chartRight + layout.priceAxisWidth &&
+      localY >= layout.chartTop &&
+      localY <= layout.chartBottom;
+    this._priceScaleAnchorY = localY;
+
     this._lastMouseX = e.clientX;
     this._lastMouseY = e.clientY;
     this._velocity = 0;
@@ -104,7 +132,7 @@ export class PanZoomController {
       cancelAnimationFrame(this._momentumRafId);
       this._momentumRafId = 0;
     }
-    this._canvas.style.cursor = 'grabbing';
+    this._canvas.style.cursor = this._isPriceScaleDrag ? 'ns-resize' : 'grabbing';
     this._callbacks.onDragStateChange?.(true);
     // Ensure the canvas receives keyboard events for keyboard shortcuts.
     this._canvas.focus();
@@ -115,8 +143,24 @@ export class PanZoomController {
   private _handleMouseMove(e: MouseEvent): void {
     if (!this._isDragging) return;
     const dx = e.clientX - this._lastMouseX;
-    const deltaIndex = -dx / this._viewport.candleStep;
+    const dy = e.clientY - this._lastMouseY;
 
+    if (this._isPriceScaleDrag) {
+      // Drag down → expand range (zoom out, factor > 1); drag up →
+      // contract (zoom in). The ratio is gentle (5 px per 1%) so the
+      // user can scale precisely. Anchor at the original mousedown Y
+      // so the price under the cursor stays put.
+      if (dy !== 0) {
+        const factor = 1 + dy / 200;
+        this._viewport.scalePriceRangeBy(factor, this._priceScaleAnchorY);
+        this._notifyChange();
+      }
+      this._lastMouseX = e.clientX;
+      this._lastMouseY = e.clientY;
+      return;
+    }
+
+    const deltaIndex = -dx / this._viewport.candleStep;
     const now = Date.now();
     const dt = now - this._lastDragTime;
     if (dt > 0) {
@@ -132,7 +176,9 @@ export class PanZoomController {
   }
 
   private _handleMouseUp(_e: MouseEvent): void {
+    const wasPriceScaleDrag = this._isPriceScaleDrag;
     this._isDragging = false;
+    this._isPriceScaleDrag = false;
     // Ask the engine what cursor to show in the resting state — drawing
     // tools override this via `ChartEngine.setIdleCursor`.
     const idle = this._callbacks.getIdleCursor?.() ?? 'crosshair';
@@ -140,6 +186,10 @@ export class PanZoomController {
     this._callbacks.onDragStateChange?.(false);
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
+
+    // Skip momentum for price-axis drags — they're rare, precise
+    // adjustments where overshoot would feel jittery.
+    if (wasPriceScaleDrag) return;
 
     // Start momentum — respect `prefers-reduced-motion` to avoid
     // disorienting users with vestibular sensitivity.
@@ -212,7 +262,10 @@ export class PanZoomController {
         this._momentumRafId = 0;
       }
     } else if (e.touches.length === 2) {
+      const a = e.touches[0];
+      const b = e.touches[1];
       this._lastTouchDist = this._getTouchDistance(e.touches);
+      if (a && b) this._lastTouchCenterX = (a.clientX + b.clientX) / 2;
     }
   }
 
@@ -236,15 +289,35 @@ export class PanZoomController {
       this._notifyChange();
       this._checkPanToStart();
     } else if (e.touches.length === 2 && t0 && t1) {
+      // Two-finger gesture: simultaneous pinch-zoom + pan. The change
+      // in finger distance drives zoom; the movement of the gesture
+      // center drives pan. A pure spread/pinch leaves the center
+      // roughly fixed (no pan); two fingers sliding together leave the
+      // distance roughly fixed (no zoom). Both can happen at once.
       const dist = this._getTouchDistance(e.touches);
+      const centerX = (t0.clientX + t1.clientX) / 2;
+      const rect = this._canvas.getBoundingClientRect();
+      const localCenterX = centerX - rect.left;
+
+      // Pan from center movement first, so the zoom anchor uses the
+      // already-panned position.
+      if (this._lastTouchCenterX !== 0) {
+        const dxCenter = centerX - this._lastTouchCenterX;
+        if (dxCenter !== 0) this._viewport.panPixels(dxCenter);
+      }
+
       if (this._lastTouchDist > 0) {
         const factor = dist / this._lastTouchDist;
-        const centerX = (t0.clientX + t1.clientX) / 2;
-        const rect = this._canvas.getBoundingClientRect();
-        this._viewport.zoom(factor, centerX - rect.left);
-        this._notifyChange();
+        // Ignore micro-jitter so a pure pan doesn't accumulate zoom drift.
+        if (Math.abs(factor - 1) > 0.005) {
+          this._viewport.zoom(factor, localCenterX);
+        }
       }
+
+      this._notifyChange();
+      this._checkPanToStart();
       this._lastTouchDist = dist;
+      this._lastTouchCenterX = centerX;
     }
   }
 
@@ -256,6 +329,7 @@ export class PanZoomController {
       }
     }
     this._lastTouchDist = 0;
+    this._lastTouchCenterX = 0;
   }
 
   private _startMomentum(): void {

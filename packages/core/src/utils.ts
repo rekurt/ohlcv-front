@@ -3,6 +3,8 @@ import {
   PRICE_AXIS_WIDTH,
   TIME_AXIS_HEIGHT,
   VOLUME_HEIGHT_RATIO,
+  INDICATOR_PANE_HEIGHT,
+  MIN_MAIN_AREA_HEIGHT,
   DARK_THEME,
   LIGHT_THEME,
 } from './constants';
@@ -104,14 +106,34 @@ export function formatTime(timestamp: number, resolution: string): string {
   return `${hh}:${mm}`;
 }
 
-/** Compute chart layout from container dimensions */
-export function computeLayout(width: number, height: number): ChartLayout {
+/** Compute chart layout from container dimensions.
+ *
+ * `paneCount` is the number of sub-pane indicator bands stacked
+ * under the main chart area. Each consumes `INDICATOR_PANE_HEIGHT`
+ * px vertically. We cap the total reserved height so the main area
+ * never shrinks below `MIN_MAIN_AREA_HEIGHT` — if the user asks for
+ * more panes than fit, panes are simply rendered shorter.
+ */
+export function computeLayout(
+  width: number,
+  height: number,
+  paneCount = 0,
+): ChartLayout {
   const priceAxisWidth = PRICE_AXIS_WIDTH;
   const timeAxisHeight = TIME_AXIS_HEIGHT;
   const chartLeft = 0;
   const chartRight = width - priceAxisWidth;
   const chartTop = 0;
-  const chartBottom = height - timeAxisHeight;
+  const paneAreaBottom = height - timeAxisHeight;
+
+  // Reserve space for sub-pane bands, but keep the main area no
+  // smaller than MIN_MAIN_AREA_HEIGHT.
+  const desiredPanesHeight = paneCount * INDICATOR_PANE_HEIGHT;
+  const maxPanesHeight = Math.max(0, paneAreaBottom - chartTop - MIN_MAIN_AREA_HEIGHT);
+  const panesHeight = Math.min(desiredPanesHeight, maxPanesHeight);
+
+  const chartBottom = paneAreaBottom - panesHeight;
+  const paneAreaTop = chartBottom;
   const chartHeight = chartBottom - chartTop;
   const volumeTop = chartBottom - chartHeight * VOLUME_HEIGHT_RATIO;
   const volumeBottom = chartBottom;
@@ -127,6 +149,9 @@ export function computeLayout(width: number, height: number): ChartLayout {
     volumeBottom,
     priceAxisWidth,
     timeAxisHeight,
+    paneAreaTop,
+    paneAreaBottom,
+    paneCount,
   };
 }
 

@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import {
   OHLCVChart,
+  type DrawingTool,
   type ChartConfig,
   type Candle,
   type CandleBuffer,
@@ -38,12 +39,34 @@ export interface UseOHLCVChartOptions {
  * containers). The returned `containerRef` must be attached to a `div`
  * the hook can mount the canvas into.
  *
+ * Callback props are captured via trampoline refs — passing a new
+ * `onHover` / `onError` / `onCandleClick` etc. on re-render swaps the
+ * live handler without tearing down the chart instance. This mirrors
+ * the trampoline pattern used by the `<OHLCVChart>` component.
+ *
  * API parity with `<OHLCVChart>` — all imperative methods from the
  * component ref are returned here as stable callbacks.
  */
 export function useOHLCVChart(options: UseOHLCVChartOptions) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<OHLCVChart | null>(null);
+  // Track the symbol/resolution the chart was constructed with so we
+  // can skip the initial switchSymbol() call (the constructor already
+  // connected with these values). Without this guard a transport-backed
+  // chart would issue a duplicate fetchHistory + buffer reset on every
+  // mount.
+  const initialSymbolRef = useRef({ symbol: options.symbol, resolution: options.resolution });
+
+  // Callback trampolines — keep the latest closure live without
+  // rebuilding the chart on every parent re-render.
+  const onCandleClickRef = useRef(options.onCandleClick);
+  const onVisibleRangeChangeRef = useRef(options.onVisibleRangeChange);
+  const onErrorRef = useRef(options.onError);
+  const onLoadMoreHistoryRef = useRef(options.onLoadMoreHistory);
+  onCandleClickRef.current = options.onCandleClick;
+  onVisibleRangeChangeRef.current = options.onVisibleRangeChange;
+  onErrorRef.current = options.onError;
+  onLoadMoreHistoryRef.current = options.onLoadMoreHistory;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -58,14 +81,25 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
       locale: options.locale,
       priceFormat: options.priceFormat,
       volumeFormat: options.volumeFormat,
-      onCandleClick: options.onCandleClick,
-      onVisibleRangeChange: options.onVisibleRangeChange,
+      onCandleClick: (candle, index) => onCandleClickRef.current?.(candle, index),
+      onVisibleRangeChange: (from, to) => onVisibleRangeChangeRef.current?.(from, to),
       onHover: options.onHover,
-      onError: options.onError,
-      onLoadMoreHistory: options.onLoadMoreHistory,
+      onError: (err) => onErrorRef.current?.(err),
+      onLoadMoreHistory: (buffer) => onLoadMoreHistoryRef.current?.(buffer),
     };
 
     chartRef.current = new OHLCVChart(config);
+    // Record the pair the chart was constructed with so the
+    // symbol/resolution effect skips its next run (the constructor
+    // already connected). This must be refreshed on EVERY (re)creation
+    // — including transport-driven recreations — otherwise a render
+    // that changes transport + symbol together would recreate the
+    // chart and then still call switchSymbol with the same pair,
+    // double-connecting.
+    initialSymbolRef.current = {
+      symbol: options.symbol,
+      resolution: options.resolution,
+    };
 
     return () => {
       chartRef.current?.destroy();
@@ -73,6 +107,38 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options.transport]);
+
+  // Hover handler — registered via the dedicated setter so identity
+  // changes on re-render are picked up without recreating the chart.
+  useEffect(() => {
+    chartRef.current?.setOnHover(options.onHover ?? null);
+  }, [options.onHover]);
+
+  // Symbol / resolution — switchSymbol() resets the view. Skip the
+  // initial run for the values the chart was constructed with so we
+  // don't issue a duplicate connect() right after mount.
+  useEffect(() => {
+    const initial = initialSymbolRef.current;
+    if (initial.symbol === options.symbol && initial.resolution === options.resolution) {
+      // Clear after first invocation so a later change back to the
+      // original values still re-triggers switchSymbol.
+      initialSymbolRef.current = { symbol: '', resolution: '' };
+      return;
+    }
+    chartRef.current?.switchSymbol(options.symbol, options.resolution);
+  }, [options.symbol, options.resolution]);
+
+  // Theme
+  useEffect(() => {
+    if (!options.theme) return;
+    chartRef.current?.setTheme(options.theme);
+  }, [options.theme]);
+
+  // Chart type
+  useEffect(() => {
+    if (!options.chartType) return;
+    chartRef.current?.setChartType(options.chartType);
+  }, [options.chartType]);
 
   // Stable callbacks — the chart instance may come and go across
   // transport changes, but external consumers keep the same refs.
@@ -122,7 +188,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     chartRef.current?.loadState(state);
   }, []);
 
-  const startDrawing = useCallback((tool: 'trendline' | 'hline') => {
+  const startDrawing = useCallback((tool: DrawingTool) => {
     chartRef.current?.startDrawing(tool);
   }, []);
   const getDrawings = useCallback((): DrawingSnapshot[] => {
