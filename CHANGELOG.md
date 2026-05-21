@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (review-3 cycle — M2 hardening)
+
+- **Multi-pane rendering** is now real: every indicator with
+  `placement: 'pane'` (RSI, MACD, Stochastic, ATR, plus the new
+  WilliamsR / OBV / ADX / CCI) renders in its own auto-sized
+  vertical band with independent Y-axis, label, min/max bounds, and
+  a dashed zero-line for ranges that straddle zero.
+  `computeLayout(width, height, paneCount)` reserves
+  `INDICATOR_PANE_HEIGHT` (80 px) per pane and clamps so the main
+  candle area is never thinner than `MIN_MAIN_AREA_HEIGHT` (120 px).
+- **4 new indicators**: `WilliamsR`, `OBV`, `ADX` (with `+DI`/`-DI`),
+  `CCI`. Registered in the `IndicatorConfig` discriminated union
+  (`'williamsr'`, `'obv'`, `'adx'`, `'cci'`) and wired through
+  `createIndicator`, `indicatorId`, and the React/Vue wrappers'
+  reconciliation path.
+- **4 new drawing tools**: `Rectangle`, `Ray`, `VerticalLine`,
+  `FibRetracement` (8 canonical levels with inline labels). All
+  buffer-space anchored and snapshot-serializable. `OHLCVChart.startDrawing`
+  widened to accept the new tools; the shared `DrawingTool` type
+  is exported from core so React/Vue wrappers stay in sync.
+- **Bollinger Bands O(n)**: rewrote the inner double-loop to use
+  two rolling sums (`Σx`, `Σx²`) and the
+  `σ² = E[x²] − (E[x])²` identity. ~20× faster at
+  `n=100k, period=20` while preserving correctness on all 9
+  existing tests.
+- **Subpath exports**: `@rekurt/ohlcv-core/indicators` and
+  `@rekurt/ohlcv-core/drawings` are now importable directly,
+  enabling consumers to tree-shake unused subsystems.
+- **State migrations scaffold**: `migrateState` + `migrations`
+  registry + `CURRENT_STATE_VERSION` so future schema bumps are
+  forward-compatible with shipped clients without changes in
+  wrappers.
+- **Governance**: `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+  `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`,
+  `.github/dependabot.yml`. Expanded `.gitignore` to cover env
+  files, IDE configs, monorepo caches, and editor swap files.
+
+### Changed
+
+- `useOHLCVChart` (React + Vue) now reacts to every option after
+  mount — previously the headless hook ignored post-mount changes
+  to `symbol`, `resolution`, `theme`, `chartType`, `indicators`,
+  `idleCursor`, and `transport`. Vue version accepts
+  `MaybeRefOrGetter<T>` for reactive options. Callbacks
+  (`onHover`, `onCandleClick`, `onError`, `onVisibleRangeChange`,
+  `onLoadMoreHistory`) flow through trampoline refs so identity
+  changes don't recreate the chart.
+- Rendering: pixel-snap text baselines and label backgrounds in
+  PriceAxis, TimeAxis, Crosshair, Legend, GoToLive — text now
+  rasterizes sharply at DPR=1 and label rects don't fringe.
+- `CandleBuffer.append` / `appendBatch` / `updateLast` / `prepend`
+  now reject non-finite OHLCVT fields at the public API boundary
+  with a clear `RangeError`. Prevents silent NaN propagation into
+  `priceToY` and indicator computation.
+
+### Fixed
+
+- README: removed an over-promise about pane log-scale being live
+  in 0.1.0; it now correctly describes when the main candle and
+  sub-pane integration each became real.
+- README: added an honest "unverified skeleton" note next to
+  `BinanceWsTransport` so consumers do not copy-paste it into
+  production code.
+- `vitest.config.ts` was silently skipping `*.test.tsx` files; the
+  React wrapper tests were never running in CI. Re-included.
+
+### Tests
+
+- 461 → 515 (+54) across this cycle, covering: callback identity
+  preservation, BB O(n) correctness, 4 new indicators, 4 new
+  drawings + snapshot round-trip, IndicatorPaneRenderer,
+  sub-pane layout reservation, state migrations, and
+  CandleBuffer numeric guards.
+
 ## [0.1.0] - 2026-04-11
 
 First public release under the `@rekurt` npm scope. This release
