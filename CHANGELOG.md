@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added (review-3 cycle — M2 hardening)
 
+- **Indicator library expanded from 8 → 23.** Beyond the original
+  SMA/EMA/BB/VWAP/RSI/MACD/Stochastic/ATR, the following are now
+  built in and wired through `IndicatorConfig` + `createIndicator`
+  + `indicatorId`:
+  - Overlay: `WMA`, `HMA`, `Keltner`, `Donchian`, `PivotPoints`,
+    `Ichimoku`, `Supertrend`, `ParabolicSAR`, plus anchored `VWAP`.
+  - Sub-pane: `WilliamsR`, `OBV`, `ADX` (+DI/-DI), `CCI`, `MFI`,
+    `StochRSI`, `ROC`.
+  All use O(n) or amortized-O(1) algorithms (rolling sums,
+  monotonic-deque window extrema, Wilder smoothing).
+- **Drawing tools expanded to 9**: added `Rectangle`, `Ray`,
+  `VerticalLine`, `FibRetracement`, `FibExtension`, `Channel`,
+  `Arrow` alongside the original `TrendLine` / `HorizontalLine`.
+  All buffer-space anchored and snapshot-serializable; the shared
+  `DrawingTool` type drives `OHLCVChart.startDrawing` and both
+  wrappers.
+- **Heikin-Ashi is a first-class chart type** (`chartType:
+  'heikinashi'`) — rendered directly from the raw buffer with a
+  50-bar warmup lead-in, no manual data transform needed.
+- **Y-axis drag-to-scale**: dragging the price-axis strip rescales
+  the visible price range around the cursor; double-click there
+  resets to auto-scale (`Viewport.scalePriceRangeBy` /
+  `resetPriceScale`).
+- **Two-finger touch gestures** now pan and pinch-zoom
+  simultaneously (sliding both fingers pans; spreading/pinching
+  zooms).
+
 - **Multi-pane rendering** is now real: every indicator with
   `placement: 'pane'` (RSI, MACD, Stochastic, ATR, plus the new
   WilliamsR / OBV / ADX / CCI) renders in its own auto-sized
@@ -87,15 +114,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `vitest.config.ts` was silently skipping `*.test.tsx` files; the
   React wrapper tests were never running in CI. Re-included.
 
+### Fixed (PR #1 review + CI)
+
+- CI reordered to build before typecheck — the wrapper tsconfigs
+  resolve `@rekurt/ohlcv-core` to its built `dist/`, so typecheck
+  must follow the build in a fresh `npm ci` environment. (Both
+  Node 20 and 22 jobs were red on `master` since commit 2f322f4.)
+- React `useOHLCVChart` no longer fires a duplicate `switchSymbol`
+  on mount (avoids a redundant transport fetch + buffer reset).
+- Vue `useOHLCVChart` callback watchers are registered once at
+  composable scope instead of leaking a new set per transport
+  recreation.
+- `CandleBuffer.appendBatch` / `prepend` validate the full incoming
+  range before mutating, so a thrown validation leaves the buffer
+  untouched (atomic ingestion).
+- Time axis + crosshair time label anchor to `paneAreaBottom` so
+  they render in the reserved axis strip, not the first sub-pane,
+  when pane indicators are active.
+- `DataFeed.disconnect()` bumps the connect version so in-flight
+  history fetches can't leak into a freshly-cleared buffer;
+  subscribe-time + per-tick errors are now reported via
+  `ErrorReporter` instead of silently rejecting.
+
 ### Tests
 
-- 461 → 530 (+69) across this cycle, covering: callback identity
-  preservation, BB O(n) correctness, 4 new indicators, 4 new
-  drawings + snapshot round-trip, IndicatorPaneRenderer,
+- 461 → 610 (+149) across this cycle, covering: callback identity
+  preservation, BB O(n) correctness, all 15 new indicators, all 7
+  new drawings + snapshot round-trip, IndicatorPaneRenderer,
   sub-pane layout reservation, state migrations, CandleBuffer
-  numeric guards, CandleBuffer O(1) prepend fast-path,
-  Viewport.scalePriceRangeBy + resetPriceScale, and the Vue
-  headless hook reactivity contract.
+  numeric guards + atomicity + O(1) prepend fast-path,
+  Viewport.scalePriceRangeBy + resetPriceScale, two-finger touch
+  gestures, Heikin-Ashi rendering, DataFeed race/error handling,
+  and the React + Vue headless hook reactivity contracts.
 
 ## [0.1.0] - 2026-04-11
 
