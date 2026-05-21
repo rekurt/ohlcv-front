@@ -11,6 +11,7 @@ export class CandleBuffer {
   private _time: Float64Array;
   private _length = 0;
   private _capacity: number;
+  private _version = 0;
 
   constructor(capacity = INITIAL_CAPACITY) {
     this._capacity = capacity;
@@ -26,6 +27,17 @@ export class CandleBuffer {
     return this._length;
   }
 
+  /**
+   * Monotonically increasing revision counter, bumped on every mutation
+   * (`append`, `appendBatch`, `updateLast`, `prepend`, `clear`). Consumers
+   * such as indicators key their memoization cache on this value so they
+   * only recompute when the underlying data actually changed — not on every
+   * render frame.
+   */
+  get version(): number {
+    return this._version;
+  }
+
   /** O(1) amortized append */
   append(candle: Candle): void {
     if (this._length >= this._capacity) this._grow();
@@ -36,6 +48,7 @@ export class CandleBuffer {
     this._close[i] = candle.c;
     this._volume[i] = candle.v;
     this._time[i] = candle.t;
+    this._version++;
   }
 
   /**
@@ -82,6 +95,7 @@ export class CandleBuffer {
       this._volume[i] = c.v;
       this._time[i] = c.t;
     }
+    this._version++;
   }
 
   /** O(1) in-place update of the last candle */
@@ -94,6 +108,7 @@ export class CandleBuffer {
     this._close[i] = candle.c;
     this._volume[i] = candle.v;
     this._time[i] = candle.t;
+    this._version++;
   }
 
   /**
@@ -160,6 +175,7 @@ export class CandleBuffer {
     this._time = newTime;
     this._capacity = cap;
     this._length = newLen;
+    this._version++;
   }
 
   /** Binary search for index by timestamp. Returns exact index or -1 */
@@ -213,6 +229,7 @@ export class CandleBuffer {
 
   clear(): void {
     this._length = 0;
+    this._version++;
   }
 
   private _grow(): void {

@@ -28,8 +28,6 @@ export { DataFeed } from './data/DataFeed';
 export { PollingTransport } from './data/PollingTransport';
 export type { PollingTransportConfig } from './data/PollingTransport';
 export { WebSocketTransport } from './data/WebSocketTransport';
-export { BinanceWsTransport } from './data/BinanceWsTransport';
-export type { BinanceWsTransportOptions, IWebSocketLike } from './data/BinanceWsTransport';
 export { ExponentialBackoff } from './data/ExponentialBackoff';
 export type { ExponentialBackoffOptions } from './data/ExponentialBackoff';
 export { ValidationError, validateCandle, validateCandles } from './data/validation';

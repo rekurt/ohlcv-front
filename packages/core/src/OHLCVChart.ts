@@ -72,6 +72,17 @@ export class OHLCVChart {
   private _ownDrawingLayer: DrawingLayer;
 
   constructor(config: ChartConfig) {
+    // The chart manipulates the DOM and canvas directly, so it can only be
+    // constructed in a browser environment. In SSR frameworks (Next.js,
+    // Nuxt), construct it on the client only — e.g. a `useEffect`/`onMounted`
+    // hook, `next/dynamic` with `{ ssr: false }`, or Nuxt `<client-only>`.
+    if (typeof document === 'undefined') {
+      throw new Error(
+        '[ohlcv] OHLCVChart requires a browser environment (document is undefined). ' +
+          'Construct it on the client only — see the SSR notes in the README.',
+      );
+    }
+
     this._config = config;
     const theme = resolveTheme(config.theme);
     this._reporter = new ErrorReporter(config.onError);
@@ -89,6 +100,7 @@ export class OHLCVChart {
 
     // Rendering
     this._engine = new ChartEngine(config.container, theme);
+    this._engine.setErrorReporter(this._reporter);
     this._engine.setBuffer(this._buffer);
     this._engine.setSymbol(config.symbol);
     this._engine.setResolution(config.resolution);

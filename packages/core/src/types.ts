@@ -63,10 +63,10 @@ export interface HistoryRequest {
 
 /**
  * Interface hosts implement to feed the chart with history + live
- * updates. `@rekurt/ohlcv-core` ships `PollingTransport`,
- * `WebSocketTransport`, and `BinanceWsTransport` as concrete
- * implementations, but custom transports are trivially written — the
- * interface has only four methods.
+ * updates. `@rekurt/ohlcv-core` ships `PollingTransport` and the
+ * abstract `WebSocketTransport` base as concrete starting points, but
+ * custom transports are trivially written — the interface has only
+ * four methods.
  *
  * Error handling: both `fetchHistory` and `subscribe` should throw (or
  * reject in the async case) on failure; the chart's `DataFeed`
@@ -116,6 +116,7 @@ export type ChartErrorWhere =
   | 'loadMoreHistory'
   | 'subscribe'
   | 'parseCandles'
+  | 'indicator'
   | 'render'
   | 'unknown';
 

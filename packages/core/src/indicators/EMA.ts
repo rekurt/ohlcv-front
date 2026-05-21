@@ -24,7 +24,7 @@ export class EMA extends Indicator {
     return `ema(${this.period})`;
   }
 
-  compute(buffer: CandleBuffer): IndicatorSeries[] {
+  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const out = nanArray(n);
     if (n === 0 || n < this.period) {

@@ -56,7 +56,7 @@ npm run docs            # TypeDoc → docs/api/
 - Candlesticks, volume bars, grid, price axis, time axis, crosshair with snap-to-candle, current price label, legend, "Go to live" pill
 - Alternative chart types: line, area (with gradient), OHLC bars
 - Hi-DPI canvas with three-layer split (chart / UI / interaction) for cheap crosshair redraws
-- `Pane` + `PaneLayout` abstraction for multi-pane charts with independent Y-axes (linear or log)
+- Multi-pane rendering: `placement: 'pane'` indicators (RSI, MACD, Stochastic, ATR) are drawn in their own stacked sub-panes with independent auto-scaled or fixed (0–100) Y-axes, reference lines, and a shared time axis
 - Theme system: dark, light, or `'auto'` following `prefers-color-scheme`
 
 **Data layer**:
@@ -65,7 +65,6 @@ npm run docs            # TypeDoc → docs/api/
 - `DataFeed` — stale-response protection via version counter
 - `PollingTransport` — HTTP polling with custom parser
 - `WebSocketTransport` — abstract base for WS adapters
-- `BinanceWsTransport` — concrete WS adapter for Binance klines (skeleton)
 - `ExponentialBackoff` — jittered reconnect policy
 - `validateCandle` / `validateCandles` — runtime shape & invariant checks
 - `ErrorReporter` + `onError` callback — structured error dispatch, no silent catches
@@ -80,11 +79,14 @@ npm run docs            # TypeDoc → docs/api/
 
 **Indicators** (`@rekurt/ohlcv-core/indicators`):
 - Overlay on main pane: `SMA`, `EMA`, `BollingerBands`, `VWAP`
-- Sub-pane (independent Y-axis): `RSI`, `MACD`, `Stochastic`, `ATR`
+- Sub-pane (independent Y-axis), rendered in their own stacked panes: `RSI`, `MACD`, `Stochastic`, `ATR`
 - `IndicatorConfig` discriminated union + `createIndicator` factory —
   user code never instantiates indicator classes directly; it passes
   config objects and the core reconciles them.
 - `Indicator` base class + `IndicatorSeries` — subclass to add your own.
+  `compute()` is memoized on the buffer's revision counter, so indicators
+  recompute only when data changes, not on every render frame. Override
+  `paneRange` / `referenceLines` for bounded oscillators.
 
 ## Minimal usage (vanilla)
 
@@ -212,15 +214,45 @@ function goLive() {
 </template>
 ```
 
+## Server-side rendering (Next.js / Nuxt)
+
+`OHLCVChart` renders to a `<canvas>` and touches the DOM, so it must be
+constructed **on the client only**. Both wrappers create the chart inside
+their mount lifecycle (`useEffect` / `onMounted`), so they never run during
+SSR — but the surrounding component must not be server-rendered either, or
+hydration will mismatch. Construct directly from the core package throws a
+clear error if `document` is undefined.
+
+**Next.js (App Router):** mark the component `'use client'` and load it with
+`ssr: false`:
+
+```tsx
+'use client';
+import dynamic from 'next/dynamic';
+
+const Chart = dynamic(() => import('@rekurt/ohlcv-react').then((m) => m.OHLCVChart), {
+  ssr: false,
+});
+```
+
+**Nuxt 3:** wrap the chart in `<client-only>`:
+
+```vue
+<template>
+  <client-only>
+    <OHLCVChart symbol="BTC/USDT" resolution="1H" :data="candles" />
+  </client-only>
+</template>
+```
+
 ## Status
 
 0.1.0 is the first public release. Core primitives are stable and
-well-tested (440+ unit tests, strict TypeScript including
-`noUncheckedIndexedAccess`, 0 lint warnings in CI). The M1 roadmap
-milestone focuses on wrapper API parity and distribution — upcoming
-milestones add multi-pane integration, more indicators and drawing
-tools, alerts, replay mode, compare mode, workspaces, and
-internationalization. See [CHANGELOG.md](./CHANGELOG.md) and the
+well-tested (450+ unit tests, strict TypeScript including
+`noUncheckedIndexedAccess`, 0 lint warnings in CI). Sub-pane indicators
+now render in their own stacked panes. Upcoming milestones add more
+indicators and drawing tools, alerts, replay mode, compare mode,
+workspaces, and internationalization. See [CHANGELOG.md](./CHANGELOG.md) and the
 [M1 design doc](./docs/superpowers/specs/2026-04-11-ohlcv-m1-foundations-design.md).
 
 ## License

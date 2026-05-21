@@ -29,7 +29,7 @@ export class BollingerBands extends Indicator {
     return `bb(${this.period},${this.stdDev})`;
   }
 
-  compute(buffer: CandleBuffer): IndicatorSeries[] {
+  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const upper = nanArray(n);
     const middle = nanArray(n);

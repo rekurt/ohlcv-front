@@ -27,7 +27,7 @@ export class VWAP extends Indicator {
     return `vwap(${this.anchor})`;
   }
 
-  compute(buffer: CandleBuffer): IndicatorSeries[] {
+  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const vwap = nanArray(n);
     if (n === 0) return [{ name: 'vwap', values: vwap }];

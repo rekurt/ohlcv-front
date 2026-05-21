@@ -24,7 +24,7 @@ export class ATR extends Indicator {
     return `atr(${this.period})`;
   }
 
-  compute(buffer: CandleBuffer): IndicatorSeries[] {
+  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const atr = nanArray(n);
     if (n <= this.period) return [{ name: 'atr', values: atr }];

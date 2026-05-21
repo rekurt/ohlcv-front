@@ -38,14 +38,13 @@
   "engines": {
     "node": ">=18.18.0"
   },
-  "dependencies": {
-    "@rekurt/ohlcv-core": "*"
-  },
   "peerDependencies": {
+    "@rekurt/ohlcv-core": "^0.1.0",
     "react": ">=18",
     "react-dom": ">=18"
   },
   "devDependencies": {
+    "@rekurt/ohlcv-core": "*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "react": "^19.0.0",

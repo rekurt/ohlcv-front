@@ -38,14 +38,14 @@ chart.setData([
 - Mouse drag + momentum (respects `prefers-reduced-motion`), smooth wheel zoom, trackpad horizontal swipe → pan
 - Keyboard shortcuts: arrows, +/-, Home/End, F (fit-all), 0 (fit-visible)
 - Auto-follow state machine: live updates track the right edge unless the user panned away
-- Transports: `PollingTransport`, `WebSocketTransport` (abstract), `BinanceWsTransport` (concrete skeleton)
+- Transports: `PollingTransport`, `WebSocketTransport` (abstract base for custom WS adapters)
 - Structured error dispatch via `onError` callback and `ErrorReporter`
 - Runtime candle validation: `validateCandles`
 - Exponential backoff with jitter for WS reconnects
 
 ## Status
 
-Active development. Core rendering, data, and interaction layers are stable with extensive unit tests (328+). Advanced features such as drawing tools, the full indicator catalog, and multi-pane `ChartEngine` integration are on the roadmap.
+Active development. Core rendering, data, and interaction layers are stable with extensive unit tests (450+). Sub-pane indicators (RSI, MACD, Stochastic, ATR) render in their own stacked panes via the `Pane`/`PaneLayout` abstraction. Advanced drawing tools and a larger indicator catalog are on the roadmap.
 
 ## License
 

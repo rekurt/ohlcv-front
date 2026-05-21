@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Multi-pane rendering wired into `ChartEngine`.** Indicators with
+  `placement: 'pane'` (RSI, MACD, Stochastic, ATR) now render in their own
+  stacked sub-panes below the price pane, each with an independent Y-axis.
+  The main price pane shrinks to make room; the time axis is shared at the
+  bottom across all panes; the crosshair vertical line spans every pane.
+  Previously these indicators were computed but silently never drawn.
+  - New `Indicator.paneRange` getter (fixed Y-range, e.g. RSI/Stochastic
+    `[0, 100]`) and `Indicator.referenceLines` getter (e.g. RSI 30/70,
+    Stochastic 20/80). Default to auto-scale / none.
+  - MACD `histogram` series renders as zero-anchored bars; other series
+    render as lines.
+  - `ChartEngine.paneLayout` getter exposes the pane stack.
+- **Indicator compute memoization.** `Indicator.compute()` is now a
+  memoizing wrapper around the subclass `_compute()`, keyed on the buffer's
+  new `version` counter. Indicators recompute only when the data actually
+  changes instead of on every render frame (pan, zoom, crosshair move).
+- **`CandleBuffer.version`** — monotonic revision counter bumped on every
+  mutation (`append`, `appendBatch`, `updateLast`, `prepend`, `clear`).
+- **SSR guidance.** `OHLCVChart` throws a clear, actionable error when
+  constructed without a `document` (SSR). README documents Next.js
+  (`dynamic({ ssr: false })`) and Nuxt (`<client-only>`) usage.
+
+### Changed
+
+- **`@rekurt/ohlcv-core` is now a `peerDependency`** (not a regular
+  dependency) of `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue`, preventing
+  duplicate core copies / version mismatches in consumer bundles.
+
+### Fixed
+
+- **Indicator compute errors are reported, not swallowed.** `ChartEngine`
+  now dispatches indicator-compute failures through `ErrorReporter` with
+  `where: 'indicator'` instead of an empty `catch {}`, matching the
+  project's "no silent catches" policy.
+
+### Removed
+
+- **`BinanceWsTransport`** and its types (`BinanceWsTransportOptions`,
+  `IWebSocketLike`) were removed. It was an unverified skeleton (lost ticks
+  on reconnect, no heartbeat, no history pagination) and shipping it as a
+  public export implied production-readiness it did not have. Build resilient
+  transports on the abstract `WebSocketTransport` base instead.
+
 ## [0.1.0] - 2026-04-11
 
 First public release under the `@rekurt` npm scope. This release
