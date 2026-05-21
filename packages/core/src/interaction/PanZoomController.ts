@@ -53,6 +53,8 @@ export class PanZoomController {
   // Touch state
   private _lastTouchDist = 0;
   private _touchStartX = 0;
+  /** Center X of a two-finger gesture, for simultaneous pan + pinch. */
+  private _lastTouchCenterX = 0;
 
   // Momentum
   private _velocity = 0;
@@ -252,7 +254,10 @@ export class PanZoomController {
         this._momentumRafId = 0;
       }
     } else if (e.touches.length === 2) {
+      const a = e.touches[0];
+      const b = e.touches[1];
       this._lastTouchDist = this._getTouchDistance(e.touches);
+      if (a && b) this._lastTouchCenterX = (a.clientX + b.clientX) / 2;
     }
   }
 
@@ -276,15 +281,35 @@ export class PanZoomController {
       this._notifyChange();
       this._checkPanToStart();
     } else if (e.touches.length === 2 && t0 && t1) {
+      // Two-finger gesture: simultaneous pinch-zoom + pan. The change
+      // in finger distance drives zoom; the movement of the gesture
+      // center drives pan. A pure spread/pinch leaves the center
+      // roughly fixed (no pan); two fingers sliding together leave the
+      // distance roughly fixed (no zoom). Both can happen at once.
       const dist = this._getTouchDistance(e.touches);
+      const centerX = (t0.clientX + t1.clientX) / 2;
+      const rect = this._canvas.getBoundingClientRect();
+      const localCenterX = centerX - rect.left;
+
+      // Pan from center movement first, so the zoom anchor uses the
+      // already-panned position.
+      if (this._lastTouchCenterX !== 0) {
+        const dxCenter = centerX - this._lastTouchCenterX;
+        if (dxCenter !== 0) this._viewport.panPixels(dxCenter);
+      }
+
       if (this._lastTouchDist > 0) {
         const factor = dist / this._lastTouchDist;
-        const centerX = (t0.clientX + t1.clientX) / 2;
-        const rect = this._canvas.getBoundingClientRect();
-        this._viewport.zoom(factor, centerX - rect.left);
-        this._notifyChange();
+        // Ignore micro-jitter so a pure pan doesn't accumulate zoom drift.
+        if (Math.abs(factor - 1) > 0.005) {
+          this._viewport.zoom(factor, localCenterX);
+        }
       }
+
+      this._notifyChange();
+      this._checkPanToStart();
       this._lastTouchDist = dist;
+      this._lastTouchCenterX = centerX;
     }
   }
 
@@ -296,6 +321,7 @@ export class PanZoomController {
       }
     }
     this._lastTouchDist = 0;
+    this._lastTouchCenterX = 0;
   }
 
   private _startMomentum(): void {

@@ -110,3 +110,87 @@ describe('PanZoomController._handleWheel decision table', () => {
     expect(ev.defaultPrevented).toBe(true);
   });
 });
+
+describe('PanZoomController two-finger touch gestures', () => {
+  let canvas: HTMLCanvasElement;
+  let viewport: Viewport;
+  let controller: PanZoomController;
+
+  beforeEach(() => {
+    canvas = document.createElement('canvas');
+    canvas.width = 2000;
+    canvas.height = 1000;
+    document.body.appendChild(canvas);
+    viewport = new Viewport();
+    viewport.setLayout(computeLayout(1000, 500));
+    viewport.scrollToEnd(500);
+    controller = new PanZoomController(canvas, viewport);
+  });
+
+  afterEach(() => {
+    controller.destroy();
+    canvas.remove();
+  });
+
+  type Pt = { clientX: number; clientY: number };
+  // Fake a TouchEvent: jsdom lacks a usable TouchEvent constructor, so
+  // build a minimal object with `touches` + `preventDefault` and call
+  // the controller's bound handlers directly.
+  function touchEvent(points: Pt[]): TouchEvent {
+    return {
+      touches: points as unknown as TouchList,
+      preventDefault() {},
+    } as unknown as TouchEvent;
+  }
+  function call(method: '_onTouchStart' | '_onTouchMove' | '_onTouchEnd', ev: TouchEvent): void {
+    (controller as unknown as Record<string, (e: TouchEvent) => void>)[method]!(ev);
+  }
+
+  it('two fingers sliding together pan without zooming', () => {
+    const widthBefore = viewport.candleWidth;
+    const startBefore = viewport.startIndex;
+    // Start with both fingers 100px apart, centered at x=500.
+    call('_onTouchStart', touchEvent([
+      { clientX: 450, clientY: 250 },
+      { clientX: 550, clientY: 250 },
+    ]));
+    // Slide BOTH fingers right by 80px — distance unchanged (no zoom),
+    // center moves +80 (pan).
+    call('_onTouchMove', touchEvent([
+      { clientX: 530, clientY: 250 },
+      { clientX: 630, clientY: 250 },
+    ]));
+    expect(viewport.candleWidth).toBeCloseTo(widthBefore, 5); // no zoom
+    expect(Math.abs(viewport.startIndex - startBefore)).toBeGreaterThan(0.01); // panned
+  });
+
+  it('two fingers spreading apart zoom in', () => {
+    const widthBefore = viewport.candleWidth;
+    call('_onTouchStart', touchEvent([
+      { clientX: 450, clientY: 250 },
+      { clientX: 550, clientY: 250 },
+    ]));
+    // Spread fingers from 100px to 200px apart, same center → zoom in.
+    call('_onTouchMove', touchEvent([
+      { clientX: 400, clientY: 250 },
+      { clientX: 600, clientY: 250 },
+    ]));
+    expect(viewport.candleWidth).toBeGreaterThan(widthBefore);
+  });
+
+  it('two fingers pinching together zoom out', () => {
+    // First zoom in a bit so there's room to zoom back out.
+    viewport.zoom(2, 500);
+    const widthBefore = viewport.candleWidth;
+    call('_onTouchStart', touchEvent([
+      { clientX: 400, clientY: 250 },
+      { clientX: 600, clientY: 250 },
+    ]));
+    // Pinch from 200px to 100px → zoom out.
+    call('_onTouchMove', touchEvent([
+      { clientX: 450, clientY: 250 },
+      { clientX: 550, clientY: 250 },
+    ]));
+    expect(viewport.candleWidth).toBeLessThan(widthBefore);
+  });
+});
