@@ -68,7 +68,6 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
   const containerRef = ref<HTMLElement | null>(null) as Ref<HTMLElement | null>;
   const chartRef = ref<OHLCVChart | null>(null) as Ref<OHLCVChart | null>;
   let prevIndicators: IndicatorConfig[] = [];
-  let initialSymbol = true;
 
   function createChart() {
     if (!containerRef.value) return;
@@ -101,7 +100,6 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     };
 
     chartRef.value = new OHLCVChart(config);
-    initialSymbol = true;
     prevIndicators = [];
 
     const initialIndicators = toValue(options.indicators);
@@ -137,15 +135,13 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
   onMounted(() => createChart());
   onBeforeUnmount(() => destroyChart());
 
-  // Identity — switchSymbol() resets the view.
+  // Identity — switchSymbol() resets the view. Vue 3 `watch` does not
+  // fire on initial setup by default, so we don't need to skip a
+  // synthetic first invocation.
   watch(
     () => [toValue(options.symbol), toValue(options.resolution)] as const,
     ([symbol, resolution]) => {
       if (!chartRef.value) return;
-      if (initialSymbol) {
-        initialSymbol = false;
-        return;
-      }
       chartRef.value.switchSymbol(symbol, resolution);
     },
   );

@@ -45,3 +45,8 @@ jobs:
 
       - name: Build examples (smoke)
         run: npm run build:examples
+
+      - name: Report bundle size
+        if: matrix.node == '22'
+        run: npm run size
+        continue-on-error: true

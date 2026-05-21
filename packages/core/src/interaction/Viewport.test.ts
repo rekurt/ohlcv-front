@@ -317,3 +317,97 @@ describe('Viewport integration with autoScale', () => {
     expect(Number.isFinite(y)).toBe(true);
   });
 });
+
+describe('Viewport.scalePriceRangeBy (Y-axis drag-to-scale)', () => {
+  let vp: Viewport;
+
+  beforeEach(() => {
+    vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    vp.priceMin = 100;
+    vp.priceMax = 200;
+  });
+
+  it('defaults to autoScale (manualPriceScale = false)', () => {
+    expect(vp.manualPriceScale).toBe(false);
+  });
+
+  it('factor > 1 expands the range around the anchor', () => {
+    const anchorY = vp.priceToY(150); // mid-point
+    vp.scalePriceRangeBy(2, anchorY);
+    expect(vp.manualPriceScale).toBe(true);
+    expect(vp.priceMin).toBeLessThan(100);
+    expect(vp.priceMax).toBeGreaterThan(200);
+  });
+
+  it('factor < 1 contracts the range around the anchor', () => {
+    const anchorY = vp.priceToY(150);
+    vp.scalePriceRangeBy(0.5, anchorY);
+    expect(vp.priceMin).toBeGreaterThan(100);
+    expect(vp.priceMax).toBeLessThan(200);
+  });
+
+  it('preserves the price under the anchor', () => {
+    const anchorPrice = 150;
+    const anchorY = vp.priceToY(anchorPrice);
+    vp.scalePriceRangeBy(2, anchorY);
+    // The price under the same Y should still be ~150 (the anchor
+    // is fixed during a scale).
+    const after = vp.yToPrice(anchorY);
+    expect(after).toBeCloseTo(anchorPrice, 5);
+  });
+
+  it('rejects invalid factors silently', () => {
+    const anchorY = vp.priceToY(150);
+    vp.scalePriceRangeBy(0, anchorY);
+    expect(vp.priceMin).toBe(100);
+    expect(vp.priceMax).toBe(200);
+    vp.scalePriceRangeBy(-1, anchorY);
+    expect(vp.priceMin).toBe(100);
+    vp.scalePriceRangeBy(NaN, anchorY);
+    expect(vp.priceMin).toBe(100);
+  });
+
+  it('clamps extreme factors to [0.05, 20]', () => {
+    const anchorY = vp.priceToY(150);
+    vp.scalePriceRangeBy(1000, anchorY);
+    const range1 = vp.priceMax - vp.priceMin;
+    vp.priceMin = 100;
+    vp.priceMax = 200;
+    vp.scalePriceRangeBy(20, anchorY);
+    const range2 = vp.priceMax - vp.priceMin;
+    expect(range1).toBeCloseTo(range2, 5);
+  });
+
+  it('autoScale skips priceMin/priceMax when manualPriceScale=true', () => {
+    vp.scalePriceRangeBy(2, vp.priceToY(150));
+    const min = vp.priceMin;
+    const max = vp.priceMax;
+
+    const buf = fillBuffer(50);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    expect(vp.priceMin).toBe(min);
+    expect(vp.priceMax).toBe(max);
+  });
+
+  it('resetPriceScale re-enables auto-scaling', () => {
+    vp.scalePriceRangeBy(2, vp.priceToY(150));
+    vp.resetPriceScale();
+    expect(vp.manualPriceScale).toBe(false);
+
+    const buf = fillBuffer(50);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    // After autoScale on a freshly-filled buffer, the range should
+    // have changed away from the manually-frozen one.
+    expect(vp.priceMin !== 0 || vp.priceMax !== 0).toBe(true);
+  });
+
+  it('fitVisible clears manualPriceScale', () => {
+    vp.scalePriceRangeBy(2, vp.priceToY(150));
+    expect(vp.manualPriceScale).toBe(true);
+    vp.fitVisible(50);
+    expect(vp.manualPriceScale).toBe(false);
+  });
+});

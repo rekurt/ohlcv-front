@@ -32,6 +32,13 @@ export class Viewport {
    */
   autoFollow = true;
 
+  /**
+   * When true, `autoScale()` is skipped — `priceMin`/`priceMax` stay
+   * frozen at the user-chosen range. Set by `scalePriceRangeBy()` when
+   * the user drags the price axis. Cleared by `resetPriceScale()`.
+   */
+  manualPriceScale = false;
+
   private _bufferLength = 0;
 
   setLayout(layout: ChartLayout): void {
@@ -110,6 +117,21 @@ export class Viewport {
   /** Auto-scale price/volume from visible buffer data */
   autoScale(buffer: CandleBuffer): void {
     this._bufferLength = buffer.length;
+    // Manual scale mode (user has dragged the price axis): keep
+    // priceMin/priceMax frozen, but still update volumeMax so volume
+    // bars stay correct.
+    if (this.manualPriceScale) {
+      const startM = Math.max(0, Math.floor(this.startIndex));
+      const endM = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
+      let maxVol = 0;
+      const viewM = buffer.sliceView(startM, endM);
+      for (let i = 0; i < viewM.length; i++) {
+        const v = viewM.volume[i]!;
+        if (Number.isFinite(v) && v > maxVol) maxVol = v;
+      }
+      this.volumeMax = maxVol;
+      return;
+    }
     const start = Math.max(0, Math.floor(this.startIndex));
     const end = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
 
@@ -165,6 +187,37 @@ export class Viewport {
     this.volumeMax = maxVol;
   }
 
+  /**
+   * Scale the price range by `factor` around an anchor Y coordinate
+   * (the pixel under the user's cursor at drag-start). `factor > 1`
+   * expands the visible range (zoom out vertically — shorter candles),
+   * `factor < 1` contracts it (zoom in vertically — taller candles).
+   *
+   * Switches the viewport to manual price-scale mode — subsequent
+   * `autoScale()` calls are skipped until `resetPriceScale()` is
+   * called.
+   */
+  scalePriceRangeBy(factor: number, anchorY: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    const anchorPrice = this.yToPrice(anchorY);
+    // Clamp factor so a single drag can't blow the range out by 1000×.
+    const safeFactor = clamp(factor, 0.05, 20);
+    const newMin = anchorPrice - (anchorPrice - this.priceMin) * safeFactor;
+    const newMax = anchorPrice + (this.priceMax - anchorPrice) * safeFactor;
+    if (!Number.isFinite(newMin) || !Number.isFinite(newMax) || newMin >= newMax) return;
+    this.priceMin = newMin;
+    this.priceMax = newMax;
+    this.manualPriceScale = true;
+  }
+
+  /**
+   * Exit manual price-scale mode; the next `autoScale()` call will
+   * recompute `priceMin`/`priceMax` from the visible candles again.
+   */
+  resetPriceScale(): void {
+    this.manualPriceScale = false;
+  }
+
   /** Scroll to the end of data, leaving rightPaddingCandles of empty space. */
   scrollToEnd(bufferLength: number): void {
     this._bufferLength = bufferLength;
@@ -190,12 +243,14 @@ export class Viewport {
 
   /**
    * Reset candleWidth to the default value and scroll to the live edge.
-   * Useful for "back to normal" action after deep zoom.
+   * Useful for "back to normal" action after deep zoom. Also resets
+   * the manual price scale so the next auto-scale runs from scratch.
    */
   fitVisible(bufferLength: number): void {
     this.candleWidth = DEFAULT_CANDLE_WIDTH;
     this._recalcVisibleCount();
     this.autoFollow = true;
+    this.manualPriceScale = false;
     this.scrollToEnd(bufferLength);
   }
 

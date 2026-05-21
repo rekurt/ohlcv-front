@@ -215,13 +215,21 @@ export class OHLCVChart {
     };
     this._engine.topCanvas.addEventListener('click', this._clickHandler);
 
-    // Double-click → fit visible (reset zoom + go to live)
+    // Double-click → context-sensitive reset:
+    //  - in the chart area: fit visible (reset zoom + go to live)
+    //  - in the price axis strip: reset price scale to auto-fit
     this._dblClickHandler = (e: MouseEvent) => {
       const rect = this._engine.topCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const layout = this._engine.layout;
-      if (x < layout.chartLeft || x > layout.chartRight || y < layout.chartTop || y > layout.chartBottom) return;
+      if (y < layout.chartTop || y > layout.chartBottom) return;
+      if (x >= layout.chartRight && x <= layout.chartRight + layout.priceAxisWidth) {
+        this._engine.viewport.resetPriceScale();
+        this._engine.requestRender();
+        return;
+      }
+      if (x < layout.chartLeft || x > layout.chartRight) return;
       this.fitVisible();
     };
     this._engine.topCanvas.addEventListener('dblclick', this._dblClickHandler);

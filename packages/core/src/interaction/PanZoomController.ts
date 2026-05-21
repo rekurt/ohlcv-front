@@ -40,6 +40,13 @@ export class PanZoomController {
 
   // Mouse state
   private _isDragging = false;
+  /**
+   * True when the active drag started inside the right-edge price
+   * axis strip — drag direction adjusts price-scale instead of
+   * panning candles.
+   */
+  private _isPriceScaleDrag = false;
+  private _priceScaleAnchorY = 0;
   private _lastMouseX = 0;
   private _lastMouseY = 0;
 
@@ -96,6 +103,17 @@ export class PanZoomController {
   private _handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
     this._isDragging = true;
+
+    // Detect drag-start in the price-axis strip (right-edge column
+    // reserved for price labels). Dragging there rescales Y instead
+    // of panning candles.
+    const rect = this._canvas.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    const layout = this._viewport.layout;
+    this._isPriceScaleDrag = !!layout && localX >= layout.chartRight;
+    this._priceScaleAnchorY = localY;
+
     this._lastMouseX = e.clientX;
     this._lastMouseY = e.clientY;
     this._velocity = 0;
@@ -104,7 +122,7 @@ export class PanZoomController {
       cancelAnimationFrame(this._momentumRafId);
       this._momentumRafId = 0;
     }
-    this._canvas.style.cursor = 'grabbing';
+    this._canvas.style.cursor = this._isPriceScaleDrag ? 'ns-resize' : 'grabbing';
     this._callbacks.onDragStateChange?.(true);
     // Ensure the canvas receives keyboard events for keyboard shortcuts.
     this._canvas.focus();
@@ -115,8 +133,24 @@ export class PanZoomController {
   private _handleMouseMove(e: MouseEvent): void {
     if (!this._isDragging) return;
     const dx = e.clientX - this._lastMouseX;
-    const deltaIndex = -dx / this._viewport.candleStep;
+    const dy = e.clientY - this._lastMouseY;
 
+    if (this._isPriceScaleDrag) {
+      // Drag down → expand range (zoom out, factor > 1); drag up →
+      // contract (zoom in). The ratio is gentle (5 px per 1%) so the
+      // user can scale precisely. Anchor at the original mousedown Y
+      // so the price under the cursor stays put.
+      if (dy !== 0) {
+        const factor = 1 + dy / 200;
+        this._viewport.scalePriceRangeBy(factor, this._priceScaleAnchorY);
+        this._notifyChange();
+      }
+      this._lastMouseX = e.clientX;
+      this._lastMouseY = e.clientY;
+      return;
+    }
+
+    const deltaIndex = -dx / this._viewport.candleStep;
     const now = Date.now();
     const dt = now - this._lastDragTime;
     if (dt > 0) {
@@ -132,7 +166,9 @@ export class PanZoomController {
   }
 
   private _handleMouseUp(_e: MouseEvent): void {
+    const wasPriceScaleDrag = this._isPriceScaleDrag;
     this._isDragging = false;
+    this._isPriceScaleDrag = false;
     // Ask the engine what cursor to show in the resting state — drawing
     // tools override this via `ChartEngine.setIdleCursor`.
     const idle = this._callbacks.getIdleCursor?.() ?? 'crosshair';
@@ -140,6 +176,10 @@ export class PanZoomController {
     this._callbacks.onDragStateChange?.(false);
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mouseup', this._onMouseUp);
+
+    // Skip momentum for price-axis drags — they're rare, precise
+    // adjustments where overshoot would feel jittery.
+    if (wasPriceScaleDrag) return;
 
     // Start momentum — respect `prefers-reduced-motion` to avoid
     // disorienting users with vestibular sensitivity.
