@@ -60,12 +60,27 @@ export class DataFeed {
       if (isStale) return;
     }
 
-    // Subscribe to realtime updates
+    // Subscribe to realtime updates. The callback's stale-version
+    // check protects against late deliveries from a previous
+    // subscription that wasn't cleanly torn down by the transport.
+    // We also catch and report errors from `subscribe()` itself —
+    // e.g., a WebSocket adapter that throws synchronously on a bad
+    // symbol — so they don't reject the connect promise silently.
     if (this._connectVersion === version) {
-      this._transport.subscribe(config, (candles: Candle[]) => {
-        if (this._connectVersion !== version) return;
-        this._merger.mergeRealtime(candles);
-      });
+      try {
+        this._transport.subscribe(config, (candles: Candle[]) => {
+          if (this._connectVersion !== version) return;
+          try {
+            this._merger.mergeRealtime(candles);
+          } catch (mergeError) {
+            // Per-tick merge errors are non-fatal — drop the tick,
+            // keep streaming. A bad payload shouldn't kill the chart.
+            this._reporter?.report('subscribe', mergeError, false);
+          }
+        });
+      } catch (subscribeError) {
+        this._reporter?.report('subscribe', subscribeError, false);
+      }
     }
   }
 
@@ -117,6 +132,12 @@ export class DataFeed {
       this._transport.unsubscribe();
     }
     this._config = null;
+    // Bump the version so any in-flight fetchHistory whose await
+    // resolves AFTER disconnect() runs is caught by the stale check
+    // and doesn't write into the buffer. (Reconnect via `connect()`
+    // already bumps the version, but a standalone disconnect()
+    // previously left the version unchanged.)
+    this._connectVersion++;
   }
 
   destroy(): void {

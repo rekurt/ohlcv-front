@@ -13,7 +13,10 @@ export class TimeAxisRenderer {
     resolution: string,
     theme: ThemeColors,
   ): void {
-    const axisY = layout.chartBottom;
+    // The time axis sits below any sub-pane indicator bands. Use
+    // `paneAreaBottom` (== height − timeAxisHeight) instead of
+    // `chartBottom` so labels don't render into the first pane.
+    const axisY = layout.paneAreaBottom;
 
     // Axis line
     ctx.strokeStyle = theme.axis;
@@ -41,7 +44,7 @@ export class TimeAxisRenderer {
       if (!candle) continue;
 
       const label = formatTime(candle.t, resolution);
-      ctx.fillText(label, x, axisY + TIME_AXIS_LABEL_GAP);
+      ctx.fillText(label, Math.round(x), Math.round(axisY + TIME_AXIS_LABEL_GAP));
     }
   }
 }

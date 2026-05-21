@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p packages/vue/tsconfig.json && tsc --noEmit -p examples/core/tsconfig.json && tsc --noEmit -p examples/react/tsconfig.json && tsc --noEmit -p examples/vue/tsconfig.json",
     "lint": "eslint packages examples --max-warnings 0",
     "lint:fix": "eslint packages examples --fix",
+    "size": "node scripts/size.mjs",
     "docs": "typedoc"
   },
   "devDependencies": {

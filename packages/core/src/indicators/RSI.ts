@@ -1,4 +1,4 @@
-import { Indicator, type IndicatorPlacement, type IndicatorSeries, type PaneRange, nanArray } from './Indicator';
+import { Indicator, type IndicatorPlacement, type IndicatorSeries, nanArray } from './Indicator';
 import type { CandleBuffer } from '../data/CandleBuffer';
 
 /**
@@ -30,15 +30,7 @@ export class RSI extends Indicator {
     return `rsi(${this.period})`;
   }
 
-  override get paneRange(): PaneRange {
-    return { min: 0, max: 100 };
-  }
-
-  override get referenceLines(): number[] {
-    return [30, 70];
-  }
-
-  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
+  compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const rsi = nanArray(n);
     if (n <= this.period) return [{ name: 'rsi', values: rsi }];

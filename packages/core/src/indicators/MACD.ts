@@ -41,7 +41,7 @@ export class MACD extends Indicator {
     return `macd(${this.fastPeriod},${this.slowPeriod},${this.signalPeriod})`;
   }
 
-  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
+  compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const macd = nanArray(n);
     const signal = nanArray(n);

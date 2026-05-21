@@ -5,13 +5,10 @@ export const PRICE_AXIS_WIDTH = 80;
 export const TIME_AXIS_HEIGHT = 30;
 export const VOLUME_HEIGHT_RATIO = 0.2;
 export const PRICE_PADDING_RATIO = 0.05;
-// Height (as a fraction of the full plot area) reserved for each
-// indicator sub-pane (RSI, MACD, etc.). The main price pane absorbs
-// whatever vertical space the sub-panes don't claim.
-export const SUBPANE_HEIGHT_RATIO = 0.2;
-// Vertical padding (px) inside a sub-pane so the indicator line and its
-// min/max labels don't touch the separator border.
-export const SUBPANE_PADDING_Y = 6;
+/** Height (px) reserved for each sub-pane indicator band. */
+export const INDICATOR_PANE_HEIGHT = 80;
+/** Minimum height (px) the main candle area must retain. */
+export const MIN_MAIN_AREA_HEIGHT = 120;
 
 // Candle sizing
 export const DEFAULT_CANDLE_WIDTH = 8;

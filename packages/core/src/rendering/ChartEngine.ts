@@ -1,10 +1,8 @@
 import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
-import { computeLayout, resizeHiDPICanvas, createHiDPICanvas, formatPrice } from '../utils';
-import { VOLUME_HEIGHT_RATIO, SUBPANE_HEIGHT_RATIO, SUBPANE_PADDING_Y, AXIS_FONT } from '../constants';
+import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
 import type { ErrorReporter } from '../ErrorReporter';
 import { Viewport } from '../interaction/Viewport';
-import { Pane, PaneLayout } from './Pane';
 import { GridRenderer } from './GridRenderer';
 import { CandleRenderer } from './CandleRenderer';
 import { LineRenderer } from './LineRenderer';
@@ -18,6 +16,8 @@ import { PriceLineRenderer } from './PriceLineRenderer';
 import { LegendRenderer } from './LegendRenderer';
 import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
+import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
+import { HeikinAshiRenderer } from './HeikinAshiRenderer';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 
@@ -41,16 +41,8 @@ export class ChartEngine {
   private _chartCtx: CanvasRenderingContext2D;
   private _uiCtx: CanvasRenderingContext2D;
   private _crosshairCtx: CanvasRenderingContext2D;
-  /** Main price-pane area. Shrinks vertically when sub-panes are present. */
   private _layout!: ChartLayout;
-  /** Full plot area (price + all sub-panes). Used for the shared time axis. */
-  private _baseLayout!: ChartLayout;
-  private _width = 0;
-  private _height = 0;
-  /** Vertical stack of panes: main price pane + one per `'pane'` indicator. */
-  private _paneLayout = new PaneLayout();
   private _theme: ThemeColors;
-  private _reporter: ErrorReporter | null = null;
   private _buffer: CandleBuffer | null = null;
   private _symbol = '';
   private _resolution = '';
@@ -58,14 +50,17 @@ export class ChartEngine {
   private _volumeFormat?: (volume: number) => string;
   private _chartType: ChartType = 'candles';
 
-  /** User-provided indicators; each is computed on every dirty render. */
+  /** User-provided indicators; computed via `computeCached` on dirty render. */
   private _indicators: Indicator[] = [];
   /** Optional drawing layer rendered on top of candles. */
   private _drawingLayer: DrawingLayer | null = null;
+  /** Routes indicator-compute / render errors to the host's `onError`. */
+  private _reporter: ErrorReporter | null = null;
 
   // Renderers
   private _gridRenderer = new GridRenderer();
   private _candleRenderer = new CandleRenderer();
+  private _heikinAshiRenderer = new HeikinAshiRenderer();
   private _lineRenderer = new LineRenderer();
   private _areaRenderer = new AreaRenderer();
   private _ohlcBarRenderer = new OHLCBarRenderer();
@@ -76,6 +71,7 @@ export class ChartEngine {
   private _priceLineRenderer = new PriceLineRenderer();
   private _legendRenderer = new LegendRenderer();
   private _overlayRenderer = new OverlaySeriesRenderer();
+  private _paneRenderer = new IndicatorPaneRenderer();
   readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
@@ -155,9 +151,8 @@ export class ChartEngine {
     this._crosshairCtx = this._crosshairCanvas.getContext('2d')!;
 
     this.viewport = new Viewport();
-    this._width = w;
-    this._height = h;
-    this._recomputeLayout();
+    this._layout = computeLayout(w, h);
+    this.viewport.setLayout(this._layout);
 
     // ResizeObserver. Guarded against missing implementation (jsdom,
     // very old browsers). When unavailable, the chart never auto-resizes
@@ -193,50 +188,6 @@ export class ChartEngine {
    */
   setErrorReporter(reporter: ErrorReporter): void {
     this._reporter = reporter;
-  }
-
-  /** The vertical pane stack (main price pane + indicator sub-panes). */
-  get paneLayout(): PaneLayout {
-    return this._paneLayout;
-  }
-
-  /**
-   * Rebuild the pane stack from the current indicator set: the main price
-   * pane plus one sub-pane per `placement: 'pane'` indicator, in declared
-   * order. Re-derives all layout bounds afterwards.
-   */
-  private _syncPaneLayout(): void {
-    const layout = new PaneLayout();
-    for (const indicator of this._indicators) {
-      if (indicator.placement === 'pane') {
-        layout.addPane(new Pane(indicator.id, 'indicator', SUBPANE_HEIGHT_RATIO));
-      }
-    }
-    this._paneLayout = layout;
-    this._recomputeLayout();
-  }
-
-  /**
-   * Recompute the full plot area, distribute it across panes, and derive
-   * the (possibly shrunk) main price-pane layout that the price/volume
-   * renderers and the viewport consume. With no sub-panes the main pane
-   * fills the whole area and the layout is identical to the single-pane
-   * behavior.
-   */
-  private _recomputeLayout(): void {
-    this._baseLayout = computeLayout(this._width, this._height);
-    this._paneLayout.computeBounds(this._baseLayout.chartTop, this._baseLayout.chartBottom);
-
-    const main = this._paneLayout.main;
-    const mainHeight = main.bottom - main.top;
-    this._layout = {
-      ...this._baseLayout,
-      chartTop: main.top,
-      chartBottom: main.bottom,
-      volumeTop: main.bottom - mainHeight * VOLUME_HEIGHT_RATIO,
-      volumeBottom: main.bottom,
-    };
-    this.viewport.setLayout(this._layout);
   }
 
   setSymbol(symbol: string): void {
@@ -310,13 +261,28 @@ export class ChartEngine {
   /**
    * Replace the indicator set. Indicators with `placement: 'overlay'`
    * are drawn on top of the price series in deterministic palette
-   * order. Indicators with `placement: 'pane'` each get their own
-   * sub-pane with an independent Y-axis, stacked below the price pane.
+   * order. Indicators with `placement: 'pane'` are not yet rendered
+   * (pane layout integration is a future phase) — they still compute
+   * their values, which is useful for code paths that want to read
+   * `getIndicatorSeries(id)` without rendering.
    */
   setIndicators(indicators: Indicator[]): void {
+    const prevPaneCount = this._paneIndicatorCount();
     this._indicators = indicators;
-    this._syncPaneLayout();
+    // If the number of sub-pane indicators changed, recompute the
+    // layout (panes consume vertical space from the main candle area).
+    const nextPaneCount = this._paneIndicatorCount();
+    if (nextPaneCount !== prevPaneCount && this._layout) {
+      this._layout = computeLayout(this._layout.width, this._layout.height, nextPaneCount);
+      this.viewport.setLayout(this._layout);
+    }
     this.requestRender();
+  }
+
+  private _paneIndicatorCount(): number {
+    let n = 0;
+    for (const ind of this._indicators) if (ind.placement === 'pane') n++;
+    return n;
   }
 
   /** The currently-configured indicators, in render order. */
@@ -394,9 +360,8 @@ export class ChartEngine {
       return;
     }
 
-    this._width = width;
-    this._height = height;
-    this._recomputeLayout();
+    this._layout = computeLayout(width, height, this._paneIndicatorCount());
+    this.viewport.setLayout(this._layout);
 
     // resizeHiDPICanvas resets canvas.width/height (which clears the transform)
     // and re-applies ctx.scale(dpr, dpr) internally. Do not re-scale here —
@@ -500,28 +465,45 @@ export class ChartEngine {
         case 'ohlc':
           this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
           break;
+        case 'heikinashi':
+          this._heikinAshiRenderer.render(
+            ctx,
+            this._layout,
+            this.viewport,
+            this._buffer,
+            start,
+            end,
+            this._theme,
+          );
+          break;
         case 'candles':
         default:
           this._candleRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
           break;
       }
 
-      // Overlay indicators drawn on the main price pane.
+      // Overlay indicators (drawn on the main price area).
       let colorIdx = 0;
+      const paneIndicators: { indicator: Indicator; series: IndicatorSeries[] }[] = [];
       for (const indicator of this._indicators) {
-        if (indicator.placement !== 'overlay') continue;
         let series: IndicatorSeries[];
         try {
-          series = indicator.compute(this._buffer);
+          // computeCached memoizes on the buffer revision, so indicators
+          // recompute only when data changes — not on every render frame.
+          series = indicator.computeCached(this._buffer);
         } catch (err) {
           // Indicator compute errors are non-fatal; report and skip this one.
           this._reporter?.report('indicator', err, false);
           continue;
         }
-        for (const s of series) {
-          const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
-          colorIdx++;
-          this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme);
+        if (indicator.placement === 'overlay') {
+          for (const s of series) {
+            const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
+            colorIdx++;
+            this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme);
+          }
+        } else {
+          paneIndicators.push({ indicator, series });
         }
       }
 
@@ -532,12 +514,32 @@ export class ChartEngine {
 
       this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
 
-      // Sub-panes for `placement: 'pane'` indicators, stacked below the
-      // price pane. Each has its own auto-scaled (or fixed) Y-axis.
-      this._renderSubPanes(ctx, start, end);
+      // Sub-pane indicators. Each gets one band of equal height in
+      // [paneAreaTop, paneAreaBottom]. Color cursor continues from
+      // overlay indicators so legends are easier to map mentally.
+      if (paneIndicators.length > 0 && this._layout.paneAreaBottom > this._layout.paneAreaTop) {
+        const bandH =
+          (this._layout.paneAreaBottom - this._layout.paneAreaTop) / paneIndicators.length;
+        for (let i = 0; i < paneIndicators.length; i++) {
+          const entry = paneIndicators[i]!;
+          const top = this._layout.paneAreaTop + i * bandH;
+          const bottom = top + bandH;
+          const drawn = this._paneRenderer.render(
+            ctx,
+            this._layout,
+            this.viewport,
+            entry.series,
+            top,
+            bottom,
+            entry.indicator.id,
+            this._theme,
+            colorIdx,
+          );
+          colorIdx += drawn;
+        }
+      }
 
-      // Shared time axis sits at the very bottom, under all panes.
-      this._timeAxisRenderer.render(ctx, this._baseLayout, this.viewport, this._buffer, this._resolution, this._theme);
+      this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._resolution, this._theme);
     }
 
     if (this._uiDirty) {
@@ -572,214 +574,7 @@ export class ChartEngine {
       this._crosshairDirty = false;
       const ctx = this._crosshairCtx;
       ctx.clearRect(0, 0, this._layout.width, this._layout.height);
-      // Use the full plot area so the vertical line spans every pane and the
-      // time label sits on the shared bottom axis.
-      this._crosshairRenderer.render(ctx, this._baseLayout, this.viewport, this._crosshairState, this._theme, this._priceFormat);
-    }
-  }
-
-  /**
-   * Render every `'pane'` indicator into its own sub-pane below the price
-   * pane. X-positions reuse the shared viewport mapping; Y is mapped through
-   * each pane's own (auto-scaled or fixed) range. `start`/`end` bound the
-   * visible buffer window used for auto-scaling.
-   */
-  private _renderSubPanes(ctx: CanvasRenderingContext2D, start: number, end: number): void {
-    if (!this._buffer) return;
-    const subPanes = this._paneLayout.panes.filter((p) => p.kind === 'indicator');
-    if (subPanes.length === 0) return;
-
-    for (const pane of subPanes) {
-      const indicator = this._indicators.find((i) => i.id === pane.id);
-      if (!indicator) continue;
-
-      let series: IndicatorSeries[];
-      try {
-        series = indicator.compute(this._buffer);
-      } catch (err) {
-        this._reporter?.report('indicator', err, false);
-        continue;
-      }
-
-      this._scaleSubPane(pane, indicator, series, start, end);
-      this._paintSubPane(ctx, pane, indicator, series);
-    }
-  }
-
-  /** Set a sub-pane's priceMin/priceMax from its fixed range or visible data. */
-  private _scaleSubPane(
-    pane: Pane,
-    indicator: Indicator,
-    series: IndicatorSeries[],
-    start: number,
-    end: number,
-  ): void {
-    const fixed = indicator.paneRange;
-    if (fixed) {
-      pane.priceMin = fixed.min;
-      pane.priceMax = fixed.max;
-      return;
-    }
-
-    let min = Infinity;
-    let max = -Infinity;
-    for (const s of series) {
-      const values = s.values;
-      const hi = Math.min(values.length, end);
-      for (let i = Math.max(0, start); i < hi; i++) {
-        const v = values[i]!;
-        if (!Number.isFinite(v)) continue;
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-    }
-
-    if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      pane.priceMin = 0;
-      pane.priceMax = 1;
-      return;
-    }
-    if (min === max) {
-      const pad = Math.abs(max) * 0.05 || 1;
-      min -= pad;
-      max += pad;
-    } else {
-      const pad = (max - min) * 0.1;
-      min -= pad;
-      max += pad;
-    }
-    pane.priceMin = min;
-    pane.priceMax = max;
-  }
-
-  /** Draw one sub-pane: separator, reference lines, series, label, axis. */
-  private _paintSubPane(
-    ctx: CanvasRenderingContext2D,
-    pane: Pane,
-    indicator: Indicator,
-    series: IndicatorSeries[],
-  ): void {
-    const layout = this._layout;
-    const left = layout.chartLeft;
-    const right = layout.chartRight;
-    // Inset the value-mapping band so lines don't touch the separators.
-    pane.top += SUBPANE_PADDING_Y;
-    pane.bottom -= SUBPANE_PADDING_Y;
-    const drawTop = pane.top - SUBPANE_PADDING_Y;
-    const drawBottom = pane.bottom + SUBPANE_PADDING_Y;
-
-    // Top separator line.
-    ctx.strokeStyle = this._theme.axis;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(left, Math.round(drawTop) + 0.5);
-    ctx.lineTo(right, Math.round(drawTop) + 0.5);
-    ctx.stroke();
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(left, drawTop, right - left, drawBottom - drawTop);
-    ctx.clip();
-
-    // Reference lines (e.g. RSI 30/70).
-    const refs = indicator.referenceLines;
-    if (refs.length > 0) {
-      ctx.strokeStyle = this._theme.grid;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      for (const level of refs) {
-        const y = Math.round(pane.priceToY(level)) + 0.5;
-        ctx.moveTo(left, y);
-        ctx.lineTo(right, y);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // Series. A `histogram` series renders as zero-anchored bars; the rest
-    // render as lines.
-    let colorIdx = 0;
-    for (const s of series) {
-      if (s.name === 'histogram') {
-        this._paintSubPaneHistogram(ctx, pane, s);
-      } else {
-        const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
-        this._paintSubPaneLine(ctx, pane, s, color);
-      }
-      colorIdx++;
-    }
-    ctx.restore();
-
-    // Indicator label (top-left).
-    ctx.fillStyle = this._theme.text;
-    ctx.font = AXIS_FONT;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(indicator.id, left + 4, drawTop + 3);
-
-    // Min/max axis labels on the right.
-    const fmt = this._priceFormat ?? formatPrice;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(fmt(pane.priceMax), right + 4, drawTop + 2);
-    ctx.textBaseline = 'bottom';
-    ctx.fillText(fmt(pane.priceMin), right + 4, drawBottom - 2);
-
-    // Restore the pane bounds we mutated for the inset.
-    pane.top -= SUBPANE_PADDING_Y;
-    pane.bottom += SUBPANE_PADDING_Y;
-  }
-
-  private _paintSubPaneLine(
-    ctx: CanvasRenderingContext2D,
-    pane: Pane,
-    s: IndicatorSeries,
-    color: string,
-  ): void {
-    const values = s.values;
-    const startIdx = Math.max(0, Math.floor(this.viewport.startIndex) - 2);
-    const endIdx = Math.min(values.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 2);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    let pen = false;
-    for (let i = startIdx; i < endIdx; i++) {
-      const v = values[i]!;
-      if (!Number.isFinite(v)) {
-        pen = false;
-        continue;
-      }
-      const x = this.viewport.indexToX(i);
-      const y = pane.priceToY(v);
-      if (!pen) {
-        ctx.moveTo(x, y);
-        pen = true;
-      } else {
-        ctx.lineTo(x, y);
-      }
-    }
-    ctx.stroke();
-  }
-
-  private _paintSubPaneHistogram(
-    ctx: CanvasRenderingContext2D,
-    pane: Pane,
-    s: IndicatorSeries,
-  ): void {
-    const values = s.values;
-    const startIdx = Math.max(0, Math.floor(this.viewport.startIndex) - 2);
-    const endIdx = Math.min(values.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 2);
-    const zeroY = pane.priceToY(0);
-    const barW = Math.max(1, this.viewport.candleWidth);
-    for (let i = startIdx; i < endIdx; i++) {
-      const v = values[i]!;
-      if (!Number.isFinite(v)) continue;
-      const x = this.viewport.indexToX(i);
-      const y = pane.priceToY(v);
-      ctx.fillStyle = v >= 0 ? this._theme.bullCandle : this._theme.bearCandle;
-      ctx.fillRect(x - barW / 2, Math.min(y, zeroY), barW, Math.abs(y - zeroY));
+      this._crosshairRenderer.render(ctx, this._layout, this.viewport, this._crosshairState, this._theme, this._priceFormat);
     }
   }
 

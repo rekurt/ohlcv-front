@@ -201,4 +201,56 @@ describe('DataFeed', () => {
       expect(() => noTransportFeed.destroy()).not.toThrow();
     });
   });
+
+  describe('disconnect() invalidates in-flight history', () => {
+    it('bumps the connect version so a late-arriving fetch result is dropped', async () => {
+      transport.setDeferred(true);
+      transport.history = [makeCandle(1), makeCandle(2), makeCandle(3)];
+      const config: DataFeedConfig = { symbol: 'BTC/USDT', resolution: '1H' };
+      const pending = feed.connect(config);
+      // Pre-resolve: disconnect should invalidate the in-flight fetch.
+      feed.disconnect();
+      transport.resolvePending(transport.history);
+      await pending;
+      // Buffer must still be empty — the result was caught by the
+      // stale-version guard.
+      expect(buffer.length).toBe(0);
+    });
+  });
+
+  describe('subscribe error reporting', () => {
+    it('reports subscribe() throws through the error reporter', async () => {
+      class ThrowingTransport extends MockTransport {
+        override subscribe(): void {
+          throw new Error('boom');
+        }
+      }
+      const t2 = new ThrowingTransport();
+      t2.history = [makeCandle(1)];
+      const errs: ChartError[] = [];
+      const r2 = new ErrorReporter((err) => errs.push(err));
+      const feed2 = new DataFeed(buffer, merger, t2, r2);
+      await feed2.connect({ symbol: 'BTC/USDT', resolution: '1H' });
+      expect(errs.some((e) => e.where === 'subscribe')).toBe(true);
+    });
+
+    it('reports per-tick merger errors as non-fatal', async () => {
+      const errs: ChartError[] = [];
+      const r2 = new ErrorReporter((err) => errs.push(err));
+      const feed2 = new DataFeed(buffer, merger, transport, r2);
+      transport.history = [makeCandle(1)];
+      await feed2.connect({ symbol: 'BTC/USDT', resolution: '1H' });
+      // Push a NaN-poisoned candle through the subscription callback.
+      // CandleBuffer.append throws; DataFeed should swallow + report.
+      // Tick must be ahead of the loaded history's last time so
+      // mergeRealtime treats it as a new candle (not "older than
+      // last → silently dropped"). The NaN poison then triggers the
+      // CandleBuffer numeric guard during append.
+      const lastT = buffer.lastTime();
+      transport.onUpdateCallback?.([
+        { o: NaN, h: 1, l: 1, c: 1, v: 1, t: lastT + 60 } as Candle,
+      ]);
+      expect(errs.some((e) => e.where === 'subscribe' && !e.fatal)).toBe(true);
+    });
+  });
 });

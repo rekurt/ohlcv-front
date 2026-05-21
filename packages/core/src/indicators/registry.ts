@@ -7,6 +7,22 @@ import { MACD } from './MACD';
 import { Stochastic } from './Stochastic';
 import { ATR } from './ATR';
 import { VWAP, type VWAPAnchor } from './VWAP';
+import { WilliamsR } from './WilliamsR';
+import { OBV } from './OBV';
+import { ADX } from './ADX';
+import { CCI } from './CCI';
+import { PivotPoints } from './PivotPoints';
+import { Ichimoku } from './Ichimoku';
+import { MFI } from './MFI';
+import { WMA } from './WMA';
+import { HMA } from './HMA';
+import { Donchian } from './Donchian';
+import { Keltner } from './Keltner';
+import { Supertrend } from './Supertrend';
+import { ParabolicSAR } from './ParabolicSAR';
+import { StochRSI } from './StochRSI';
+import { ROC } from './ROC';
+import { ZigZag } from './ZigZag';
 
 /**
  * Discriminated union of all built-in indicator configurations. Users of
@@ -30,7 +46,35 @@ export type IndicatorConfig =
   | { type: 'macd'; fast: number; slow: number; signal: number }
   | { type: 'stoch'; kPeriod: number; dPeriod: number }
   | { type: 'atr'; period: number }
-  | { type: 'vwap'; anchor: VWAPAnchor };
+  | { type: 'vwap'; anchor: VWAPAnchor }
+  | { type: 'williamsr'; period: number }
+  | { type: 'obv' }
+  | { type: 'adx'; period: number }
+  | { type: 'cci'; period: number }
+  | { type: 'pp'; period?: number }
+  | {
+      type: 'ichimoku';
+      tenkanPeriod?: number;
+      kijunPeriod?: number;
+      senkouBPeriod?: number;
+      displacement?: number;
+    }
+  | { type: 'mfi'; period: number }
+  | { type: 'wma'; period: number }
+  | { type: 'hma'; period: number }
+  | { type: 'donchian'; period: number }
+  | { type: 'keltner'; period?: number; mult?: number; atrPeriod?: number }
+  | { type: 'supertrend'; period?: number; mult?: number }
+  | { type: 'psar'; step?: number; max?: number }
+  | {
+      type: 'stochrsi';
+      rsiPeriod?: number;
+      stochPeriod?: number;
+      kSmooth?: number;
+      dSmooth?: number;
+    }
+  | { type: 'roc'; period: number }
+  | { type: 'zigzag'; deviation?: number };
 
 /**
  * Stable string id derived from an indicator config. Two configs with the
@@ -54,7 +98,44 @@ export function indicatorId(cfg: IndicatorConfig): string {
     case 'atr':
       return `atr:${cfg.period}`;
     case 'vwap':
-      return `vwap:${cfg.anchor}`;
+      // Anchor may be a string literal ('session'/'cumulative') or
+      // an object `{ type: 'anchored', t }`. Encode both so the diff
+      // key still distinguishes them.
+      return typeof cfg.anchor === 'string'
+        ? `vwap:${cfg.anchor}`
+        : `vwap:anchored:${cfg.anchor.t}`;
+    case 'williamsr':
+      return `williamsr:${cfg.period}`;
+    case 'obv':
+      return 'obv';
+    case 'adx':
+      return `adx:${cfg.period}`;
+    case 'cci':
+      return `cci:${cfg.period}`;
+    case 'pp':
+      return `pp:${cfg.period ?? 86400}`;
+    case 'ichimoku':
+      return `ichimoku:${cfg.tenkanPeriod ?? 9}:${cfg.kijunPeriod ?? 26}:${cfg.senkouBPeriod ?? 52}:${cfg.displacement ?? 26}`;
+    case 'mfi':
+      return `mfi:${cfg.period}`;
+    case 'wma':
+      return `wma:${cfg.period}`;
+    case 'hma':
+      return `hma:${cfg.period}`;
+    case 'donchian':
+      return `donchian:${cfg.period}`;
+    case 'keltner':
+      return `keltner:${cfg.period ?? 20}:${cfg.mult ?? 2}:${cfg.atrPeriod ?? 10}`;
+    case 'supertrend':
+      return `supertrend:${cfg.period ?? 10}:${cfg.mult ?? 3}`;
+    case 'psar':
+      return `psar:${cfg.step ?? 0.02}:${cfg.max ?? 0.2}`;
+    case 'stochrsi':
+      return `stochrsi:${cfg.rsiPeriod ?? 14}:${cfg.stochPeriod ?? 14}:${cfg.kSmooth ?? 3}:${cfg.dSmooth ?? 3}`;
+    case 'roc':
+      return `roc:${cfg.period}`;
+    case 'zigzag':
+      return `zigzag:${cfg.deviation ?? 5}`;
   }
 }
 
@@ -84,6 +165,43 @@ export function createIndicator(cfg: IndicatorConfig): Indicator {
       return new ATR(cfg.period);
     case 'vwap':
       return new VWAP(cfg.anchor);
+    case 'williamsr':
+      return new WilliamsR(cfg.period);
+    case 'obv':
+      return new OBV();
+    case 'adx':
+      return new ADX(cfg.period);
+    case 'cci':
+      return new CCI(cfg.period);
+    case 'pp':
+      return new PivotPoints(cfg.period);
+    case 'ichimoku':
+      return new Ichimoku(
+        cfg.tenkanPeriod,
+        cfg.kijunPeriod,
+        cfg.senkouBPeriod,
+        cfg.displacement,
+      );
+    case 'mfi':
+      return new MFI(cfg.period);
+    case 'wma':
+      return new WMA(cfg.period);
+    case 'hma':
+      return new HMA(cfg.period);
+    case 'donchian':
+      return new Donchian(cfg.period);
+    case 'keltner':
+      return new Keltner(cfg.period, cfg.mult, cfg.atrPeriod);
+    case 'supertrend':
+      return new Supertrend(cfg.period, cfg.mult);
+    case 'psar':
+      return new ParabolicSAR(cfg.step, cfg.max);
+    case 'stochrsi':
+      return new StochRSI(cfg.rsiPeriod, cfg.stochPeriod, cfg.kSmooth, cfg.dSmooth);
+    case 'roc':
+      return new ROC(cfg.period);
+    case 'zigzag':
+      return new ZigZag(cfg.deviation);
     default: {
       // Exhaustiveness guard for the union above — TypeScript flags any
       // missing case at compile time. The runtime throw covers forged

@@ -19,7 +19,7 @@ export class SMA extends Indicator {
     return `sma(${this.period})`;
   }
 
-  protected _compute(buffer: CandleBuffer): IndicatorSeries[] {
+  compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const out = nanArray(n);
     if (n === 0 || n < this.period) {

@@ -134,30 +134,16 @@ describe('ChartEngine sub-panes', () => {
     container.remove();
   });
 
-  it('keeps a single pane and full-height main layout with no pane indicators', () => {
-    expect(engine.paneLayout.panes).toHaveLength(1);
-    expect(engine.layout.chartBottom).toBe(engine.layout.height - engine.layout.timeAxisHeight);
-  });
-
-  it('overlay indicators do not create a sub-pane', () => {
+  it('reserves no sub-pane area with only overlay indicators', () => {
     engine.setIndicators([new SMA(20)]);
-    expect(engine.paneLayout.panes).toHaveLength(1);
+    expect(engine.layout.paneAreaBottom).toBe(engine.layout.paneAreaTop);
   });
 
-  it('adds one sub-pane per pane-placement indicator and shrinks the main pane', () => {
+  it('reserves a sub-pane band and shrinks the main area for a pane indicator', () => {
     const fullBottom = engine.layout.chartBottom;
     engine.setIndicators([new RSI(14)]);
-    expect(engine.paneLayout.panes).toHaveLength(2);
-    expect(engine.paneLayout.panes[1]!.kind).toBe('indicator');
+    expect(engine.layout.paneAreaBottom).toBeGreaterThan(engine.layout.paneAreaTop);
     expect(engine.layout.chartBottom).toBeLessThan(fullBottom);
-  });
-
-  it('stacks multiple sub-panes in order', () => {
-    engine.setIndicators([new RSI(14), new MACD()]);
-    const panes = engine.paneLayout.panes;
-    expect(panes).toHaveLength(3);
-    expect(panes[1]!.id).toBe('rsi(14)');
-    expect(panes[2]!.id).toBe(new MACD().id);
   });
 
   it('renders sub-panes (RSI line + MACD histogram) without throwing', () => {
@@ -170,11 +156,11 @@ describe('ChartEngine sub-panes', () => {
     engine.setErrorReporter(new ErrorReporter((e) => errors.push(e)));
 
     class Boom extends Indicator {
-      readonly placement: IndicatorPlacement = 'pane';
+      readonly placement: IndicatorPlacement = 'overlay';
       get id(): string {
         return 'boom';
       }
-      protected _compute(): IndicatorSeries[] {
+      compute(): IndicatorSeries[] {
         throw new Error('compute failed');
       }
     }

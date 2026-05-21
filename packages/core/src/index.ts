@@ -1,5 +1,6 @@
 // Main facade
 export { OHLCVChart } from './OHLCVChart';
+export type { DrawingTool } from './OHLCVChart';
 
 // Types
 export type {
@@ -42,6 +43,12 @@ export type { PaneKind, YScale } from './rendering/Pane';
 // State persistence
 export type { ChartState, LayoutState, FullState } from './state/ChartState';
 export { isFullState } from './state/ChartState';
+export {
+  CURRENT_STATE_VERSION,
+  migrateState,
+  migrations,
+  type StateMigration,
+} from './state/migrations';
 
 // Indicators
 export { Indicator, nanArray } from './indicators/Indicator';
@@ -61,17 +68,41 @@ export { Stochastic } from './indicators/Stochastic';
 export { ATR } from './indicators/ATR';
 export { VWAP } from './indicators/VWAP';
 export type { VWAPAnchor } from './indicators/VWAP';
+export { WilliamsR } from './indicators/WilliamsR';
+export { OBV } from './indicators/OBV';
+export { ADX } from './indicators/ADX';
+export { CCI } from './indicators/CCI';
+export { PivotPoints } from './indicators/PivotPoints';
+export { Ichimoku } from './indicators/Ichimoku';
+export { MFI } from './indicators/MFI';
+export { WMA } from './indicators/WMA';
+export { HMA } from './indicators/HMA';
+export { Donchian } from './indicators/Donchian';
+export { Keltner } from './indicators/Keltner';
+export { Supertrend } from './indicators/Supertrend';
+export { ParabolicSAR } from './indicators/ParabolicSAR';
+export { StochRSI } from './indicators/StochRSI';
+export { ROC } from './indicators/ROC';
+export { ZigZag } from './indicators/ZigZag';
 
 // Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
 export { LineRenderer } from './rendering/LineRenderer';
 export { AreaRenderer } from './rendering/AreaRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
+export { HeikinAshiRenderer } from './rendering/HeikinAshiRenderer';
 
-// Drawing tools (MVP: trend line + horizontal line + DrawingLayer)
+// Drawing tools
 export { Drawing } from './drawings/Drawing';
 export type { AnchorPoint, DrawingSnapshot } from './drawings/Drawing';
 export { TrendLine } from './drawings/TrendLine';
 export { HorizontalLine } from './drawings/HorizontalLine';
+export { Rectangle } from './drawings/Rectangle';
+export { Ray } from './drawings/Ray';
+export { VerticalLine } from './drawings/VerticalLine';
+export { FibRetracement } from './drawings/FibRetracement';
+export { FibExtension } from './drawings/FibExtension';
+export { Channel } from './drawings/Channel';
+export { Arrow } from './drawings/Arrow';
 export { DrawingLayer } from './drawings/DrawingLayer';
 
 // Data transforms (Heikin Ashi, Renko)

@@ -9,27 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Multi-pane rendering wired into `ChartEngine`.** Indicators with
-  `placement: 'pane'` (RSI, MACD, Stochastic, ATR) now render in their own
-  stacked sub-panes below the price pane, each with an independent Y-axis.
-  The main price pane shrinks to make room; the time axis is shared at the
-  bottom across all panes; the crosshair vertical line spans every pane.
-  Previously these indicators were computed but silently never drawn.
-  - New `Indicator.paneRange` getter (fixed Y-range, e.g. RSI/Stochastic
-    `[0, 100]`) and `Indicator.referenceLines` getter (e.g. RSI 30/70,
-    Stochastic 20/80). Default to auto-scale / none.
-  - MACD `histogram` series renders as zero-anchored bars; other series
-    render as lines.
-  - `ChartEngine.paneLayout` getter exposes the pane stack.
-- **Indicator compute memoization.** `Indicator.compute()` is now a
-  memoizing wrapper around the subclass `_compute()`, keyed on the buffer's
-  new `version` counter. Indicators recompute only when the data actually
+- **Indicator compute memoization.** `Indicator.computeCached(buffer)`
+  wraps `compute()` and caches the result keyed on the new
+  `CandleBuffer.version` revision counter. The render loop now uses
+  `computeCached`, so indicators recompute only when the data actually
   changes instead of on every render frame (pan, zoom, crosshair move).
 - **`CandleBuffer.version`** — monotonic revision counter bumped on every
   mutation (`append`, `appendBatch`, `updateLast`, `prepend`, `clear`).
-- **SSR guidance.** `OHLCVChart` throws a clear, actionable error when
-  constructed without a `document` (SSR). README documents Next.js
-  (`dynamic({ ssr: false })`) and Nuxt (`<client-only>`) usage.
 
 ### Changed
 
@@ -42,15 +28,155 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Indicator compute errors are reported, not swallowed.** `ChartEngine`
   now dispatches indicator-compute failures through `ErrorReporter` with
   `where: 'indicator'` instead of an empty `catch {}`, matching the
-  project's "no silent catches" policy.
+  project's "no silent catches" policy. New `ChartEngine.setErrorReporter`.
 
 ### Removed
 
 - **`BinanceWsTransport`** and its types (`BinanceWsTransportOptions`,
-  `IWebSocketLike`) were removed. It was an unverified skeleton (lost ticks
-  on reconnect, no heartbeat, no history pagination) and shipping it as a
-  public export implied production-readiness it did not have. Build resilient
-  transports on the abstract `WebSocketTransport` base instead.
+  `IWebSocketLike`). It was an unverified skeleton (lost ticks on
+  reconnect, no heartbeat, no history pagination); shipping it as a public
+  export implied production-readiness it did not have. Build exchange
+  adapters on the abstract `WebSocketTransport` base instead.
+
+### Added (review-3 cycle — M2 hardening)
+
+- **Indicator library expanded from 8 → 23.** Beyond the original
+  SMA/EMA/BB/VWAP/RSI/MACD/Stochastic/ATR, the following are now
+  built in and wired through `IndicatorConfig` + `createIndicator`
+  + `indicatorId`:
+  - Overlay: `WMA`, `HMA`, `Keltner`, `Donchian`, `PivotPoints`,
+    `Ichimoku`, `Supertrend`, `ParabolicSAR`, plus anchored `VWAP`.
+  - Sub-pane: `WilliamsR`, `OBV`, `ADX` (+DI/-DI), `CCI`, `MFI`,
+    `StochRSI`, `ROC`.
+  All use O(n) or amortized-O(1) algorithms (rolling sums,
+  monotonic-deque window extrema, Wilder smoothing).
+- **Drawing tools expanded to 9**: added `Rectangle`, `Ray`,
+  `VerticalLine`, `FibRetracement`, `FibExtension`, `Channel`,
+  `Arrow` alongside the original `TrendLine` / `HorizontalLine`.
+  All buffer-space anchored and snapshot-serializable; the shared
+  `DrawingTool` type drives `OHLCVChart.startDrawing` and both
+  wrappers.
+- **Heikin-Ashi is a first-class chart type** (`chartType:
+  'heikinashi'`) — rendered directly from the raw buffer with a
+  50-bar warmup lead-in, no manual data transform needed.
+- **Y-axis drag-to-scale**: dragging the price-axis strip rescales
+  the visible price range around the cursor; double-click there
+  resets to auto-scale (`Viewport.scalePriceRangeBy` /
+  `resetPriceScale`).
+- **Two-finger touch gestures** now pan and pinch-zoom
+  simultaneously (sliding both fingers pans; spreading/pinching
+  zooms).
+
+- **Multi-pane rendering** is now real: every indicator with
+  `placement: 'pane'` (RSI, MACD, Stochastic, ATR, plus the new
+  WilliamsR / OBV / ADX / CCI) renders in its own auto-sized
+  vertical band with independent Y-axis, label, min/max bounds, and
+  a dashed zero-line for ranges that straddle zero.
+  `computeLayout(width, height, paneCount)` reserves
+  `INDICATOR_PANE_HEIGHT` (80 px) per pane and clamps so the main
+  candle area is never thinner than `MIN_MAIN_AREA_HEIGHT` (120 px).
+- **4 new indicators**: `WilliamsR`, `OBV`, `ADX` (with `+DI`/`-DI`),
+  `CCI`. Registered in the `IndicatorConfig` discriminated union
+  (`'williamsr'`, `'obv'`, `'adx'`, `'cci'`) and wired through
+  `createIndicator`, `indicatorId`, and the React/Vue wrappers'
+  reconciliation path.
+- **4 new drawing tools**: `Rectangle`, `Ray`, `VerticalLine`,
+  `FibRetracement` (8 canonical levels with inline labels). All
+  buffer-space anchored and snapshot-serializable. `OHLCVChart.startDrawing`
+  widened to accept the new tools; the shared `DrawingTool` type
+  is exported from core so React/Vue wrappers stay in sync.
+- **Bollinger Bands O(n)**: rewrote the inner double-loop to use
+  two rolling sums (`Σx`, `Σx²`) and the
+  `σ² = E[x²] − (E[x])²` identity. ~20× faster at
+  `n=100k, period=20` while preserving correctness on all 9
+  existing tests.
+- **Subpath exports**: `@rekurt/ohlcv-core/indicators` and
+  `@rekurt/ohlcv-core/drawings` are now importable directly,
+  enabling consumers to tree-shake unused subsystems.
+- **State migrations scaffold**: `migrateState` + `migrations`
+  registry + `CURRENT_STATE_VERSION` so future schema bumps are
+  forward-compatible with shipped clients without changes in
+  wrappers.
+- **Governance**: `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+  `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`,
+  `.github/dependabot.yml`. Expanded `.gitignore` to cover env
+  files, IDE configs, monorepo caches, and editor swap files.
+
+### Changed
+
+- **`CandleBuffer.prepend` is O(1) per candle** after the first
+  growth instead of O(n) every time. The buffer now maintains a
+  logical `_head` offset into the raw arrays; prepends shift
+  `_head` left in-place when leftPad headroom is available, and
+  reserve `max(incoming, currentLength)` of leftPad on growth so
+  subsequent equal-sized history pages also hit the fast path.
+  Eliminates the 6× Float64Array allocation per prepend that
+  previously dominated TradingView-style infinite scroll.
+- **Y-axis drag-to-scale** on the price-axis strip rescales the
+  visible price range around the cursor (TradingView/Lightweight
+  Charts parity). Double-click in the price axis resets to
+  auto-scale; double-click in the main chart still fits visible.
+  New `Viewport.scalePriceRangeBy(factor, anchorY)` and
+  `resetPriceScale()` expose this programmatically.
+- `useOHLCVChart` (React + Vue) now reacts to every option after
+  mount — previously the headless hook ignored post-mount changes
+  to `symbol`, `resolution`, `theme`, `chartType`, `indicators`,
+  `idleCursor`, and `transport`. Vue version accepts
+  `MaybeRefOrGetter<T>` for reactive options. Callbacks
+  (`onHover`, `onCandleClick`, `onError`, `onVisibleRangeChange`,
+  `onLoadMoreHistory`) flow through trampoline refs so identity
+  changes don't recreate the chart.
+- Rendering: pixel-snap text baselines and label backgrounds in
+  PriceAxis, TimeAxis, Crosshair, Legend, GoToLive — text now
+  rasterizes sharply at DPR=1 and label rects don't fringe.
+- `CandleBuffer.append` / `appendBatch` / `updateLast` / `prepend`
+  now reject non-finite OHLCVT fields at the public API boundary
+  with a clear `RangeError`. Prevents silent NaN propagation into
+  `priceToY` and indicator computation.
+
+### Fixed
+
+- README: removed an over-promise about pane log-scale being live
+  in 0.1.0; it now correctly describes when the main candle and
+  sub-pane integration each became real.
+- README: added an honest "unverified skeleton" note next to
+  `BinanceWsTransport` so consumers do not copy-paste it into
+  production code.
+- `vitest.config.ts` was silently skipping `*.test.tsx` files; the
+  React wrapper tests were never running in CI. Re-included.
+
+### Fixed (PR #1 review + CI)
+
+- CI reordered to build before typecheck — the wrapper tsconfigs
+  resolve `@rekurt/ohlcv-core` to its built `dist/`, so typecheck
+  must follow the build in a fresh `npm ci` environment. (Both
+  Node 20 and 22 jobs were red on `master` since commit 2f322f4.)
+- React `useOHLCVChart` no longer fires a duplicate `switchSymbol`
+  on mount (avoids a redundant transport fetch + buffer reset).
+- Vue `useOHLCVChart` callback watchers are registered once at
+  composable scope instead of leaking a new set per transport
+  recreation.
+- `CandleBuffer.appendBatch` / `prepend` validate the full incoming
+  range before mutating, so a thrown validation leaves the buffer
+  untouched (atomic ingestion).
+- Time axis + crosshair time label anchor to `paneAreaBottom` so
+  they render in the reserved axis strip, not the first sub-pane,
+  when pane indicators are active.
+- `DataFeed.disconnect()` bumps the connect version so in-flight
+  history fetches can't leak into a freshly-cleared buffer;
+  subscribe-time + per-tick errors are now reported via
+  `ErrorReporter` instead of silently rejecting.
+
+### Tests
+
+- 461 → 610 (+149) across this cycle, covering: callback identity
+  preservation, BB O(n) correctness, all 15 new indicators, all 7
+  new drawings + snapshot round-trip, IndicatorPaneRenderer,
+  sub-pane layout reservation, state migrations, CandleBuffer
+  numeric guards + atomicity + O(1) prepend fast-path,
+  Viewport.scalePriceRangeBy + resetPriceScale, two-finger touch
+  gestures, Heikin-Ashi rendering, DataFeed race/error handling,
+  and the React + Vue headless hook reactivity contracts.
 
 ## [0.1.0] - 2026-04-11
 

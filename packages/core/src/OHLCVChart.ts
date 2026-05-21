@@ -15,9 +15,17 @@ import { createIndicator, type IndicatorConfig } from './indicators/registry';
 import { DrawingLayer } from './drawings/DrawingLayer';
 import { TrendLine } from './drawings/TrendLine';
 import { HorizontalLine } from './drawings/HorizontalLine';
+import { Rectangle } from './drawings/Rectangle';
+import { Ray } from './drawings/Ray';
+import { VerticalLine } from './drawings/VerticalLine';
+import { FibRetracement } from './drawings/FibRetracement';
+import { FibExtension } from './drawings/FibExtension';
+import { Channel } from './drawings/Channel';
+import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
+import { migrateState } from './state/migrations';
 
 /**
  * High-level facade over the chart engine + data feed + interaction
@@ -42,6 +50,22 @@ import { isFullState } from './state/ChartState';
  * dispatched through `ChartConfig.onError` instead of being
  * silently swallowed.
  */
+
+/**
+ * Drawing tool identifiers accepted by {@link OHLCVChart.startDrawing}.
+ * Exported so the React/Vue wrappers share a single source of truth.
+ */
+export type DrawingTool =
+  | 'trendline'
+  | 'hline'
+  | 'vline'
+  | 'rectangle'
+  | 'ray'
+  | 'fib'
+  | 'fibext'
+  | 'channel'
+  | 'arrow';
+
 export class OHLCVChart {
   private _buffer: CandleBuffer;
   private _merger: CandleMerger;
@@ -209,13 +233,21 @@ export class OHLCVChart {
     };
     this._engine.topCanvas.addEventListener('click', this._clickHandler);
 
-    // Double-click → fit visible (reset zoom + go to live)
+    // Double-click → context-sensitive reset:
+    //  - in the chart area: fit visible (reset zoom + go to live)
+    //  - in the price axis strip: reset price scale to auto-fit
     this._dblClickHandler = (e: MouseEvent) => {
       const rect = this._engine.topCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const layout = this._engine.layout;
-      if (x < layout.chartLeft || x > layout.chartRight || y < layout.chartTop || y > layout.chartBottom) return;
+      if (y < layout.chartTop || y > layout.chartBottom) return;
+      if (x >= layout.chartRight && x <= layout.chartRight + layout.priceAxisWidth) {
+        this._engine.viewport.resetPriceScale();
+        this._engine.requestRender();
+        return;
+      }
+      if (x < layout.chartLeft || x > layout.chartRight) return;
       this.fitVisible();
     };
     this._engine.topCanvas.addEventListener('dblclick', this._dblClickHandler);
@@ -383,12 +415,44 @@ export class OHLCVChart {
    * routed through the host's click handler should call
    * `drawingLayer.addPoint({ index, price })`. When the drawing
    * completes (enough anchors), it is finalized automatically.
+   *
+   * Supported tools (see {@link DrawingTool}):
+   *  - `trendline` (2 points)
+   *  - `hline` (1 point — horizontal price line)
+   *  - `vline` (1 point — vertical index line)
+   *  - `rectangle` (2 points — diagonal corners)
+   *  - `ray` (2 points — semi-infinite line)
+   *  - `fib` (2 points — Fibonacci retracement levels)
    */
-  startDrawing(tool: 'trendline' | 'hline'): void {
-    if (tool === 'trendline') {
-      this._ownDrawingLayer.startDrawing(new TrendLine());
-    } else {
-      this._ownDrawingLayer.startDrawing(new HorizontalLine());
+  startDrawing(tool: DrawingTool): void {
+    switch (tool) {
+      case 'trendline':
+        this._ownDrawingLayer.startDrawing(new TrendLine());
+        return;
+      case 'hline':
+        this._ownDrawingLayer.startDrawing(new HorizontalLine());
+        return;
+      case 'vline':
+        this._ownDrawingLayer.startDrawing(new VerticalLine());
+        return;
+      case 'rectangle':
+        this._ownDrawingLayer.startDrawing(new Rectangle());
+        return;
+      case 'ray':
+        this._ownDrawingLayer.startDrawing(new Ray());
+        return;
+      case 'fib':
+        this._ownDrawingLayer.startDrawing(new FibRetracement());
+        return;
+      case 'fibext':
+        this._ownDrawingLayer.startDrawing(new FibExtension());
+        return;
+      case 'channel':
+        this._ownDrawingLayer.startDrawing(new Channel());
+        return;
+      case 'arrow':
+        this._ownDrawingLayer.startDrawing(new Arrow());
+        return;
     }
   }
 
@@ -520,13 +584,13 @@ export class OHLCVChart {
     if (typeof state !== 'object' || state === null) {
       throw new ValidationError('loadState', state, 'state must be an object');
     }
-    if (state.version !== 1) {
-      throw new ValidationError(
-        'loadState',
-        state,
-        `Unsupported chart state version: ${String(state.version)}`,
-      );
-    }
+    // Step older snapshots up to the current schema version. This is
+    // a no-op for v1 (no historical versions exist yet) but lets
+    // shipped clients survive future v2/v3 migrations without code
+    // changes in the wrappers. migrateState throws ValidationError on
+    // newer-than-current versions, so we don't need to re-check
+    // state.version === CURRENT_STATE_VERSION below.
+    state = migrateState(state);
     if (typeof state.symbol !== 'string' || typeof state.resolution !== 'string') {
       throw new ValidationError(
         'loadState',
