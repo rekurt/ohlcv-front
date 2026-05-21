@@ -10,6 +10,7 @@ React and Vue wrappers with full API parity.
 
 - 🎮 **Playground**: https://rekurt.github.io/ohlcv-front/
 - 📖 **API reference**: https://rekurt.github.io/ohlcv-front/api/
+- 📚 **Guides** (SSR, performance, theming, transports, recipes): [docs/GUIDES.md](./docs/GUIDES.md)
 - 📝 **Changelog**: [CHANGELOG.md](./CHANGELOG.md)
 
 ## Packages
