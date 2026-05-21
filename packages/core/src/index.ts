@@ -107,6 +107,11 @@ export { Channel } from './drawings/Channel';
 export { Arrow } from './drawings/Arrow';
 export { DrawingLayer } from './drawings/DrawingLayer';
 
+// Markers (candle-anchored point annotations)
+export { markerY } from './markers/Marker';
+export type { Marker, MarkerPosition, MarkerShape } from './markers/Marker';
+export { MarkerRenderer } from './markers/MarkerRenderer';
+
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';
 export { toRenko } from './transforms/renko';

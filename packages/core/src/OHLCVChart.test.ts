@@ -306,4 +306,34 @@ describe('OHLCVChart facade', () => {
       chart.destroy();
     });
   });
+
+  describe('markers', () => {
+    it('sets, appends, removes, and clears markers', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 10 }, (_, i) => makeCandle(i)));
+      const t = makeCandle(3).t;
+
+      chart.setMarkers([{ id: 'a', time: t, shape: 'arrowUp', position: 'below' }]);
+      expect(chart.getMarkers().map((m) => m.id)).toEqual(['a']);
+
+      chart.addMarker({ id: 'b', time: makeCandle(5).t, shape: 'circle' });
+      expect(chart.getMarkers()).toHaveLength(2);
+
+      expect(chart.removeMarker('a')).toBe(true);
+      expect(chart.removeMarker('missing')).toBe(false);
+      expect(chart.getMarkers().map((m) => m.id)).toEqual(['b']);
+
+      chart.clearMarkers();
+      expect(chart.getMarkers()).toHaveLength(0);
+      chart.destroy();
+    });
+
+    it('renders without throwing when markers are present', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 10 }, (_, i) => makeCandle(i)));
+      chart.setMarkers([{ id: 'a', time: makeCandle(4).t, shape: 'flag', text: 'news' }]);
+      expect(() => chart.render()).not.toThrow();
+      chart.destroy();
+    });
+  });
 });

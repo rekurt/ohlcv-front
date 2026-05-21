@@ -10,6 +10,7 @@ import {
   type ChartType,
   type DataTransport,
   type DrawingSnapshot,
+  type Marker,
   type FullState,
   type HoverInfo,
   type IndicatorConfig,
@@ -224,6 +225,11 @@ export const OHLCVChart = defineComponent({
         chartRef.value?.deleteSelectedDrawing() ?? false,
       undoDrawing: (): boolean => chartRef.value?.undoDrawing() ?? false,
       redoDrawing: (): boolean => chartRef.value?.redoDrawing() ?? false,
+      setMarkers: (markers: Marker[]) => chartRef.value?.setMarkers(markers),
+      getMarkers: (): readonly Marker[] => chartRef.value?.getMarkers() ?? [],
+      addMarker: (marker: Marker) => chartRef.value?.addMarker(marker),
+      removeMarker: (id: string): boolean => chartRef.value?.removeMarker(id) ?? false,
+      clearMarkers: () => chartRef.value?.clearMarkers(),
 
       // Export
       toPNG: (): string | null => chartRef.value?.toPNG() ?? null,

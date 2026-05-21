@@ -57,6 +57,14 @@ export const DRAWING_HIT_TOLERANCE_PX = 6;
 /** Side length (px) of the square handles drawn on a selected drawing. */
 export const DRAWING_HANDLE_PX = 7;
 
+// Markers
+/** Default marker glyph size (px). */
+export const MARKER_SIZE = 9;
+/** Gap (px) between a candle's high/low and an above/below marker. */
+export const MARKER_GAP = 6;
+/** Font for marker text labels. */
+export const MARKER_FONT = '10px system-ui, sans-serif';
+
 // Themes
 export const DARK_THEME: ThemeColors = {
   background: '#131722',

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Markers API.** Candle-anchored point annotations (buy/sell arrows,
+  event flags) via `chart.setMarkers` / `addMarker` / `removeMarker` /
+  `clearMarkers` / `getMarkers`. Markers pin by `time` (robust to history
+  loads and `maxCandles` eviction — no index bookkeeping), support
+  `above`/`below`/`inline` placement and `arrowUp`/`arrowDown`/`circle`/
+  `square`/`flag` glyphs with optional text. New `Marker` type,
+  `MarkerRenderer`, and `markerY` helper exported from core; React and Vue
+  ref surfaces expose the same methods. Drawn on the chart layer (panned
+  with data, included in `toPNG`).
 - **`maxCandles` memory cap.** New `ChartConfig.maxCandles` evicts the
   oldest candles (O(1) via `CandleBuffer.evictHead`, with in-place
   compaction so capacity stays bounded) once live updates push past the

@@ -18,6 +18,8 @@ import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
 import { HeikinAshiRenderer } from './HeikinAshiRenderer';
+import { MarkerRenderer } from '../markers/MarkerRenderer';
+import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 
@@ -54,6 +56,8 @@ export class ChartEngine {
   private _indicators: Indicator[] = [];
   /** Optional drawing layer rendered on top of candles. */
   private _drawingLayer: DrawingLayer | null = null;
+  /** Point markers anchored to candles by timestamp. */
+  private _markers: Marker[] = [];
   /** Routes indicator-compute / render errors to the host's `onError`. */
   private _reporter: ErrorReporter | null = null;
 
@@ -72,6 +76,7 @@ export class ChartEngine {
   private _legendRenderer = new LegendRenderer();
   private _overlayRenderer = new OverlaySeriesRenderer();
   private _paneRenderer = new IndicatorPaneRenderer();
+  private _markerRenderer = new MarkerRenderer();
   readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
@@ -303,6 +308,17 @@ export class ChartEngine {
     this.requestRender();
   }
 
+  /** Replace the set of candle-anchored markers. */
+  setMarkers(markers: Marker[]): void {
+    this._markers = markers;
+    this.requestRender();
+  }
+
+  /** The current markers, in draw order. */
+  get markers(): readonly Marker[] {
+    return this._markers;
+  }
+
   /** Mark chart + UI for re-render */
   requestRender(): void {
     this._chartDirty = true;
@@ -520,7 +536,12 @@ export class ChartEngine {
         }
       }
 
-      // Drawing layer on top of indicators.
+      // Markers sit above indicators; drawings sit above markers.
+      this._markerRenderer.render(
+        ctx, this._layout, this.viewport, this._buffer, this._markers, this._theme,
+      );
+
+      // Drawing layer on top of indicators + markers.
       if (this._drawingLayer) {
         this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
       }

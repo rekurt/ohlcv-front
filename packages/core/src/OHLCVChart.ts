@@ -23,6 +23,7 @@ import { FibExtension } from './drawings/FibExtension';
 import { Channel } from './drawings/Channel';
 import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
+import type { Marker } from './markers/Marker';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
 import { migrateState } from './state/migrations';
@@ -540,6 +541,39 @@ export class OHLCVChart {
     const applied = this._ownDrawingLayer.undo();
     if (applied) this._engine.requestRender();
     return applied;
+  }
+
+  /**
+   * Replace all candle-anchored markers (buy/sell arrows, event flags).
+   * Markers are pinned by `time`, so they survive history loads and
+   * `maxCandles` eviction. Markers are runtime annotations — they are not
+   * included in `saveLayoutState`; persist them yourself if needed.
+   */
+  setMarkers(markers: Marker[]): void {
+    this._engine.setMarkers(markers.slice());
+  }
+
+  /** The current markers, in draw order. */
+  getMarkers(): readonly Marker[] {
+    return this._engine.markers;
+  }
+
+  /** Append a single marker. */
+  addMarker(marker: Marker): void {
+    this._engine.setMarkers([...this._engine.markers, marker]);
+  }
+
+  /** Remove a marker by id. Returns true if one was removed. */
+  removeMarker(id: string): boolean {
+    const next = this._engine.markers.filter((m) => m.id !== id);
+    if (next.length === this._engine.markers.length) return false;
+    this._engine.setMarkers(next);
+    return true;
+  }
+
+  /** Remove all markers. */
+  clearMarkers(): void {
+    this._engine.setMarkers([]);
   }
 
   /** Redo the last undone drawing mutation. Returns true if applied. */
