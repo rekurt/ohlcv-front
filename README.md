@@ -56,8 +56,12 @@ npm run docs            # TypeDoc → docs/api/
 - Candlesticks, volume bars, grid, price axis, time axis, crosshair with snap-to-candle, current price label, legend, "Go to live" pill
 - Alternative chart types: line, area (with gradient), OHLC bars
 - Hi-DPI canvas with three-layer split (chart / UI / interaction) for cheap crosshair redraws
-- `Pane` + `PaneLayout` abstraction for multi-pane charts with independent Y-axes (linear or log).
-  The class API is stable, but full integration of sub-pane indicator rendering is scheduled for M2.
+- Multi-pane rendering: sub-pane indicators (RSI, MACD, Stochastic,
+  ATR, WilliamsR, OBV, ADX, CCI) render in their own auto-sized
+  vertical bands with independent Y-axes, label, and zero-line for
+  oscillators that straddle zero. The legacy `Pane` + `PaneLayout`
+  classes remain available for callers that want finer control over
+  pane heights.
 - Theme system: dark, light, or `'auto'` following `prefers-color-scheme`
 
 **Data layer**:

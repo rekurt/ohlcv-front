@@ -18,6 +18,9 @@ const LAYOUT: ChartLayout = {
   height: 424,
   volumeTop: 320,
   volumeBottom: 400,
+  paneAreaTop: 400,
+  paneAreaBottom: 400,
+  paneCount: 0,
 };
 
 const THEME: ThemeColors = {

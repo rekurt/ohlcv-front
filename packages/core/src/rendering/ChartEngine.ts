@@ -15,6 +15,7 @@ import { PriceLineRenderer } from './PriceLineRenderer';
 import { LegendRenderer } from './LegendRenderer';
 import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
+import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 
@@ -65,6 +66,7 @@ export class ChartEngine {
   private _priceLineRenderer = new PriceLineRenderer();
   private _legendRenderer = new LegendRenderer();
   private _overlayRenderer = new OverlaySeriesRenderer();
+  private _paneRenderer = new IndicatorPaneRenderer();
   readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
@@ -252,8 +254,22 @@ export class ChartEngine {
    * `getIndicatorSeries(id)` without rendering.
    */
   setIndicators(indicators: Indicator[]): void {
+    const prevPaneCount = this._paneIndicatorCount();
     this._indicators = indicators;
+    // If the number of sub-pane indicators changed, recompute the
+    // layout (panes consume vertical space from the main candle area).
+    const nextPaneCount = this._paneIndicatorCount();
+    if (nextPaneCount !== prevPaneCount && this._layout) {
+      this._layout = computeLayout(this._layout.width, this._layout.height, nextPaneCount);
+      this.viewport.setLayout(this._layout);
+    }
     this.requestRender();
+  }
+
+  private _paneIndicatorCount(): number {
+    let n = 0;
+    for (const ind of this._indicators) if (ind.placement === 'pane') n++;
+    return n;
   }
 
   /** The currently-configured indicators, in render order. */
@@ -331,7 +347,7 @@ export class ChartEngine {
       return;
     }
 
-    this._layout = computeLayout(width, height);
+    this._layout = computeLayout(width, height, this._paneIndicatorCount());
     this.viewport.setLayout(this._layout);
 
     // resizeHiDPICanvas resets canvas.width/height (which clears the transform)
@@ -442,11 +458,10 @@ export class ChartEngine {
           break;
       }
 
-      // Overlay indicators. Pane-placement indicators are computed but not
-      // rendered here — a future multi-pane integration will place them.
+      // Overlay indicators (drawn on the main price area).
       let colorIdx = 0;
+      const paneIndicators: { indicator: Indicator; series: IndicatorSeries[] }[] = [];
       for (const indicator of this._indicators) {
-        if (indicator.placement !== 'overlay') continue;
         let series: IndicatorSeries[];
         try {
           series = indicator.compute(this._buffer);
@@ -454,10 +469,14 @@ export class ChartEngine {
           // Indicator compute errors are non-fatal; skip this one.
           continue;
         }
-        for (const s of series) {
-          const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
-          colorIdx++;
-          this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme);
+        if (indicator.placement === 'overlay') {
+          for (const s of series) {
+            const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
+            colorIdx++;
+            this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme);
+          }
+        } else {
+          paneIndicators.push({ indicator, series });
         }
       }
 
@@ -467,6 +486,32 @@ export class ChartEngine {
       }
 
       this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
+
+      // Sub-pane indicators. Each gets one band of equal height in
+      // [paneAreaTop, paneAreaBottom]. Color cursor continues from
+      // overlay indicators so legends are easier to map mentally.
+      if (paneIndicators.length > 0 && this._layout.paneAreaBottom > this._layout.paneAreaTop) {
+        const bandH =
+          (this._layout.paneAreaBottom - this._layout.paneAreaTop) / paneIndicators.length;
+        for (let i = 0; i < paneIndicators.length; i++) {
+          const entry = paneIndicators[i]!;
+          const top = this._layout.paneAreaTop + i * bandH;
+          const bottom = top + bandH;
+          const drawn = this._paneRenderer.render(
+            ctx,
+            this._layout,
+            this.viewport,
+            entry.series,
+            top,
+            bottom,
+            entry.indicator.id,
+            this._theme,
+            colorIdx,
+          );
+          colorIdx += drawn;
+        }
+      }
+
       this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._resolution, this._theme);
     }
 

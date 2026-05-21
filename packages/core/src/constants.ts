@@ -5,6 +5,10 @@ export const PRICE_AXIS_WIDTH = 80;
 export const TIME_AXIS_HEIGHT = 30;
 export const VOLUME_HEIGHT_RATIO = 0.2;
 export const PRICE_PADDING_RATIO = 0.05;
+/** Height (px) reserved for each sub-pane indicator band. */
+export const INDICATOR_PANE_HEIGHT = 80;
+/** Minimum height (px) the main candle area must retain. */
+export const MIN_MAIN_AREA_HEIGHT = 120;
 
 // Candle sizing
 export const DEFAULT_CANDLE_WIDTH = 8;
