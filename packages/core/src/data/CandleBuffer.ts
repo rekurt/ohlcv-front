@@ -52,6 +52,7 @@ export class CandleBuffer {
   private _length = 0;
   private _capacity: number;
   private _head = 0;
+  private _version = 0;
 
   constructor(capacity = INITIAL_CAPACITY) {
     this._capacity = capacity;
@@ -67,6 +68,17 @@ export class CandleBuffer {
     return this._length;
   }
 
+  /**
+   * Monotonically increasing revision counter, bumped on every mutation
+   * (`append`, `appendBatch`, `updateLast`, `prepend`, `clear`). Consumers
+   * such as indicators key their memoization cache on this value so they
+   * only recompute when the underlying data actually changed — not on every
+   * render frame.
+   */
+  get version(): number {
+    return this._version;
+  }
+
   /** O(1) amortized append */
   append(candle: Candle): void {
     assertCandleNumeric(candle, 'append');
@@ -79,6 +91,7 @@ export class CandleBuffer {
     this._close[i] = candle.c;
     this._volume[i] = candle.v;
     this._time[i] = candle.t;
+    this._version++;
   }
 
   /**
@@ -136,6 +149,7 @@ export class CandleBuffer {
       this._volume[i] = c.v;
       this._time[i] = c.t;
     }
+    this._version++;
   }
 
   /** O(1) in-place update of the last candle */
@@ -149,6 +163,7 @@ export class CandleBuffer {
     this._close[i] = candle.c;
     this._volume[i] = candle.v;
     this._time[i] = candle.t;
+    this._version++;
   }
 
   /**
@@ -204,6 +219,7 @@ export class CandleBuffer {
       }
       this._head = newHead;
       this._length += incoming;
+      this._version++;
       return;
     }
 
@@ -255,6 +271,7 @@ export class CandleBuffer {
     this._head = newHead;
     this._length = usedRight + incoming;
     this._capacity = cap;
+    this._version++;
   }
 
   /** Binary search for index by timestamp. Returns exact index or -1 */
@@ -315,9 +332,46 @@ export class CandleBuffer {
     return this._length > 0 ? this._close[this._head + this._length - 1]! : 0;
   }
 
+  /**
+   * Drop the oldest `count` candles in O(1) by advancing the logical head.
+   * Returns the number actually evicted (clamped to the current length).
+   *
+   * Callers that track logical indices outside the buffer (viewport
+   * startIndex, drawing anchors) must shift them by `-evicted` since every
+   * remaining candle's logical index decreases by that amount.
+   *
+   * When the dead head space comes to dominate the live region the buffer
+   * compacts in place so trailing growth can't run away — this keeps a
+   * capped (maxCandles) buffer's memory bounded instead of doubling
+   * forever as the head marches right.
+   */
+  evictHead(count: number): number {
+    if (count <= 0 || this._length === 0) return 0;
+    const n = Math.min(count, this._length);
+    this._head += n;
+    this._length -= n;
+    if (this._head >= this._length) this._compact();
+    this._version++;
+    return n;
+  }
+
+  /** Shift the live region back to index 0, reclaiming dead leftPad. */
+  private _compact(): void {
+    if (this._head === 0) return;
+    const end = this._head + this._length;
+    this._open.copyWithin(0, this._head, end);
+    this._high.copyWithin(0, this._head, end);
+    this._low.copyWithin(0, this._head, end);
+    this._close.copyWithin(0, this._head, end);
+    this._volume.copyWithin(0, this._head, end);
+    this._time.copyWithin(0, this._head, end);
+    this._head = 0;
+  }
+
   clear(): void {
     this._length = 0;
     this._head = 0;
+    this._version++;
   }
 
   /**

@@ -306,4 +306,43 @@ describe('CandleBuffer', () => {
       expect(buf.lastTime()).toBe(0);
     });
   });
+
+  describe('evictHead', () => {
+    it('drops the oldest candles and shifts logical indices', () => {
+      const buf = new CandleBuffer();
+      for (let i = 1; i <= 5; i++) buf.append(makeCandle(i, 100 + i));
+      const evicted = buf.evictHead(2);
+      expect(evicted).toBe(2);
+      expect(buf.length).toBe(3);
+      // Former index 2 (t=3) is now index 0.
+      expect(buf.candleAt(0)?.t).toBe(3);
+      expect(buf.firstTime()).toBe(3);
+      expect(buf.lastTime()).toBe(5);
+    });
+
+    it('clamps to length and bumps version; no-op for count <= 0', () => {
+      const buf = new CandleBuffer();
+      buf.appendBatch([makeCandle(1), makeCandle(2)]);
+      const v = buf.version;
+      expect(buf.evictHead(0)).toBe(0);
+      expect(buf.version).toBe(v);
+      expect(buf.evictHead(99)).toBe(2);
+      expect(buf.length).toBe(0);
+      expect(buf.version).toBe(v + 1);
+    });
+
+    it('keeps capacity bounded under repeated evict+append (compaction)', () => {
+      const buf = new CandleBuffer(8);
+      // Maintain a rolling window of ~4 candles across many ticks.
+      for (let t = 1; t <= 200; t++) {
+        buf.append(makeCandle(t, 100 + (t % 7)));
+        if (buf.length > 4) buf.evictHead(buf.length - 4);
+      }
+      expect(buf.length).toBe(4);
+      expect(buf.lastTime()).toBe(200);
+      expect(buf.candleAt(0)?.t).toBe(197);
+      // Reads remain correct and contiguous after many compactions.
+      expect(buf.candleAt(3)?.t).toBe(200);
+    });
+  });
 });

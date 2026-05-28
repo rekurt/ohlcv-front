@@ -96,6 +96,23 @@ describe('CrosshairController', () => {
     expect(hideCrosshairSpy).toHaveBeenCalled();
   });
 
+  it('keeps the crosshair visible when hovering an indicator sub-pane', async () => {
+    // Add a pane indicator so the layout reserves a sub-pane band below
+    // the main price area (chartBottom < paneAreaBottom).
+    const { RSI } = await import('../indicators/RSI');
+    engine.setIndicators([new RSI(14)]);
+    expect(engine.layout.paneAreaBottom).toBeGreaterThan(engine.layout.chartBottom);
+
+    // Hover inside the sub-pane band: below chartBottom but above paneAreaBottom.
+    const subPaneY = (engine.layout.chartBottom + engine.layout.paneAreaBottom) / 2;
+    fireMove(500, subPaneY);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+    expect(setCrosshairSpy).toHaveBeenCalled();
+    const yArg = setCrosshairSpy.mock.calls.at(-1)![1] as number;
+    expect(yArg).toBeGreaterThan(engine.layout.chartBottom);
+  });
+
   it('setBuffer updates the buffer reference', () => {
     const newBuf = new CandleBuffer();
     for (let i = 0; i < 10; i++) newBuf.append(makeCandle(i));

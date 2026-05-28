@@ -1,0 +1,100 @@
+import { describe, it, expect } from 'vitest';
+import { SMA } from './SMA';
+import { EMA } from './EMA';
+import { CandleBuffer } from '../data/CandleBuffer';
+import type { Candle } from '../types';
+
+function makeCandle(i: number, c: number): Candle {
+  return { o: c, h: c + 1, l: c - 1, c, v: 1, t: 1_700_000_000 + i * 60 };
+}
+
+function bufferOf(closes: number[]): CandleBuffer {
+  const buf = new CandleBuffer();
+  closes.forEach((c, i) => buf.append(makeCandle(i, c)));
+  return buf;
+}
+
+describe('CandleBuffer.version', () => {
+  it('starts at 0 and increments on append', () => {
+    const buf = new CandleBuffer();
+    expect(buf.version).toBe(0);
+    buf.append(makeCandle(0, 100));
+    expect(buf.version).toBe(1);
+    buf.append(makeCandle(1, 101));
+    expect(buf.version).toBe(2);
+  });
+
+  it('increments on updateLast, prepend, appendBatch, and clear', () => {
+    const buf = bufferOf([100, 101, 102]);
+    const v0 = buf.version;
+    buf.updateLast(makeCandle(2, 103));
+    expect(buf.version).toBe(v0 + 1);
+    buf.appendBatch([makeCandle(3, 104), makeCandle(4, 105)]);
+    expect(buf.version).toBe(v0 + 2);
+    buf.prepend([makeCandle(-1, 99)]);
+    expect(buf.version).toBe(v0 + 3);
+    buf.clear();
+    expect(buf.version).toBe(v0 + 4);
+  });
+
+  it('does not increment when appendBatch adds nothing', () => {
+    const buf = bufferOf([100, 101]);
+    const v = buf.version;
+    // All candles predate lastTime → dropped, no mutation.
+    buf.appendBatch([makeCandle(0, 50)]);
+    expect(buf.version).toBe(v);
+  });
+});
+
+describe('Indicator.computeCached', () => {
+  it('returns the same array reference while the buffer is unchanged', () => {
+    const buf = bufferOf([1, 2, 3, 4, 5, 6]);
+    const sma = new SMA(3);
+    const a = sma.computeCached(buf);
+    const b = sma.computeCached(buf);
+    expect(b).toBe(a);
+    expect(b[0]).toBe(a[0]);
+  });
+
+  it('recomputes after the buffer mutates', () => {
+    const buf = bufferOf([1, 2, 3, 4, 5, 6]);
+    const sma = new SMA(3);
+    const a = sma.computeCached(buf);
+    buf.append(makeCandle(6, 7));
+    const b = sma.computeCached(buf);
+    expect(b).not.toBe(a);
+    // New series is one element longer (aligned 1:1 with the buffer).
+    expect(b[0]!.values.length).toBe(7);
+  });
+
+  it('cache is per-instance (two SMAs do not share)', () => {
+    const buf = bufferOf([1, 2, 3, 4, 5]);
+    const a = new SMA(3).computeCached(buf);
+    const b = new SMA(3).computeCached(buf);
+    expect(b).not.toBe(a);
+    expect(Array.from(b[0]!.values)).toEqual(Array.from(a[0]!.values));
+  });
+
+  it('does not return another buffer\'s series when version+length collide', () => {
+    // Two distinct buffers, both version 0 after construction, same length,
+    // but different data. The cache must not serve buf A's series for buf B.
+    const a = bufferOf([1, 2, 3, 4, 5]);
+    const b = bufferOf([100, 200, 300, 400, 500]);
+    expect(a.version).toBe(b.version);
+    expect(a.length).toBe(b.length);
+    const sma = new SMA(3);
+    const ra = sma.computeCached(a);
+    const rb = sma.computeCached(b);
+    expect(rb).not.toBe(ra);
+    expect(rb[0]!.values[4]).toBeCloseTo(400); // (300+400+500)/3
+    expect(ra[0]!.values[4]).toBeCloseTo(4); // (3+4+5)/3
+  });
+
+  it('matches the un-cached compute() output', () => {
+    const buf = bufferOf([10, 20, 30]);
+    const ema = new EMA(2);
+    const cached = ema.computeCached(buf)[0]!.values;
+    const direct = ema.compute(buf)[0]!.values;
+    expect(Array.from(cached)).toEqual(Array.from(direct));
+  });
+});

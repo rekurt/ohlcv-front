@@ -1,6 +1,7 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
 
 /**
  * Fibonacci extension — three anchor points (A → B → C) that
@@ -75,5 +76,27 @@ export class FibExtension extends Drawing {
     }
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  override hitTest(
+    px: number,
+    py: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    if (this.points.length < 3) return false;
+    const [a, b, c] = this.points as [AnchorPoint, AnchorPoint, AnchorPoint];
+    const xStart = viewport.indexToX(c.index);
+    // Level lines span [xStart, chartRight].
+    if (px < xStart - tolerance || px > layout.chartRight) return false;
+    const impulse = b.price - a.price;
+    for (const level of FibExtension.LEVELS) {
+      const price = c.price + level * impulse;
+      const ly = viewport.priceToY(price);
+      if (ly < layout.chartTop || ly > layout.chartBottom) continue;
+      if (Math.abs(py - ly) <= tolerance) return true;
+    }
+    return false;
   }
 }

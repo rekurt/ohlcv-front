@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { OHLCVChart } from './OHLCVChart';
 import { installCanvasStub } from './test-utils/canvasStub';
+import { TrendLine } from './drawings/TrendLine';
+import { DrawingLayer } from './drawings/DrawingLayer';
 import type { Candle, ChartError, DataTransport, HistoryRequest } from './types';
 
 function makeCandle(i: number): Candle {
@@ -259,6 +261,123 @@ describe('OHLCVChart facade', () => {
       });
       chart.destroy();
       expect(transport.destroyed).toBe(true);
+    });
+  });
+
+  describe('maxCandles eviction', () => {
+    it('caps the buffer and keeps the latest candles', () => {
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        maxCandles: 100,
+      });
+      const data = Array.from({ length: 250 }, (_, i) => makeCandle(i));
+      chart.setData(data);
+      expect(chart.getBuffer().length).toBe(100);
+      // Newest candle is retained.
+      expect(chart.getBuffer().lastTime()).toBe(makeCandle(249).t);
+      chart.destroy();
+    });
+
+    it('shifts drawing anchors so they stay pinned after eviction', () => {
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const line = new TrendLine('t1');
+      line.addPoint({ index: 90, price: 100 });
+      line.addPoint({ index: 95, price: 101 });
+      chart.getDrawingLayer().add(line);
+      // Load 150 candles → evict 50 → every anchor index shifts by -50.
+      chart.setData(Array.from({ length: 150 }, (_, i) => makeCandle(i)));
+      const snap = chart.getDrawings().find((d) => d.id === 't1');
+      expect(snap?.points[0]?.index).toBe(40);
+      expect(snap?.points[1]?.index).toBe(45);
+      chart.destroy();
+    });
+
+    it('does not evict when uncapped', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 500 }, (_, i) => makeCandle(i)));
+      expect(chart.getBuffer().length).toBe(500);
+      chart.destroy();
+    });
+
+    it('evicts on realtime appends but keeps the latest candle', async () => {
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      chart.updateLastCandle(makeCandle(100)); // new candle past the last
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      expect(chart.getBuffer().length).toBe(100);
+      expect(chart.getBuffer().lastTime()).toBe(makeCandle(100).t);
+      chart.destroy();
+    });
+
+    it('does NOT evict prepended history (load-more must extend the left edge)', async () => {
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      // Prepend 10 candles strictly older than the current first.
+      const older = Array.from({ length: 10 }, (_, i) => makeCandle(i - 10));
+      chart.prependHistory(older);
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+      expect(chart.getBuffer().length).toBe(110);
+      expect(chart.getBuffer().firstTime()).toBe(makeCandle(-10).t);
+      chart.destroy();
+    });
+
+    it('shifts a custom (host-attached) drawing layer on eviction', () => {
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const custom = new DrawingLayer();
+      const line = new TrendLine('c1');
+      line.addPoint({ index: 90, price: 100 });
+      line.addPoint({ index: 95, price: 101 });
+      custom.add(line);
+      chart.setDrawingLayer(custom);
+      // Evict 50 via a larger setData → custom layer anchors shift by -50.
+      chart.setData(Array.from({ length: 150 }, (_, i) => makeCandle(i)));
+      expect(custom.drawings[0]!.points.map((p) => p.index)).toEqual([40, 45]);
+      chart.destroy();
+    });
+  });
+
+  describe('markers', () => {
+    it('sets, appends, removes, and clears markers', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 10 }, (_, i) => makeCandle(i)));
+      const t = makeCandle(3).t;
+
+      chart.setMarkers([{ id: 'a', time: t, shape: 'arrowUp', position: 'below' }]);
+      expect(chart.getMarkers().map((m) => m.id)).toEqual(['a']);
+
+      chart.addMarker({ id: 'b', time: makeCandle(5).t, shape: 'circle' });
+      expect(chart.getMarkers()).toHaveLength(2);
+
+      expect(chart.removeMarker('a')).toBe(true);
+      expect(chart.removeMarker('missing')).toBe(false);
+      expect(chart.getMarkers().map((m) => m.id)).toEqual(['b']);
+
+      chart.clearMarkers();
+      expect(chart.getMarkers()).toHaveLength(0);
+      chart.destroy();
+    });
+
+    it('renders without throwing when markers are present', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 10 }, (_, i) => makeCandle(i)));
+      chart.setMarkers([{ id: 'a', time: makeCandle(4).t, shape: 'flag', text: 'news' }]);
+      expect(() => chart.render()).not.toThrow();
+      chart.destroy();
     });
   });
 });

@@ -1,6 +1,7 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
 
 /**
  * Single-point vertical guideline locked to a buffer index — useful
@@ -40,5 +41,20 @@ export class VerticalLine extends Drawing {
     ctx.lineTo(x, layout.chartBottom);
     ctx.stroke();
     ctx.restore();
+  }
+
+  override hitTest(
+    x: number,
+    y: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    const a = this.points[0];
+    if (!a) return false;
+    if (y < layout.chartTop || y > layout.chartBottom) return false;
+    const lx = viewport.indexToX(a.index);
+    if (lx < layout.chartLeft || lx > layout.chartRight) return false;
+    return Math.abs(x - lx) <= tolerance;
   }
 }

@@ -1,5 +1,7 @@
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
+import { distanceToSegment } from './geometry';
 
 /**
  * A single anchor of a drawing, expressed in BUFFER SPACE:
@@ -60,6 +62,39 @@ export abstract class Drawing {
     viewport: Viewport,
     theme: ThemeColors,
   ): void;
+
+  /**
+   * Hit-test a screen point (in canvas pixels) against this drawing for
+   * selection. Returns true when the point is within `tolerance` pixels of
+   * the rendered geometry.
+   *
+   * The default implementation treats the anchors as a polyline (correct
+   * for segment shapes like TrendLine and Arrow). Shapes whose rendered
+   * geometry differs from a simple anchor polyline — full-width/height
+   * lines, rectangles, rays, channels, fib levels — override this.
+   */
+  hitTest(
+    x: number,
+    y: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    if (x < layout.chartLeft || x > layout.chartRight) return false;
+    if (y < layout.chartTop || y > layout.chartBottom) return false;
+    const pts = this.points;
+    if (pts.length === 0) return false;
+    const sx = pts.map((p) => viewport.indexToX(p.index));
+    const sy = pts.map((p) => viewport.priceToY(p.price));
+    if (pts.length === 1) {
+      return Math.hypot(x - sx[0]!, y - sy[0]!) <= tolerance;
+    }
+    let min = Infinity;
+    for (let i = 1; i < pts.length; i++) {
+      min = Math.min(min, distanceToSegment(x, y, sx[i - 1]!, sy[i - 1]!, sx[i]!, sy[i]!));
+    }
+    return min <= tolerance;
+  }
 
   /** True once `requiredPoints` clicks have been collected. */
   get isComplete(): boolean {

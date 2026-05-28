@@ -3,9 +3,11 @@ import type { CandleBuffer } from './CandleBuffer';
 
 export class CandleMerger {
   private _buffer: CandleBuffer;
-  private _onUpdate: (() => void) | null = null;
+  private _onUpdate: ((info: { realtime: boolean }) => void) | null = null;
   private _rafId = 0;
   private _destroyed = false;
+  /** Set when a realtime merge happened since the last coalesced frame. */
+  private _pendingRealtime = false;
 
   constructor(buffer: CandleBuffer) {
     this._buffer = buffer;
@@ -15,8 +17,14 @@ export class CandleMerger {
     this._buffer = buffer;
   }
 
-  /** Set the render callback (called at most once per frame) */
-  onUpdate(callback: () => void): void {
+  /**
+   * Set the render callback (called at most once per frame). `info.realtime`
+   * is true when the coalesced frame included at least one realtime merge
+   * (`mergeRealtime`) — history loads (`loadHistory`) report `false` so
+   * callers can scope behavior like max-candle eviction to live appends
+   * and not undo a freshly-prepended history page.
+   */
+  onUpdate(callback: (info: { realtime: boolean }) => void): void {
     this._onUpdate = callback;
   }
 
@@ -47,6 +55,7 @@ export class CandleMerger {
       }
       // Ignore candles older than the last one
     }
+    this._pendingRealtime = true;
     this._scheduleUpdate();
   }
 
@@ -73,7 +82,9 @@ export class CandleMerger {
     this._rafId = requestAnimationFrame(() => {
       this._rafId = 0;
       if (this._destroyed) return;
-      this._onUpdate?.();
+      const realtime = this._pendingRealtime;
+      this._pendingRealtime = false;
+      this._onUpdate?.({ realtime });
     });
   }
 }

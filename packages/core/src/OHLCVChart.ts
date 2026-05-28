@@ -23,6 +23,7 @@ import { FibExtension } from './drawings/FibExtension';
 import { Channel } from './drawings/Channel';
 import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
+import type { Marker } from './markers/Marker';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
 import { migrateState } from './state/migrations';
@@ -96,6 +97,17 @@ export class OHLCVChart {
   private _ownDrawingLayer: DrawingLayer;
 
   constructor(config: ChartConfig) {
+    // The chart manipulates the DOM and canvas directly, so it can only be
+    // constructed in a browser environment. In SSR frameworks (Next.js,
+    // Nuxt), construct it on the client only — e.g. a `useEffect`/`onMounted`
+    // hook, `next/dynamic` with `{ ssr: false }`, or Nuxt `<client-only>`.
+    if (typeof document === 'undefined') {
+      throw new Error(
+        '[ohlcv] OHLCVChart requires a browser environment (document is undefined). ' +
+          'Construct it on the client only — see the SSR notes in the README.',
+      );
+    }
+
     this._config = config;
     const theme = resolveTheme(config.theme);
     this._reporter = new ErrorReporter(config.onError);
@@ -113,6 +125,7 @@ export class OHLCVChart {
 
     // Rendering
     this._engine = new ChartEngine(config.container, theme);
+    this._engine.setErrorReporter(this._reporter);
     this._engine.setBuffer(this._buffer);
     this._engine.setSymbol(config.symbol);
     this._engine.setResolution(config.resolution);
@@ -131,8 +144,11 @@ export class OHLCVChart {
     // Merger triggers render. Only scroll to the live edge if the user is
     // actively following the stream; otherwise just repaint and let the
     // viewport stay wherever the user has scrolled.
-    this._merger.onUpdate(() => {
+    this._merger.onUpdate((info) => {
       const vp = this._engine.viewport;
+      // Only evict on realtime appends — never after a loadHistory/prepend,
+      // which would immediately drop the page the user just paged in.
+      if (info.realtime) this._enforceMaxCandles();
       if (vp.autoFollow || this._buffer.length <= vp.visibleCount) {
         vp.scrollToEnd(this._buffer.length);
       }
@@ -267,6 +283,7 @@ export class OHLCVChart {
 
     this._buffer.clear();
     this._merger.loadHistory(candles);
+    this._enforceMaxCandles();
 
     if (opts?.preserveView) {
       vp.candleWidth = previousWidth;
@@ -287,6 +304,26 @@ export class OHLCVChart {
   /** Update the last (forming) candle */
   updateLastCandle(candle: Candle): void {
     this._merger.mergeRealtime([candle]);
+  }
+
+  /**
+   * Evict oldest candles past `config.maxCandles`, keeping the viewport and
+   * drawings anchored to the same candles (eviction lowers every remaining
+   * candle's logical index by the evicted count). No-op when uncapped.
+   */
+  private _enforceMaxCandles(): void {
+    const max = this._config.maxCandles;
+    if (max === undefined || max <= 0) return;
+    const over = this._buffer.length - max;
+    if (over <= 0) return;
+    const evicted = this._buffer.evictHead(over);
+    if (evicted <= 0) return;
+    const vp = this._engine.viewport;
+    vp.startIndex = Math.max(0, vp.startIndex - evicted);
+    // Shift the layer the engine is actually rendering (a host may have
+    // swapped in a custom one via setDrawingLayer), not just the
+    // auto-managed instance, so drawings stay pinned to their candles.
+    this._engine.drawingLayer?.shiftIndices(-evicted);
   }
 
   /** Switch to a different symbol/resolution */
@@ -466,6 +503,89 @@ export class OHLCVChart {
     this._ownDrawingLayer.clear();
     this._ownDrawingLayer.cancelActive();
     this._engine.requestRender();
+  }
+
+  /**
+   * Hit-test the auto-managed drawings at a canvas point (in CSS pixels
+   * relative to the chart container) and select the topmost match — or
+   * clear the selection if nothing is hit. Returns the selected drawing's
+   * id, or null. Wire this to a `click`/`pointerdown` handler.
+   */
+  selectDrawingAt(x: number, y: number, tolerance?: number): string | null {
+    const hit = this._ownDrawingLayer.selectAt(
+      x,
+      y,
+      this._engine.layout,
+      this._engine.viewport,
+      tolerance,
+    );
+    this._engine.requestRender();
+    return hit ? hit.id : null;
+  }
+
+  /** Id of the currently-selected drawing, or null. */
+  getSelectedDrawingId(): string | null {
+    return this._ownDrawingLayer.selectedId;
+  }
+
+  /** Select a drawing by id, or clear the selection with null. */
+  selectDrawing(id: string | null): void {
+    this._ownDrawingLayer.select(id);
+    this._engine.requestRender();
+  }
+
+  /** Delete the selected drawing, if any. Returns true if one was removed. */
+  deleteSelectedDrawing(): boolean {
+    const removed = this._ownDrawingLayer.removeSelected();
+    if (removed) this._engine.requestRender();
+    return removed;
+  }
+
+  /** Undo the last drawing add/remove/clear. Returns true if applied. */
+  undoDrawing(): boolean {
+    const applied = this._ownDrawingLayer.undo();
+    if (applied) this._engine.requestRender();
+    return applied;
+  }
+
+  /**
+   * Replace all candle-anchored markers (buy/sell arrows, event flags).
+   * Markers are pinned by `time`, so they survive history loads and
+   * `maxCandles` eviction. Markers are runtime annotations — they are not
+   * included in `saveLayoutState`; persist them yourself if needed.
+   */
+  setMarkers(markers: Marker[]): void {
+    this._engine.setMarkers(markers.slice());
+  }
+
+  /** The current markers, in draw order. */
+  getMarkers(): readonly Marker[] {
+    return this._engine.markers;
+  }
+
+  /** Append a single marker. */
+  addMarker(marker: Marker): void {
+    this._engine.setMarkers([...this._engine.markers, marker]);
+  }
+
+  /** Remove a marker by id. Returns true if one was removed. */
+  removeMarker(id: string): boolean {
+    const next = this._engine.markers.filter((m) => m.id !== id);
+    if (next.length === this._engine.markers.length) return false;
+    this._engine.setMarkers(next);
+    return true;
+  }
+
+  /** Remove all markers. */
+  clearMarkers(): void {
+    this._engine.setMarkers([]);
+  }
+
+  /** Redo the last undone drawing mutation. Returns true if applied. */
+  redoDrawing(): boolean {
+    const applied = this._ownDrawingLayer.redo();
+    if (applied) this._engine.requestRender();
+    return applied;
   }
 
   /**

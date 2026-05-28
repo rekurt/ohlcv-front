@@ -1,7 +1,7 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
-import { AXIS_FONT, AXIS_LABEL_HEIGHT, AXIS_LABEL_BG_INSET, AXIS_LABEL_TEXT_PAD } from '../constants';
+import { AXIS_FONT, AXIS_LABEL_HEIGHT, AXIS_LABEL_BG_INSET, AXIS_LABEL_TEXT_PAD, DRAWING_HIT_TOLERANCE_PX } from '../constants';
 import { formatPrice } from '../utils';
 
 /**
@@ -60,5 +60,20 @@ export class HorizontalLine extends Drawing {
     ctx.textBaseline = 'middle';
     ctx.fillText(label, layout.chartRight + AXIS_LABEL_TEXT_PAD, y);
     ctx.restore();
+  }
+
+  override hitTest(
+    x: number,
+    y: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    const a = this.points[0];
+    if (!a) return false;
+    if (x < layout.chartLeft || x > layout.chartRight) return false;
+    const ly = viewport.priceToY(a.price);
+    if (ly < layout.chartTop || ly > layout.chartBottom) return false;
+    return Math.abs(y - ly) <= tolerance;
   }
 }

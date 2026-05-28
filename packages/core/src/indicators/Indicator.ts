@@ -24,8 +24,11 @@ export interface IndicatorSeries {
  * Base class for price-series indicators. Subclasses implement `compute`
  * which reads from a candle buffer and returns one or more series.
  *
- * Compute is intended to be pure — caching/incrementality is a future
- * responsibility of an IndicatorRegistry wrapper (not yet implemented).
+ * Hot render paths should call `computeCached` instead of `compute`: it
+ * memoizes the result keyed on the buffer's `version`, so repeated calls
+ * within a single data revision (e.g. on every render frame during a
+ * pan/crosshair move) are O(1) instead of recomputing the whole series.
+ * The cache invalidates automatically when the buffer mutates.
  */
 export abstract class Indicator {
   /** Where the indicator renders (overlay vs. its own pane). */
@@ -33,7 +36,7 @@ export abstract class Indicator {
 
   /**
    * Stable human-readable identifier, e.g. `sma(20)` or `rsi(14)`. Used as
-   * the cache key by future IndicatorRegistry and as a label in legends.
+   * the cache key by the IndicatorRegistry and as a label in legends.
    */
   abstract get id(): string;
 
@@ -43,6 +46,35 @@ export abstract class Indicator {
    * renderer can align values with candles index-for-index.
    */
   abstract compute(buffer: CandleBuffer): IndicatorSeries[];
+
+  private _cache: {
+    buffer: CandleBuffer;
+    version: number;
+    length: number;
+    series: IndicatorSeries[];
+  } | null = null;
+
+  /**
+   * Memoized wrapper around `compute`. Returns the same cached array
+   * reference while the SAME buffer's `version` and `length` are unchanged.
+   * The buffer identity is part of the key so reusing one indicator
+   * instance across two buffers (or swapping a chart's buffer) never
+   * returns another buffer's stale series — important right after init when
+   * distinct buffers can share `version: 0` and the same length.
+   * Use this on render paths; use `compute` directly to force a fresh
+   * computation.
+   */
+  computeCached(buffer: CandleBuffer): IndicatorSeries[] {
+    const version = buffer.version;
+    const length = buffer.length;
+    const cache = this._cache;
+    if (cache && cache.buffer === buffer && cache.version === version && cache.length === length) {
+      return cache.series;
+    }
+    const series = this.compute(buffer);
+    this._cache = { buffer, version, length, series };
+    return series;
+  }
 }
 
 /**

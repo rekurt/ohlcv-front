@@ -10,6 +10,7 @@ import {
   type ChartType,
   type DataTransport,
   type DrawingSnapshot,
+  type Marker,
   type FullState,
   type HoverInfo,
   type IndicatorConfig,
@@ -79,6 +80,19 @@ export interface OHLCVChartRef {
   getDrawings(): DrawingSnapshot[];
   loadDrawings(snapshots: DrawingSnapshot[]): void;
   clearDrawings(): void;
+  selectDrawingAt(x: number, y: number, tolerance?: number): string | null;
+  selectDrawing(id: string | null): void;
+  getSelectedDrawingId(): string | null;
+  deleteSelectedDrawing(): boolean;
+  undoDrawing(): boolean;
+  redoDrawing(): boolean;
+
+  // Markers
+  setMarkers(markers: Marker[]): void;
+  getMarkers(): readonly Marker[];
+  addMarker(marker: Marker): void;
+  removeMarker(id: string): boolean;
+  clearMarkers(): void;
 
   // Export
   toPNG(): string | null;
@@ -234,6 +248,18 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
       loadDrawings: (snapshots: DrawingSnapshot[]) =>
         chartRef.current?.loadDrawings(snapshots),
       clearDrawings: () => chartRef.current?.clearDrawings(),
+      selectDrawingAt: (x: number, y: number, tolerance?: number) =>
+        chartRef.current?.selectDrawingAt(x, y, tolerance) ?? null,
+      selectDrawing: (id: string | null) => chartRef.current?.selectDrawing(id),
+      getSelectedDrawingId: () => chartRef.current?.getSelectedDrawingId() ?? null,
+      deleteSelectedDrawing: () => chartRef.current?.deleteSelectedDrawing() ?? false,
+      undoDrawing: () => chartRef.current?.undoDrawing() ?? false,
+      redoDrawing: () => chartRef.current?.redoDrawing() ?? false,
+      setMarkers: (markers: Marker[]) => chartRef.current?.setMarkers(markers),
+      getMarkers: () => chartRef.current?.getMarkers() ?? [],
+      addMarker: (marker: Marker) => chartRef.current?.addMarker(marker),
+      removeMarker: (id: string) => chartRef.current?.removeMarker(id) ?? false,
+      clearMarkers: () => chartRef.current?.clearMarkers(),
       toPNG: () => chartRef.current?.toPNG() ?? null,
     }),
     [],

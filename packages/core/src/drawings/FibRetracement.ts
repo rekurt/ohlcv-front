@@ -1,6 +1,7 @@
 import { Drawing, type AnchorPoint } from './Drawing';
 import type { ChartLayout, ThemeColors } from '../types';
 import type { Viewport } from '../interaction/Viewport';
+import { DRAWING_HIT_TOLERANCE_PX } from '../constants';
 
 /**
  * Fibonacci retracement — eight horizontal levels between two anchor
@@ -80,5 +81,29 @@ export class FibRetracement extends Drawing {
     }
     ctx.setLineDash([]);
     ctx.restore();
+  }
+
+  override hitTest(
+    px: number,
+    py: number,
+    layout: ChartLayout,
+    viewport: Viewport,
+    tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+  ): boolean {
+    if (this.points.length < 2) return false;
+    const [a, b] = this.points as [AnchorPoint, AnchorPoint];
+    const x1 = viewport.indexToX(a.index);
+    const x2 = viewport.indexToX(b.index);
+    const xLeft = Math.min(x1, x2);
+    // Level lines span [xLeft, chartRight].
+    if (px < xLeft - tolerance || px > layout.chartRight) return false;
+    const priceRange = b.price - a.price;
+    for (const level of FibRetracement.LEVELS) {
+      const price = a.price + priceRange * level;
+      const ly = viewport.priceToY(price);
+      if (ly < layout.chartTop || ly > layout.chartBottom) continue;
+      if (Math.abs(py - ly) <= tolerance) return true;
+    }
+    return false;
   }
 }

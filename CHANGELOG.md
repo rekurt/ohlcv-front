@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Markers API.** Candle-anchored point annotations (buy/sell arrows,
+  event flags) via `chart.setMarkers` / `addMarker` / `removeMarker` /
+  `clearMarkers` / `getMarkers`. Markers pin by `time` (robust to history
+  loads and `maxCandles` eviction — no index bookkeeping), support
+  `above`/`below`/`inline` placement and `arrowUp`/`arrowDown`/`circle`/
+  `square`/`flag` glyphs with optional text. New `Marker` type,
+  `MarkerRenderer`, and `markerY` helper exported from core; React and Vue
+  ref surfaces expose the same methods. Drawn on the chart layer (panned
+  with data, included in `toPNG`).
+- **`maxCandles` memory cap.** New `ChartConfig.maxCandles` evicts the
+  oldest candles (O(1) via `CandleBuffer.evictHead`, with in-place
+  compaction so capacity stays bounded) once live updates push past the
+  cap. The viewport and drawings shift in lockstep
+  (`DrawingLayer.shiftIndices`) so they stay anchored to the same candles.
+  Prepended history is never auto-evicted.
+- **Drawing selection, deletion, and undo/redo.** Every drawing now
+  implements `hitTest(x, y, layout, viewport, tolerance)` with geometry
+  matching its rendered shape (segments, full-width/height lines, rays,
+  rectangles, channels, fib levels). `DrawingLayer` gains `hitTest`,
+  `selectAt`, `select`, `removeSelected`, `undo`/`redo` (`canUndo`/
+  `canRedo`), and renders square handles on the selected drawing.
+  `OHLCVChart` exposes `selectDrawingAt`, `selectDrawing`,
+  `getSelectedDrawingId`, `deleteSelectedDrawing`, `undoDrawing`,
+  `redoDrawing` — input wiring stays in the consumer, consistent with the
+  render-only drawing-layer design.
+- **Gap detection utilities.** `findGaps(buffer, intervalSeconds)` reports
+  runs of missing candles (weekends, exchange close, dropped ticks) as
+  `CandleGap[]`; `resolutionToSeconds(resolution)` maps a resolution string
+  to its interval (null for calendar months). Detection only — consumers
+  decide whether to backfill or draw session breaks.
+- **Indicator compute memoization.** `Indicator.computeCached(buffer)`
+  wraps `compute()` and caches the result keyed on the new
+  `CandleBuffer.version` revision counter. The render loop now uses
+  `computeCached`, so indicators recompute only when the data actually
+  changes instead of on every render frame (pan, zoom, crosshair move).
+- **`CandleBuffer.version`** — monotonic revision counter bumped on every
+  mutation (`append`, `appendBatch`, `updateLast`, `prepend`, `clear`).
+
+### Changed
+
+- **`@rekurt/ohlcv-core` is now a `peerDependency`** (not a regular
+  dependency) of `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue`, preventing
+  duplicate core copies / version mismatches in consumer bundles.
+
+### Changed
+
+- **Crosshair moves within a single candle no longer redraw the UI layer.**
+  `ChartEngine.setCrosshair` marks the UI layer (legend, price line, pill)
+  dirty only when the snapped candle actually changes; sub-candle mouse
+  moves repaint just the crosshair layer. Cuts per-move work on hover.
+
+### Fixed
+
+- **Indicator compute errors are reported, not swallowed.** `ChartEngine`
+  now dispatches indicator-compute failures through `ErrorReporter` with
+  `where: 'indicator'` instead of an empty `catch {}`, matching the
+  project's "no silent catches" policy. New `ChartEngine.setErrorReporter`.
+
+### Removed
+
+- **`BinanceWsTransport`** and its types (`BinanceWsTransportOptions`,
+  `IWebSocketLike`). It was an unverified skeleton (lost ticks on
+  reconnect, no heartbeat, no history pagination); shipping it as a public
+  export implied production-readiness it did not have. Build exchange
+  adapters on the abstract `WebSocketTransport` base instead.
+
 ### Added (review-3 cycle — M2 hardening)
 
 - **Indicator library expanded from 8 → 23.** Beyond the original

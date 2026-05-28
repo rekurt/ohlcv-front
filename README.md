@@ -73,9 +73,6 @@ npm run docs            # TypeDoc → docs/api/
 - `DataFeed` — stale-response protection via version counter
 - `PollingTransport` — HTTP polling with custom parser
 - `WebSocketTransport` — abstract base for WS adapters
-- `BinanceWsTransport` — concrete WS adapter for Binance klines (unverified
-  skeleton; wire-level validation against the live server is deferred to M2 —
-  not recommended for production use yet)
 - `ExponentialBackoff` — jittered reconnect policy
 - `validateCandle` / `validateCandles` — runtime shape & invariant checks
 - `ErrorReporter` + `onError` callback — structured error dispatch, no silent catches

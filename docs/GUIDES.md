@@ -100,6 +100,55 @@ new OHLCVChart({
 });
 ```
 
+The chart already serializes `onLoadMoreHistory` — only one call is in
+flight at a time — but a production handler should also dedupe against the
+data it already has and bail out when the source is exhausted, so a user
+who keeps scrolling at the left edge doesn't refetch the same page or
+spin forever:
+
+```ts
+let exhausted = false;
+
+onLoadMoreHistory: async (buffer) => {
+  if (exhausted) return;
+  const before = buffer.firstTime();           // oldest candle we hold
+  // Most REST endpoints cap a page (e.g. Binance klines = 1000). Page by
+  // the oldest timestamp and request the slice strictly older than it.
+  const page = await fetchOlderCandles({ endTime: before, limit: 1000 });
+
+  // Drop anything at/after what we already have so prepend()'s
+  // monotonicity filter doesn't silently discard a half-overlapping page.
+  const older = page.filter((c) => c.t < before);
+  if (older.length === 0) {
+    exhausted = true;                          // reached the start of history
+    return;
+  }
+  chart.prependHistory(older);                  // shifts startIndex to keep view
+};
+```
+
+Pair this with `maxCandles` to bound memory on a chart the user scrolls
+through for hours: eviction trims the newest-side overflow from the head
+and keeps the viewport and any drawings anchored to the same candles.
+
+```ts
+new OHLCVChart({ container, symbol, resolution, maxCandles: 50_000 });
+```
+
+To find missing candles in what you've loaded (weekend gaps, dropped
+ticks), use `findGaps` with `resolutionToSeconds`:
+
+```ts
+import { findGaps, resolutionToSeconds } from '@rekurt/ohlcv-core';
+
+const interval = resolutionToSeconds('1H'); // 3600, or null for '1M'
+if (interval) {
+  for (const gap of findGaps(chart.getBuffer(), interval)) {
+    console.log(`missing ~${gap.missingCount} candles`, gap.fromTime, gap.toTime);
+  }
+}
+```
+
 ### Live updates without view jumps
 
 Pass `preserveView: true` (the React/Vue wrappers do this for you on
@@ -215,8 +264,8 @@ won't render the wrong data) and reports transport errors through
 caught, never silently swallowed.
 
 `PollingTransport` (HTTP polling) and `WebSocketTransport` (abstract WS
-base) are provided. `BinanceWsTransport` is an **unverified skeleton**
-— treat it as a template, not production-ready.
+base) are provided. Build exchange-specific adapters (Binance, etc.) by
+subclassing `WebSocketTransport`.
 
 ---
 

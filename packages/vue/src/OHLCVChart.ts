@@ -10,6 +10,7 @@ import {
   type ChartType,
   type DataTransport,
   type DrawingSnapshot,
+  type Marker,
   type FullState,
   type HoverInfo,
   type IndicatorConfig,
@@ -215,6 +216,20 @@ export const OHLCVChart = defineComponent({
       loadDrawings: (snapshots: DrawingSnapshot[]) =>
         chartRef.value?.loadDrawings(snapshots),
       clearDrawings: () => chartRef.value?.clearDrawings(),
+      selectDrawingAt: (x: number, y: number, tolerance?: number): string | null =>
+        chartRef.value?.selectDrawingAt(x, y, tolerance) ?? null,
+      selectDrawing: (id: string | null) => chartRef.value?.selectDrawing(id),
+      getSelectedDrawingId: (): string | null =>
+        chartRef.value?.getSelectedDrawingId() ?? null,
+      deleteSelectedDrawing: (): boolean =>
+        chartRef.value?.deleteSelectedDrawing() ?? false,
+      undoDrawing: (): boolean => chartRef.value?.undoDrawing() ?? false,
+      redoDrawing: (): boolean => chartRef.value?.redoDrawing() ?? false,
+      setMarkers: (markers: Marker[]) => chartRef.value?.setMarkers(markers),
+      getMarkers: (): readonly Marker[] => chartRef.value?.getMarkers() ?? [],
+      addMarker: (marker: Marker) => chartRef.value?.addMarker(marker),
+      removeMarker: (id: string): boolean => chartRef.value?.removeMarker(id) ?? false,
+      clearMarkers: () => chartRef.value?.clearMarkers(),
 
       // Export
       toPNG: (): string | null => chartRef.value?.toPNG() ?? null,

@@ -1,6 +1,7 @@
 import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
 import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
+import type { ErrorReporter } from '../ErrorReporter';
 import { Viewport } from '../interaction/Viewport';
 import { GridRenderer } from './GridRenderer';
 import { CandleRenderer } from './CandleRenderer';
@@ -17,6 +18,8 @@ import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
 import { HeikinAshiRenderer } from './HeikinAshiRenderer';
+import { MarkerRenderer } from '../markers/MarkerRenderer';
+import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 
@@ -49,10 +52,14 @@ export class ChartEngine {
   private _volumeFormat?: (volume: number) => string;
   private _chartType: ChartType = 'candles';
 
-  /** User-provided indicators; each is computed on every dirty render. */
+  /** User-provided indicators; computed via `computeCached` on dirty render. */
   private _indicators: Indicator[] = [];
   /** Optional drawing layer rendered on top of candles. */
   private _drawingLayer: DrawingLayer | null = null;
+  /** Point markers anchored to candles by timestamp. */
+  private _markers: Marker[] = [];
+  /** Routes indicator-compute / render errors to the host's `onError`. */
+  private _reporter: ErrorReporter | null = null;
 
   // Renderers
   private _gridRenderer = new GridRenderer();
@@ -69,11 +76,11 @@ export class ChartEngine {
   private _legendRenderer = new LegendRenderer();
   private _overlayRenderer = new OverlaySeriesRenderer();
   private _paneRenderer = new IndicatorPaneRenderer();
+  private _markerRenderer = new MarkerRenderer();
   readonly goToLiveRenderer = new GoToLiveRenderer();
 
   // State
-  private _crosshairState: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false };
-  private _legendCandle: Candle | null = null;
+  private _crosshairState: CrosshairState = { x: 0, y: 0, price: 0, time: '', visible: false, inMainPane: true };
   private _chartDirty = true;
   private _uiDirty = true;
   private _crosshairDirty = false;
@@ -87,6 +94,8 @@ export class ChartEngine {
    */
   private _a11yLiveRegion!: HTMLDivElement;
   private _lastA11yAnnouncement = '';
+  /** Snapped candle index last shown in the legend; -1 when crosshair hidden. */
+  private _lastLegendIndex = -1;
 
   constructor(container: HTMLElement, theme: ThemeColors) {
     this._container = container;
@@ -177,6 +186,14 @@ export class ChartEngine {
 
   setBuffer(buffer: CandleBuffer): void {
     this._buffer = buffer;
+  }
+
+  /**
+   * Route indicator-compute and render errors through the host's
+   * `onError` callback instead of swallowing them silently.
+   */
+  setErrorReporter(reporter: ErrorReporter): void {
+    this._reporter = reporter;
   }
 
   setSymbol(symbol: string): void {
@@ -290,6 +307,22 @@ export class ChartEngine {
     this.requestRender();
   }
 
+  /** The drawing layer currently being rendered, or null. */
+  get drawingLayer(): DrawingLayer | null {
+    return this._drawingLayer;
+  }
+
+  /** Replace the set of candle-anchored markers. */
+  setMarkers(markers: Marker[]): void {
+    this._markers = markers;
+    this.requestRender();
+  }
+
+  /** The current markers, in draw order. */
+  get markers(): readonly Marker[] {
+    return this._markers;
+  }
+
   /** Mark chart + UI for re-render */
   requestRender(): void {
     this._chartDirty = true;
@@ -305,9 +338,17 @@ export class ChartEngine {
       price: this.viewport.yToPrice(y),
       time: timeLabel,
       visible: true,
+      inMainPane: y <= this._layout.chartBottom,
     };
+    // The legend (in the UI layer) only changes when the snapped candle
+    // changes. Moving the cursor within a single candle just moves the
+    // crosshair lines, so redraw only the cheap crosshair layer and skip
+    // the UI layer (legend, price line, pill) until the candle changes.
     if (candle) {
-      this._legendCandle = candle;
+      if (snapIndex !== this._lastLegendIndex) {
+        this._lastLegendIndex = snapIndex;
+        this._uiDirty = true;
+      }
       // Update the aria-live region with an OHLC summary for screen
       // readers. We dedupe identical announcements so hovering inside a
       // single candle doesn't flood the live region every RAF.
@@ -318,7 +359,6 @@ export class ChartEngine {
       }
     }
     this._crosshairDirty = true;
-    this._uiDirty = true;
     this._scheduleRaf();
   }
 
@@ -330,9 +370,9 @@ export class ChartEngine {
   /** Hide crosshair and show last candle in legend */
   hideCrosshair(): void {
     this._crosshairState.visible = false;
-    if (this._buffer && this._buffer.length > 0) {
-      this._legendCandle = this._buffer.candleAt(this._buffer.length - 1);
-    }
+    // Reset so re-entering the chart always refreshes the legend, and mark
+    // the UI layer dirty to revert the legend to the latest candle.
+    this._lastLegendIndex = -1;
     this._crosshairDirty = true;
     this._uiDirty = true;
     this._scheduleRaf();
@@ -477,9 +517,12 @@ export class ChartEngine {
       for (const indicator of this._indicators) {
         let series: IndicatorSeries[];
         try {
-          series = indicator.compute(this._buffer);
-        } catch {
-          // Indicator compute errors are non-fatal; skip this one.
+          // computeCached memoizes on the buffer revision, so indicators
+          // recompute only when data changes — not on every render frame.
+          series = indicator.computeCached(this._buffer);
+        } catch (err) {
+          // Indicator compute errors are non-fatal; report and skip this one.
+          this._reporter?.report('indicator', err, false);
           continue;
         }
         if (indicator.placement === 'overlay') {
@@ -493,7 +536,12 @@ export class ChartEngine {
         }
       }
 
-      // Drawing layer on top of indicators.
+      // Markers sit above indicators; drawings sit above markers.
+      this._markerRenderer.render(
+        ctx, this._layout, this.viewport, this._buffer, this._markers, this._theme,
+      );
+
+      // Drawing layer on top of indicators + markers.
       if (this._drawingLayer) {
         this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
       }
@@ -542,8 +590,16 @@ export class ChartEngine {
         this._priceAxisRenderer.drawCurrentPrice(ctx, this._layout, this.viewport, lastClose, isBull, this._theme, this._priceFormat);
       }
 
-      // Legend
-      const legendCandle = this._legendCandle || (this._buffer.length > 0 ? this._buffer.candleAt(this._buffer.length - 1) : null);
+      // Legend. Read the hovered candle fresh from the buffer (not a stale
+      // snapshot) so a realtime tick updating the forming candle the user
+      // is hovering refreshes its OHLC. Falls back to the latest candle.
+      const hoveredIndex = this._crosshairState.visible ? this._lastLegendIndex : -1;
+      const legendCandle =
+        hoveredIndex >= 0 && hoveredIndex < this._buffer.length
+          ? this._buffer.candleAt(hoveredIndex)
+          : this._buffer.length > 0
+            ? this._buffer.candleAt(this._buffer.length - 1)
+            : null;
       this._legendRenderer.render(
         ctx, this._layout, legendCandle, this._symbol, this._resolution, this._theme, this._priceFormat, this._volumeFormat,
       );

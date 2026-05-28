@@ -29,11 +29,11 @@ export { DataFeed } from './data/DataFeed';
 export { PollingTransport } from './data/PollingTransport';
 export type { PollingTransportConfig } from './data/PollingTransport';
 export { WebSocketTransport } from './data/WebSocketTransport';
-export { BinanceWsTransport } from './data/BinanceWsTransport';
-export type { BinanceWsTransportOptions, IWebSocketLike } from './data/BinanceWsTransport';
 export { ExponentialBackoff } from './data/ExponentialBackoff';
 export type { ExponentialBackoffOptions } from './data/ExponentialBackoff';
 export { ValidationError, validateCandle, validateCandles } from './data/validation';
+export { findGaps, resolutionToSeconds } from './data/gaps';
+export type { CandleGap } from './data/gaps';
 
 // Rendering
 export { ChartEngine } from './rendering/ChartEngine';
@@ -106,6 +106,11 @@ export { FibExtension } from './drawings/FibExtension';
 export { Channel } from './drawings/Channel';
 export { Arrow } from './drawings/Arrow';
 export { DrawingLayer } from './drawings/DrawingLayer';
+
+// Markers (candle-anchored point annotations)
+export { markerY } from './markers/Marker';
+export type { Marker, MarkerPosition, MarkerShape } from './markers/Marker';
+export { MarkerRenderer } from './markers/MarkerRenderer';
 
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';

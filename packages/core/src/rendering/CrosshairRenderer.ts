@@ -16,6 +16,13 @@ export interface CrosshairState {
   price: number;
   time: string;
   visible: boolean;
+  /**
+   * True when the cursor is within the main price pane. When false (cursor
+   * over an indicator sub-pane) the horizontal price line and the Y-axis
+   * price label are suppressed — the main price scale doesn't apply there —
+   * while the vertical line and time label still render across all panes.
+   */
+  inMainPane: boolean;
 }
 
 export class CrosshairRenderer {
@@ -29,18 +36,21 @@ export class CrosshairRenderer {
   ): void {
     if (!state.visible) return;
 
-    const { x, y, price, time } = state;
+    const { x, y, price, time, inMainPane } = state;
     const fmt = customPriceFormat || formatPrice;
 
     ctx.setLineDash(CROSSHAIR_DASH as unknown as number[]);
     ctx.strokeStyle = theme.crosshair;
     ctx.lineWidth = 1;
 
-    // Horizontal line
-    ctx.beginPath();
-    ctx.moveTo(layout.chartLeft, Math.round(y) + 0.5);
-    ctx.lineTo(layout.chartRight, Math.round(y) + 0.5);
-    ctx.stroke();
+    // Horizontal price line — only meaningful on the main price scale, so
+    // skip it when the cursor is over an indicator sub-pane.
+    if (inMainPane) {
+      ctx.beginPath();
+      ctx.moveTo(layout.chartLeft, Math.round(y) + 0.5);
+      ctx.lineTo(layout.chartRight, Math.round(y) + 0.5);
+      ctx.stroke();
+    }
 
     // Vertical line — extends through any sub-pane bands so the user
     // can read pane indicator values at the same time index.
@@ -51,23 +61,26 @@ export class CrosshairRenderer {
 
     ctx.setLineDash([]);
 
-    // Price label on Y-axis — pixel-snapped to keep text sharp.
-    const priceText = fmt(price);
-    const priceWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
-    const priceY = Math.round(y - AXIS_LABEL_HEIGHT / 2);
+    // Price label on Y-axis — pixel-snapped to keep text sharp. Suppressed
+    // over sub-panes where the main price scale doesn't apply.
+    if (inMainPane) {
+      const priceText = fmt(price);
+      const priceWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
+      const priceY = Math.round(y - AXIS_LABEL_HEIGHT / 2);
 
-    ctx.fillStyle = theme.crosshair;
-    ctx.fillRect(
-      layout.chartRight + AXIS_LABEL_BG_INSET,
-      priceY,
-      priceWidth,
-      AXIS_LABEL_HEIGHT,
-    );
-    ctx.fillStyle = '#ffffff';
-    ctx.font = AXIS_FONT;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(priceText, layout.chartRight + AXIS_LABEL_TEXT_PAD, Math.round(y));
+      ctx.fillStyle = theme.crosshair;
+      ctx.fillRect(
+        layout.chartRight + AXIS_LABEL_BG_INSET,
+        priceY,
+        priceWidth,
+        AXIS_LABEL_HEIGHT,
+      );
+      ctx.fillStyle = '#ffffff';
+      ctx.font = AXIS_FONT;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(priceText, layout.chartRight + AXIS_LABEL_TEXT_PAD, Math.round(y));
+    }
 
     // Time label on X-axis
     ctx.font = AXIS_FONT;
