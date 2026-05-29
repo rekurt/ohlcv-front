@@ -38,7 +38,7 @@ export class LineRenderer {
     ctx.beginPath();
     let started = false;
     for (let i = 0; i < view.length; i++) {
-      const bufferIndex = view.offset + i;
+      const bufferIndex = view.repIndex ? view.repIndex[i]! : view.offset + i;
       const x = viewport.indexToX(bufferIndex);
       if (x < layout.chartLeft - 10 || x > layout.chartRight + 10) continue;
       const close = view.close[i]!;

@@ -2,9 +2,11 @@ import type { ChartLayout } from '../types';
 import {
   DEFAULT_CANDLE_WIDTH,
   MIN_CANDLE_WIDTH,
+  MIN_CANDLE_WIDTH_FIT,
   MAX_CANDLE_WIDTH,
   CANDLE_GAP_RATIO,
   PRICE_PADDING_RATIO,
+  RANGE_ACCEL_THRESHOLD,
 } from '../constants';
 import { clamp, niceGridValues, niceLogGridValues, formatPercent } from '../utils';
 import { CandleBuffer } from '../data/CandleBuffer';
@@ -25,6 +27,16 @@ export interface GridTick {
   price: number;
   y: number;
   label: string | null;
+}
+
+/**
+ * Optional coarse range index passed to {@link Viewport.autoScale} so a
+ * huge (sub-pixel `fitAll`) visible window doesn't get scanned candle-by-
+ * candle every frame. Structural so the viewport stays decoupled from the
+ * concrete `RangePyramid`.
+ */
+export interface RangeSource {
+  rangeOf(start: number, end: number): { minLow: number; maxHigh: number; maxVol: number };
 }
 
 export class Viewport {
@@ -238,26 +250,46 @@ export class Viewport {
     this._clampRange();
   }
 
-  /** Auto-scale price/volume from visible buffer data */
-  autoScale(buffer: CandleBuffer): void {
+  /**
+   * Auto-scale price/volume from the visible buffer data.
+   *
+   * `accel` (optional) is a coarse range index used only when the visible
+   * window is huge (sub-pixel `fitAll`) and the mode isn't log — it turns a
+   * per-frame O(window) scan into ≈ O(window / block). Omit it and the
+   * original linear scan runs, preserving all four guards (manual-mode
+   * volume rescan, empty window, NaN-skip, flat-range).
+   */
+  autoScale(buffer: CandleBuffer, accel?: RangeSource): void {
     this._bufferLength = buffer.length;
-    // Manual scale mode (user has dragged the price axis): keep
-    // priceMin/priceMax frozen, but still update volumeMax so volume
-    // bars stay correct.
-    if (this.manualPriceScale) {
-      const startM = Math.max(0, Math.floor(this.startIndex));
-      const endM = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
-      let maxVol = 0;
-      const viewM = buffer.sliceView(startM, endM);
-      for (let i = 0; i < viewM.length; i++) {
-        const v = viewM.volume[i]!;
-        if (Number.isFinite(v) && v > maxVol) maxVol = v;
-      }
-      this.volumeMax = maxVol;
-      return;
-    }
+
     const start = Math.max(0, Math.floor(this.startIndex));
     const end = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
+    const windowSize = end - start;
+    // Log mode's ≤0 skip needs per-candle filtering the coarse index can't
+    // do, so log always uses the linear scan.
+    const accelOk =
+      accel != null && windowSize > RANGE_ACCEL_THRESHOLD && this.scaleMode !== 'log';
+
+    // Manual scale mode (user dragged the price axis): keep priceMin/
+    // priceMax frozen, but still refresh volumeMax so volume bars track.
+    if (this.manualPriceScale) {
+      if (start >= end) {
+        this.volumeMax = 0;
+        return;
+      }
+      if (accelOk) {
+        this.volumeMax = accel!.rangeOf(start, end).maxVol;
+      } else {
+        let maxVol = 0;
+        const viewM = buffer.sliceView(start, end);
+        for (let i = 0; i < viewM.length; i++) {
+          const v = viewM.volume[i]!;
+          if (Number.isFinite(v) && v > maxVol) maxVol = v;
+        }
+        this.volumeMax = maxVol;
+      }
+      return;
+    }
 
     // Empty visible window (no data, zero-width chart) — reset to a
     // safe default range so priceToY doesn't divide by zero.
@@ -270,26 +302,30 @@ export class Viewport {
       return;
     }
 
-    const view = buffer.sliceView(start, end);
+    // In log mode a non-positive price has no position on the axis, so
+    // those candles must not pull the range down to (or below) zero.
+    const isLog = this.scaleMode === 'log';
     let minPrice = Infinity;
     let maxPrice = -Infinity;
     let maxVol = 0;
 
-    // In log mode a non-positive price has no position on the axis, so
-    // those candles must not pull the range down to (or below) zero.
-    const isLog = this.scaleMode === 'log';
-
-    // Scan visible candles for price extrema, skipping NaN/±Infinity
-    // entries so one corrupt candle can't poison the whole range. A
-    // corrupted upstream feed is the most common source of NaNs; we
-    // want the chart to keep rendering the rest of the window.
-    for (let i = 0; i < view.length; i++) {
-      const lo = view.low[i]!;
-      const hi = view.high[i]!;
-      const vol = view.volume[i]!;
-      if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
-      if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
-      if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
+    if (accelOk) {
+      const r = accel!.rangeOf(start, end);
+      minPrice = r.minLow;
+      maxPrice = r.maxHigh;
+      maxVol = r.maxVol;
+    } else {
+      // Scan visible candles for price extrema, skipping NaN/±Infinity
+      // entries so one corrupt candle can't poison the whole range.
+      const view = buffer.sliceView(start, end);
+      for (let i = 0; i < view.length; i++) {
+        const lo = view.low[i]!;
+        const hi = view.high[i]!;
+        const vol = view.volume[i]!;
+        if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
+        if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
+        if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
+      }
     }
 
     // Every candle in the window was NaN/Infinity (or non-positive in
@@ -299,12 +335,14 @@ export class Viewport {
       return;
     }
 
-    // Percentage / indexed modes anchor on the first visible finite
-    // close. Recomputed every frame so the base tracks horizontal
-    // scroll. (Frozen in manual mode via the early return above.)
+    // Percentage / indexed modes anchor on the first visible finite close.
+    // Recomputed every frame so the base tracks horizontal scroll (frozen
+    // in manual mode via the early return above). Bounded probe keeps this
+    // O(1)-ish even on the accelerated huge-window path.
     if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
-      for (let i = 0; i < view.length; i++) {
-        const c = view.close[i]!;
+      const probe = buffer.sliceView(start, Math.min(end, start + 256));
+      for (let i = 0; i < probe.length; i++) {
+        const c = probe.close[i]!;
         if (Number.isFinite(c)) {
           this._priceBase = c;
           break;
@@ -393,7 +431,10 @@ export class Viewport {
     const chartWidth = this.layout.chartRight - this.layout.chartLeft;
     const stepForAll = chartWidth / bufferLength;
     const rawWidth = stepForAll / (1 + CANDLE_GAP_RATIO);
-    this.candleWidth = clamp(rawWidth, MIN_CANDLE_WIDTH, MAX_CANDLE_WIDTH);
+    // Use the sub-pixel fit floor (not MIN_CANDLE_WIDTH) so "fit all" truly
+    // shows the entire buffer — even millions of bars. At sub-pixel widths
+    // the conflation render path collapses to one bar per pixel column.
+    this.candleWidth = clamp(rawWidth, MIN_CANDLE_WIDTH_FIT, MAX_CANDLE_WIDTH);
     this._recalcVisibleCount();
     this.startIndex = 0;
     this.autoFollow = false;

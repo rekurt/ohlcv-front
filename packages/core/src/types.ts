@@ -38,6 +38,13 @@ export interface CandleView {
   length: number;
   /** Index of the first candle in the parent buffer. */
   offset: number;
+  /**
+   * Present only on a conflated (downsampled) view: for each aggregated
+   * bucket, the buffer index of its first candle. Renderers position a
+   * bucket via `viewport.indexToX(repIndex[i])` instead of `offset + i`.
+   * Absent on normal views, so the standard render path is unaffected.
+   */
+  repIndex?: Int32Array;
 }
 
 /**

@@ -14,6 +14,13 @@ export const MIN_MAIN_AREA_HEIGHT = 120;
 export const DEFAULT_CANDLE_WIDTH = 8;
 export const MIN_CANDLE_WIDTH = 2;
 export const MAX_CANDLE_WIDTH = 30;
+/**
+ * Floor used by `fitAll` only, so "fit everything" can go sub-pixel and
+ * truly show a multi-million-bar history at once (interactive `zoom` still
+ * clamps to MIN_CANDLE_WIDTH). At this width the conflation path collapses
+ * the sub-pixel candles to one bar per column.
+ */
+export const MIN_CANDLE_WIDTH_FIT = 1e-4;
 export const CANDLE_GAP_RATIO = 0.3; // gap between candles as ratio of width
 export const WICK_WIDTH = 1;
 export const MIN_CANDLE_BODY_HEIGHT = 1;
@@ -25,6 +32,13 @@ export const GROWTH_FACTOR = 2;
 // Interaction
 export const MOMENTUM_FRICTION = 0.95;
 export const MOMENTUM_THRESHOLD = 0.5;
+
+/**
+ * Visible-window size (in candles) above which `autoScale` uses the coarse
+ * range index instead of a linear scan. Below it the linear scan is cheaper
+ * than the index's per-query overhead.
+ */
+export const RANGE_ACCEL_THRESHOLD = 5000;
 
 // Fonts (single source of truth for canvas text)
 export const AXIS_FONT = '11px monospace';

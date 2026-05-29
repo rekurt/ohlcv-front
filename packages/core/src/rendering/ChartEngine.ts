@@ -1,6 +1,8 @@
 import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
 import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
+import { conflate } from '../data/conflate';
+import { RangePyramid } from '../data/RangePyramid';
 import type { ErrorReporter } from '../ErrorReporter';
 import { Viewport } from '../interaction/Viewport';
 import { GridRenderer } from './GridRenderer';
@@ -46,6 +48,8 @@ export class ChartEngine {
   private _layout!: ChartLayout;
   private _theme: ThemeColors;
   private _buffer: CandleBuffer | null = null;
+  /** Coarse range index over the buffer; accelerates autoScale on huge windows. */
+  private _rangePyramid: RangePyramid | null = null;
   private _symbol = '';
   private _resolution = '';
   private _priceFormat?: (price: number) => string;
@@ -186,6 +190,7 @@ export class ChartEngine {
 
   setBuffer(buffer: CandleBuffer): void {
     this._buffer = buffer;
+    this._rangePyramid = new RangePyramid(buffer);
   }
 
   /**
@@ -461,12 +466,16 @@ export class ChartEngine {
   private _render(): void {
     if (!this._buffer) return;
 
-    // Auto-scale
-    this.viewport.autoScale(this._buffer);
+    // Auto-scale (accelerated over huge windows via the coarse range index).
+    this.viewport.autoScale(this._buffer, this._rangePyramid ?? undefined);
 
     const start = Math.max(0, Math.floor(this.viewport.startIndex));
     const end = Math.min(this._buffer.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
     const view = this._buffer.sliceView(start, end);
+    // Downsample to ~1 bar per pixel column when candles are sub-pixel
+    // dense (true fit-all over millions of bars). A no-op at normal zoom:
+    // returns `view` unchanged so the standard render path is untouched.
+    const drawView = conflate(view, this.viewport, this._layout);
 
     if (this._chartDirty) {
       this._chartDirty = false;
@@ -482,17 +491,17 @@ export class ChartEngine {
       // → drawings → Axes. Drawings sit above indicators so a trend line
       // is visible on top of SMA/EMA/BB clutter.
       this._gridRenderer.render(ctx, this._layout, this.viewport, this._theme);
-      this._volumeRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+      this._volumeRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
 
       switch (this._chartType) {
         case 'line':
-          this._lineRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          this._lineRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
           break;
         case 'area':
-          this._areaRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          this._areaRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
           break;
         case 'ohlc':
-          this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
           break;
         case 'heikinashi':
           this._heikinAshiRenderer.render(
@@ -507,7 +516,7 @@ export class ChartEngine {
           break;
         case 'candles':
         default:
-          this._candleRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+          this._candleRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
           break;
       }
 

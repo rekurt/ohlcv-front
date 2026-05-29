@@ -11,10 +11,11 @@ export class VolumeRenderer {
   ): void {
     if (viewport.volumeMax === 0) return;
 
-    const bodyWidth = viewport.candleWidth;
+    // Conflated views widen to ≥1px so downsampled volume bars are visible.
+    const bodyWidth = view.repIndex ? Math.max(1, viewport.candleWidth) : viewport.candleWidth;
 
     for (let i = 0; i < view.length; i++) {
-      const bufferIndex = view.offset + i;
+      const bufferIndex = view.repIndex ? view.repIndex[i]! : view.offset + i;
       const x = viewport.indexToX(bufferIndex);
       const halfBody = bodyWidth / 2;
 

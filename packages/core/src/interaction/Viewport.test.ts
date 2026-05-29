@@ -115,9 +115,14 @@ describe('Viewport.fitAll', () => {
     expect(vp.candleWidth).toBeLessThanOrEqual(chartWidth / 100 + 1);
   });
 
-  it('clamps candleWidth to MIN_CANDLE_WIDTH for very large buffers', () => {
+  it('goes sub-pixel for very large buffers so the whole history fits', () => {
+    // F2: fitAll uses MIN_CANDLE_WIDTH_FIT (not MIN_CANDLE_WIDTH) so a
+    // multi-million-bar buffer truly fits on screen; the conflation render
+    // path then collapses the sub-pixel candles to one bar per column.
     vp.fitAll(100_000);
-    expect(vp.candleWidth).toBeGreaterThanOrEqual(2); // MIN_CANDLE_WIDTH
+    expect(vp.candleWidth).toBeGreaterThan(0);
+    expect(vp.candleWidth).toBeLessThan(2); // would have been clamped to 2 before
+    expect(vp.visibleCount).toBeGreaterThanOrEqual(100_000); // all candles fit
   });
 
   it('clamps candleWidth to MAX_CANDLE_WIDTH for very small buffers', () => {
