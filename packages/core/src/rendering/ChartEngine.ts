@@ -1,4 +1,4 @@
-import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
+import type { ThemeColors, ChartLayout, Candle } from '../types';
 import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
 import { conflate } from '../data/conflate';
@@ -6,10 +6,6 @@ import { RangePyramid } from '../data/RangePyramid';
 import type { ErrorReporter } from '../ErrorReporter';
 import { Viewport } from '../interaction/Viewport';
 import { GridRenderer } from './GridRenderer';
-import { CandleRenderer } from './CandleRenderer';
-import { LineRenderer } from './LineRenderer';
-import { AreaRenderer } from './AreaRenderer';
-import { OHLCBarRenderer } from './OHLCBarRenderer';
 import { VolumeRenderer } from './VolumeRenderer';
 import { PriceAxisRenderer } from './PriceAxis';
 import { TimeAxisRenderer } from './TimeAxis';
@@ -19,7 +15,7 @@ import { LegendRenderer } from './LegendRenderer';
 import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
-import { HeikinAshiRenderer } from './HeikinAshiRenderer';
+import { getSeriesType, DEFAULT_SERIES } from '../series/registry';
 import { MarkerRenderer } from '../markers/MarkerRenderer';
 import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
@@ -55,7 +51,7 @@ export class ChartEngine {
   private _resolution = '';
   private _priceFormat?: (price: number) => string;
   private _volumeFormat?: (volume: number) => string;
-  private _chartType: ChartType = 'candles';
+  private _chartType: string = 'candles';
 
   /** User-provided indicators; computed via `computeCached` on dirty render. */
   private _indicators: Indicator[] = [];
@@ -68,13 +64,9 @@ export class ChartEngine {
   /** Routes indicator-compute / render errors to the host's `onError`. */
   private _reporter: ErrorReporter | null = null;
 
-  // Renderers
+  // Renderers. Primary price series are dispatched through the series
+  // registry (see _render); only the chrome renderers are held here.
   private _gridRenderer = new GridRenderer();
-  private _candleRenderer = new CandleRenderer();
-  private _heikinAshiRenderer = new HeikinAshiRenderer();
-  private _lineRenderer = new LineRenderer();
-  private _areaRenderer = new AreaRenderer();
-  private _ohlcBarRenderer = new OHLCBarRenderer();
   private _volumeRenderer = new VolumeRenderer();
   private _priceAxisRenderer = new PriceAxisRenderer();
   private _timeAxisRenderer = new TimeAxisRenderer();
@@ -261,14 +253,14 @@ export class ChartEngine {
   private _idleCursor = 'crosshair';
   private _isActivelyDragging = false;
 
-  /** Switch the primary price-series rendering style. */
-  setChartType(chartType: ChartType): void {
+  /** Switch the primary price-series rendering style (built-in or custom). */
+  setChartType(chartType: string): void {
     if (this._chartType === chartType) return;
     this._chartType = chartType;
     this.requestRender();
   }
 
-  get chartType(): ChartType {
+  get chartType(): string {
     return this._chartType;
   }
 
@@ -508,16 +500,30 @@ export class ChartEngine {
   private _render(): void {
     if (!this._buffer) return;
 
-    // Auto-scale (accelerated over huge windows via the coarse range index).
-    this.viewport.autoScale(this._buffer, this._rangePyramid ?? undefined);
+    // Resolve the active primary series (registry; unknown → candles).
+    const series = getSeriesType(this._chartType) ?? DEFAULT_SERIES;
 
     const start = Math.max(0, Math.floor(this.viewport.startIndex));
     const end = Math.min(this._buffer.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
-    const view = this._buffer.sliceView(start, end);
+    const rawView = this._buffer.sliceView(start, end);
+
+    // Series transform (e.g. Heikin-Ashi) → autoscale → conflate → draw.
+    // A series with a transformView or custom priceRange auto-scales from
+    // its (transformed) view; everything else uses the raw, pyramid-
+    // accelerated path. Either way priceMin/priceMax are set every frame.
+    const baseView = series.transformView
+      ? series.transformView(this._buffer, start, end)
+      : rawView;
+    if (series.transformView || series.priceRange) {
+      this.viewport.autoScaleFromView(this._buffer, baseView, series.priceRange);
+    } else {
+      this.viewport.autoScale(this._buffer, this._rangePyramid ?? undefined);
+    }
+
     // Downsample to ~1 bar per pixel column when candles are sub-pixel
     // dense (true fit-all over millions of bars). A no-op at normal zoom:
-    // returns `view` unchanged so the standard render path is untouched.
-    const drawView = conflate(view, this.viewport, this._layout);
+    // returns `baseView` unchanged so the standard render path is untouched.
+    const drawView = conflate(baseView, this.viewport, this._layout);
 
     if (this._chartDirty) {
       this._chartDirty = false;
@@ -538,32 +544,15 @@ export class ChartEngine {
       this._gridRenderer.render(ctx, this._layout, this.viewport, this._theme);
       this._volumeRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
 
-      switch (this._chartType) {
-        case 'line':
-          this._lineRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
-          break;
-        case 'area':
-          this._areaRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
-          break;
-        case 'ohlc':
-          this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
-          break;
-        case 'heikinashi':
-          this._heikinAshiRenderer.render(
-            ctx,
-            this._layout,
-            this.viewport,
-            this._buffer,
-            start,
-            end,
-            this._theme,
-          );
-          break;
-        case 'candles':
-        default:
-          this._candleRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
-          break;
-      }
+      // Primary price series via the registry (candles/line/area/ohlc/
+      // heikinashi or a host-registered custom type).
+      series.draw({
+        ctx,
+        layout: this._layout,
+        viewport: this.viewport,
+        view: drawView,
+        theme: this._theme,
+      });
 
       // Overlay indicators (drawn on the main price area).
       let colorIdx = 0;

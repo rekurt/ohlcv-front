@@ -25,6 +25,8 @@ import { Channel } from './drawings/Channel';
 import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { Marker } from './markers/Marker';
+import type { SeriesDefinition } from './series/Series';
+import { registerSeriesType as registerSeriesTypeImpl } from './series/registry';
 import type { Primitive } from './primitives/Primitive';
 import { WatermarkPrimitive, type WatermarkOptions } from './primitives/WatermarkPrimitive';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
@@ -382,9 +384,21 @@ export class OHLCVChart {
     this._engine.requestRender();
   }
 
-  /** Switch the primary price-series rendering style. */
-  setChartType(chartType: ChartType): void {
+  /** Switch the primary price-series rendering style (built-in or custom). */
+  setChartType(chartType: ChartType | (string & {})): void {
     this._engine.setChartType(chartType);
+  }
+
+  /**
+   * Register a custom primary-series type as a first-class citizen — it
+   * participates in autoscale (via its `priceRange`), conflation, and the
+   * crosshair. Use `setChartType(def.type)` to activate it. Register before
+   * `loadState` if a saved chart references the custom type (otherwise the
+   * load falls back to candles at render time).
+   */
+  registerSeriesType(def: SeriesDefinition): void {
+    registerSeriesTypeImpl(def);
+    if (this._engine.chartType === def.type) this._engine.requestRender();
   }
 
   /**

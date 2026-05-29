@@ -87,11 +87,22 @@ export { StochRSI } from './indicators/StochRSI';
 export { ROC } from './indicators/ROC';
 export { ZigZag } from './indicators/ZigZag';
 
-// Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
+// Primary-series renderers (also reused by the built-in series definitions).
 export { LineRenderer } from './rendering/LineRenderer';
 export { AreaRenderer } from './rendering/AreaRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
-export { HeikinAshiRenderer } from './rendering/HeikinAshiRenderer';
+export { HeikinAshiRenderer, buildHeikinAshiView, HEIKIN_ASHI_WARMUP } from './rendering/HeikinAshiRenderer';
+
+// Custom Series API (registry-dispatched primary series)
+export type { SeriesDefinition, SeriesRenderContext, SeriesPriceRange } from './series/Series';
+export { registerSeriesType, getSeriesType, listSeriesTypes } from './series/registry';
+export {
+  candleSeries,
+  lineSeries,
+  areaSeries,
+  ohlcSeries,
+  heikinAshiSeries,
+} from './series/builtins';
 
 // Drawing tools
 export { Drawing } from './drawings/Drawing';

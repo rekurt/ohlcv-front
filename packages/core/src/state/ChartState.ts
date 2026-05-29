@@ -20,7 +20,8 @@ export interface LayoutState {
   version: 1;
   symbol: string;
   resolution: string;
-  chartType: ChartType;
+  /** Built-in type, or a host-registered custom series type. */
+  chartType: ChartType | (string & {});
   theme: ThemeMode | ThemeColors;
   viewport: {
     startIndex: number;

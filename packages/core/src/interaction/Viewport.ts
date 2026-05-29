@@ -1,4 +1,4 @@
-import type { ChartLayout } from '../types';
+import type { ChartLayout, CandleView } from '../types';
 import {
   DEFAULT_CANDLE_WIDTH,
   MIN_CANDLE_WIDTH,
@@ -350,7 +350,16 @@ export class Viewport {
       }
     }
 
-    // Flat range protection (all candles share the same low/high).
+    this._applyPriceRange(minPrice, maxPrice);
+    this.volumeMax = maxVol;
+  }
+
+  /**
+   * Apply flat-range protection + mode-aware padding to a raw [min, max]
+   * pair and commit it to priceMin/priceMax. Shared by autoScale and
+   * autoScaleFromView so both paths pad identically.
+   */
+  private _applyPriceRange(minPrice: number, maxPrice: number): void {
     let range = maxPrice - minPrice;
     if (range === 0) {
       const padding = Math.abs(maxPrice) * 0.01 || 1;
@@ -358,10 +367,8 @@ export class Viewport {
       maxPrice += padding;
       range = maxPrice - minPrice;
     }
-
-    if (isLog) {
-      // Pad in log space — a linear 5% pad on a log axis squashes the
-      // top of the range. exp(logMin - pad) stays strictly positive.
+    if (this.scaleMode === 'log') {
+      // Pad in log space — a linear 5% pad on a log axis squashes the top.
       const logMin = Math.log(minPrice);
       const logMax = Math.log(maxPrice);
       const logPad = (logMax - logMin) * PRICE_PADDING_RATIO;
@@ -372,6 +379,74 @@ export class Viewport {
       this.priceMin = minPrice - pad;
       this.priceMax = maxPrice + pad;
     }
+  }
+
+  /**
+   * Auto-scale from a pre-built (possibly transformed) view rather than the
+   * raw buffer — used by series with a `transformView` (Heikin-Ashi) or a
+   * custom `priceRange`. Scans the view linearly (no range pyramid). Honors
+   * the same manual / empty / NaN / log / flat-range guards as autoScale.
+   */
+  autoScaleFromView(
+    buffer: CandleBuffer,
+    view: CandleView,
+    priceRange?: (v: CandleView, i: number) => { min: number; max: number },
+  ): void {
+    this._bufferLength = buffer.length;
+
+    if (this.manualPriceScale) {
+      let maxVol = 0;
+      for (let i = 0; i < view.length; i++) {
+        const v = view.volume[i]!;
+        if (Number.isFinite(v) && v > maxVol) maxVol = v;
+      }
+      this.volumeMax = maxVol;
+      return;
+    }
+
+    if (view.length === 0) {
+      if (this.priceMin === this.priceMax) {
+        this.priceMin = 0;
+        this.priceMax = 1;
+        this.volumeMax = 0;
+      }
+      return;
+    }
+
+    const isLog = this.scaleMode === 'log';
+    let minPrice = Infinity;
+    let maxPrice = -Infinity;
+    let maxVol = 0;
+    for (let i = 0; i < view.length; i++) {
+      let lo: number;
+      let hi: number;
+      if (priceRange) {
+        const r = priceRange(view, i);
+        lo = r.min;
+        hi = r.max;
+      } else {
+        lo = view.low[i]!;
+        hi = view.high[i]!;
+      }
+      const vol = view.volume[i]!;
+      if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
+      if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
+      if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
+    }
+
+    if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) return;
+
+    if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
+      for (let i = 0; i < view.length; i++) {
+        const c = view.close[i]!;
+        if (Number.isFinite(c)) {
+          this._priceBase = c;
+          break;
+        }
+      }
+    }
+
+    this._applyPriceRange(minPrice, maxPrice);
     this.volumeMax = maxVol;
   }
 
