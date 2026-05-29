@@ -128,6 +128,8 @@ export { clipToChart } from './primitives/Primitive';
 export type { Primitive, PrimitiveZOrder } from './primitives/Primitive';
 export { WatermarkPrimitive } from './primitives/WatermarkPrimitive';
 export type { WatermarkOptions, WatermarkPosition } from './primitives/WatermarkPrimitive';
+export { PriceLinePrimitive } from './primitives/PriceLinePrimitive';
+export type { PriceLineOptions, PriceLineHandle } from './primitives/PriceLinePrimitive';
 
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';

@@ -29,6 +29,11 @@ import type { SeriesDefinition } from './series/Series';
 import { registerSeriesType as registerSeriesTypeImpl } from './series/registry';
 import type { Primitive } from './primitives/Primitive';
 import { WatermarkPrimitive, type WatermarkOptions } from './primitives/WatermarkPrimitive';
+import {
+  PriceLinePrimitive,
+  type PriceLineOptions,
+  type PriceLineHandle,
+} from './primitives/PriceLinePrimitive';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 
 /** Stable primitive id for the single host-managed watermark. */
@@ -103,6 +108,11 @@ export class OHLCVChart {
    * advanced use.
    */
   private _ownDrawingLayer: DrawingLayer;
+  /** Host-created price lines, keyed by id, for drag routing. */
+  private _priceLines = new Map<string, PriceLinePrimitive>();
+  private _priceLineSeq = 0;
+  /** Set after a price-line drag so the trailing click doesn't fire onCandleClick. */
+  private _suppressNextClick = false;
 
   constructor(config: ChartConfig) {
     // The chart manipulates the DOM and canvas directly, so it can only be
@@ -197,6 +207,22 @@ export class OHLCVChart {
       // override it via `OHLCVChart.setIdleCursor`.
       getIdleCursor: () => this._engine.idleCursor,
       onDragStateChange: (dragging) => this._engine._setActivelyDragging(dragging),
+      // Draggable price lines: grab the topmost draggable line under the
+      // cursor, then move it with the cursor's price on each drag step.
+      hitTestDraggable: (x, y) => {
+        const hit = this._engine.hitTestPrimitives(x, y);
+        if (hit instanceof PriceLinePrimitive && hit.draggable) return { id: hit.id };
+        return null;
+      },
+      onDragDraggable: (id, price) => {
+        this._priceLines.get(id)?.setPrice(price);
+        this._engine.requestRender();
+      },
+      onDragDraggableEnd: () => {
+        // Swallow the click that fires right after the drag so we don't
+        // also dispatch onCandleClick for the same gesture.
+        this._suppressNextClick = true;
+      },
     });
     // Track pending load-more-history calls so we don't fire them faster
     // than they resolve.
@@ -224,6 +250,13 @@ export class OHLCVChart {
     // Click handler: first check the "Go to live" pill (if visible), then
     // the candle click callback.
     this._clickHandler = (e: MouseEvent) => {
+      // A click that immediately follows a price-line drag should not also
+      // fire onCandleClick.
+      if (this._suppressNextClick) {
+        this._suppressNextClick = false;
+        return;
+      }
+
       const rect = this._engine.topCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
@@ -653,6 +686,40 @@ export class OHLCVChart {
   /** Remove the watermark, if one is set. */
   clearWatermark(): void {
     this._engine.detachPrimitive(WATERMARK_ID);
+  }
+
+  /**
+   * Create a horizontal price line at a fixed price, with a right-axis label
+   * pill, optionally draggable. Returns a handle to move/restyle/remove it.
+   * Correct under any price-scale mode (positions via the viewport). Price
+   * lines are runtime-only — not included in `saveLayoutState`.
+   */
+  createPriceLine(options: PriceLineOptions): PriceLineHandle {
+    const id = `priceline:${this._priceLineSeq++}`;
+    const primitive = new PriceLinePrimitive(id, options);
+    this._priceLines.set(id, primitive);
+    this._engine.attachPrimitive(primitive);
+
+    const engine = this._engine;
+    const lines = this._priceLines;
+    return {
+      id,
+      setPrice(price: number): void {
+        primitive.setPrice(price);
+        engine.requestRender();
+      },
+      getPrice(): number {
+        return primitive.price;
+      },
+      setOptions(opts): void {
+        primitive.setOptions(opts);
+        engine.requestRender();
+      },
+      remove(): void {
+        engine.detachPrimitive(id);
+        lines.delete(id);
+      },
+    };
   }
 
   /** Redo the last undone drawing mutation. Returns true if applied. */
