@@ -118,6 +118,9 @@ export { toRenko } from './transforms/renko';
 
 // Interaction
 export { Viewport } from './interaction/Viewport';
+export type { GridTick } from './interaction/Viewport';
+export { priceToTransformed, transformedToPrice, LOG_MIN_POSITIVE } from './interaction/priceScale';
+export type { PriceScaleMode } from './interaction/priceScale';
 export { PanZoomController } from './interaction/PanZoomController';
 export { CrosshairController } from './interaction/CrosshairController';
 export { KeyboardController } from './interaction/KeyboardController';
@@ -125,4 +128,4 @@ export type { KeyboardCallbacks } from './interaction/KeyboardController';
 
 // Constants & Utilities
 export { DARK_THEME, LIGHT_THEME } from './constants';
-export { resolveTheme, formatPrice, formatVolume, formatTime, computeLayout } from './utils';
+export { resolveTheme, formatPrice, formatVolume, formatPercent, formatTime, computeLayout } from './utils';

@@ -1,4 +1,5 @@
 import type { Candle, ChartConfig, ChartType, ThemeColors, ThemeMode, HoverInfo } from './types';
+import type { PriceScaleMode } from './interaction/priceScale';
 import { resolveTheme } from './utils';
 import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
@@ -132,6 +133,7 @@ export class OHLCVChart {
     if (config.priceFormat) this._engine.setPriceFormat(config.priceFormat);
     if (config.volumeFormat) this._engine.setVolumeFormat(config.volumeFormat);
     if (config.chartType) this._engine.setChartType(config.chartType);
+    if (config.priceScaleMode) this._engine.viewport.setScaleMode(config.priceScaleMode);
     config.container.style.backgroundColor = theme.background;
 
     // Auto-managed drawing layer. Hosts that need a custom layer can
@@ -378,6 +380,25 @@ export class OHLCVChart {
   /** Switch the primary price-series rendering style. */
   setChartType(chartType: ChartType): void {
     this._engine.setChartType(chartType);
+  }
+
+  /**
+   * Switch the price-axis scale mode:
+   *  - `'linear'` — equal price deltas are equal pixel deltas (default)
+   *  - `'log'` — equal *ratios* are equal pixel deltas (BTC-over-years)
+   *  - `'percentage'` — axis reads % change vs. the first visible candle
+   *  - `'indexedTo100'` — first visible candle anchored at 100
+   *
+   * Clears any manual (dragged) price scale so the new mode auto-fits.
+   */
+  setPriceScaleMode(mode: PriceScaleMode): void {
+    this._engine.viewport.setScaleMode(mode);
+    this._engine.requestRender();
+  }
+
+  /** Read the current price-axis scale mode. */
+  getPriceScaleMode(): PriceScaleMode {
+    return this._engine.viewport.scaleMode;
   }
 
   /**
@@ -655,6 +676,7 @@ export class OHLCVChart {
         startIndex: vp.startIndex,
         candleWidth: vp.candleWidth,
         autoFollow: vp.autoFollow,
+        priceScaleMode: vp.scaleMode,
       },
       indicators: this._indicatorConfigs.slice(),
       drawings: this.getDrawings(),
@@ -757,6 +779,8 @@ export class OHLCVChart {
     if (vp.layout) vp.setLayout(vp.layout);
     vp.startIndex = state.viewport.startIndex;
     vp.autoFollow = state.viewport.autoFollow;
+    // Optional + additive: pre-F1 states omit priceScaleMode → 'linear'.
+    vp.setScaleMode(state.viewport.priceScaleMode ?? 'linear');
 
     this._engine.requestRender();
   }

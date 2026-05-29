@@ -1,4 +1,5 @@
 import type { CandleBuffer } from './data/CandleBuffer';
+import type { PriceScaleMode } from './interaction/priceScale';
 
 /**
  * A single OHLCV candle. Times are Unix seconds (not milliseconds).
@@ -189,6 +190,8 @@ export interface ChartConfig {
   volumeFormat?: (volume: number) => string;
   /** Style of the main price series. Default: `'candles'`. */
   chartType?: ChartType;
+  /** Initial price-axis scale mode. Default: `'linear'`. */
+  priceScaleMode?: PriceScaleMode;
   onCandleClick?: (candle: Candle, index: number) => void;
   onVisibleRangeChange?: (from: number, to: number) => void;
   /** Called on every crosshair move with the currently-snapped candle. */

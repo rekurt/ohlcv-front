@@ -1,5 +1,4 @@
 import type { ThemeColors, ChartLayout } from '../types';
-import { niceGridValues } from '../utils';
 import type { Viewport } from '../interaction/Viewport';
 
 export class GridRenderer {
@@ -7,11 +6,13 @@ export class GridRenderer {
     ctx.strokeStyle = theme.grid;
     ctx.lineWidth = 1;
 
-    // Horizontal grid lines (price)
-    const priceValues = niceGridValues(viewport.priceMin, viewport.priceMax, 6);
+    // Horizontal grid lines (price). Tick selection is delegated to the
+    // viewport so the grid and the price axis use one source of truth
+    // across linear / log / percentage / indexed scale modes.
+    const ticks = viewport.gridTicks(6);
     ctx.beginPath();
-    for (const price of priceValues) {
-      const y = Math.round(viewport.priceToY(price)) + 0.5;
+    for (const tick of ticks) {
+      const y = Math.round(tick.y) + 0.5;
       ctx.moveTo(layout.chartLeft, y);
       ctx.lineTo(layout.chartRight, y);
     }

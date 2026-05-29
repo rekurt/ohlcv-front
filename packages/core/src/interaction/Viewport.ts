@@ -6,8 +6,26 @@ import {
   CANDLE_GAP_RATIO,
   PRICE_PADDING_RATIO,
 } from '../constants';
-import { clamp } from '../utils';
+import { clamp, niceGridValues, niceLogGridValues, formatPercent } from '../utils';
 import { CandleBuffer } from '../data/CandleBuffer';
+import {
+  type PriceScaleMode,
+  priceToTransformed,
+  transformedToPrice,
+} from './priceScale';
+
+/**
+ * A single price-axis grid line: the price it sits at, its Y pixel, and
+ * a pre-formatted label. `label` is `null` for price-based modes
+ * (linear/log) so the renderer can apply the host's custom price
+ * formatter; it is a ready string for percentage/indexed modes whose
+ * axis reads percentages, not prices.
+ */
+export interface GridTick {
+  price: number;
+  y: number;
+  label: string | null;
+}
 
 export class Viewport {
   startIndex = 0;
@@ -39,7 +57,34 @@ export class Viewport {
    */
   manualPriceScale = false;
 
+  /**
+   * Active price-axis transform. `'linear'` keeps the original render
+   * path byte-for-byte; `'log'`/`'percentage'`/`'indexedTo100'` route
+   * through {@link priceToTransformed}. Set via {@link setScaleMode}.
+   */
+  scaleMode: PriceScaleMode = 'linear';
+
+  /**
+   * Anchor for percentage / indexedTo100 modes — the first visible
+   * candle's close. Recomputed every `autoScale` (so it tracks
+   * horizontal scroll); frozen while `manualPriceScale` is on so the
+   * %-axis doesn't jump during a price-axis drag.
+   */
+  private _priceBase = 0;
+
   private _bufferLength = 0;
+
+  // --- transformed-extrema cache -------------------------------------
+  // priceToY/yToPrice are called thousands of times per frame; cache the
+  // transformed min/max and recompute only when an input changed. The
+  // cache is keyed on the raw inputs (not refreshed by autoScale alone)
+  // so direct priceMin/priceMax mutations in tests stay correct.
+  private _txMode: PriceScaleMode | null = null;
+  private _txMin = 0;
+  private _txMax = 0;
+  private _txBase = 0;
+  private _tMin = 0;
+  private _tMax = 0;
 
   setLayout(layout: ChartLayout): void {
     this.layout = layout;
@@ -63,16 +108,95 @@ export class Viewport {
 
   /** Convert price to Y pixel coordinate */
   priceToY(price: number): number {
-    const range = this.priceMax - this.priceMin;
-    if (range === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
-    return this.layout.chartTop + (1 - (price - this.priceMin) / range) * (this.layout.chartBottom - this.layout.chartTop);
+    // Linear fast-path: identical arithmetic to the pre-F1 implementation
+    // so the default render path stays bit-for-bit unchanged.
+    if (this.scaleMode === 'linear') {
+      const range = this.priceMax - this.priceMin;
+      if (range === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
+      return this.layout.chartTop + (1 - (price - this.priceMin) / range) * (this.layout.chartBottom - this.layout.chartTop);
+    }
+    this._ensureTransform();
+    const tRange = this._tMax - this._tMin;
+    if (tRange === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
+    const t = priceToTransformed(price, this.scaleMode, this._priceBase);
+    return this.layout.chartTop + (1 - (t - this._tMin) / tRange) * (this.layout.chartBottom - this.layout.chartTop);
   }
 
   /** Convert Y pixel to price */
   yToPrice(y: number): number {
     const chartHeight = this.layout.chartBottom - this.layout.chartTop;
     if (chartHeight === 0) return this.priceMin;
-    return this.priceMax - ((y - this.layout.chartTop) / chartHeight) * (this.priceMax - this.priceMin);
+    if (this.scaleMode === 'linear') {
+      return this.priceMax - ((y - this.layout.chartTop) / chartHeight) * (this.priceMax - this.priceMin);
+    }
+    this._ensureTransform();
+    const t = this._tMax - ((y - this.layout.chartTop) / chartHeight) * (this._tMax - this._tMin);
+    return transformedToPrice(t, this.scaleMode, this._priceBase);
+  }
+
+  /**
+   * Recompute the cached transformed extrema if any input changed.
+   * Cheap no-op on a cache hit (the common case within a frame).
+   */
+  private _ensureTransform(): void {
+    if (
+      this._txMode === this.scaleMode &&
+      this._txMin === this.priceMin &&
+      this._txMax === this.priceMax &&
+      this._txBase === this._priceBase
+    ) {
+      return;
+    }
+    this._txMode = this.scaleMode;
+    this._txMin = this.priceMin;
+    this._txMax = this.priceMax;
+    this._txBase = this._priceBase;
+    this._tMin = priceToTransformed(this.priceMin, this.scaleMode, this._priceBase);
+    this._tMax = priceToTransformed(this.priceMax, this.scaleMode, this._priceBase);
+  }
+
+  /**
+   * Switch the price-axis transform. Clears any manual (frozen) scale so
+   * the next `autoScale` re-derives a sane range for the new mode.
+   */
+  setScaleMode(mode: PriceScaleMode): void {
+    if (this.scaleMode === mode) return;
+    this.scaleMode = mode;
+    this.manualPriceScale = false;
+    this._txMode = null; // invalidate transform cache
+  }
+
+  /**
+   * Price-axis grid ticks for the current scale mode. Shared by the
+   * grid renderer and the price-axis renderer so they never diverge.
+   * For linear/log, `label` is null (caller formats the price); for
+   * percentage/indexed, `label` is the pre-formatted axis string.
+   */
+  gridTicks(maxTicks = 6): GridTick[] {
+    const out: GridTick[] = [];
+    if (this.scaleMode === 'log') {
+      for (const price of niceLogGridValues(this.priceMin, this.priceMax, maxTicks)) {
+        out.push({ price, y: this.priceToY(price), label: null });
+      }
+      return out;
+    }
+    if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
+      const base = this._priceBase;
+      const mode = this.scaleMode;
+      const tMin = priceToTransformed(this.priceMin, mode, base);
+      const tMax = priceToTransformed(this.priceMax, mode, base);
+      for (const t of niceGridValues(tMin, tMax, maxTicks)) {
+        const price = transformedToPrice(t, mode, base);
+        const label = mode === 'percentage' ? formatPercent(t) : t.toFixed(2);
+        out.push({ price, y: this.priceToY(price), label });
+      }
+      return out;
+    }
+    // Linear
+    for (const price of niceGridValues(this.priceMin, this.priceMax, maxTicks)) {
+      out.push({ price, y: this.priceToY(price), label: null });
+    }
+    return out;
   }
 
   /** Convert volume to Y pixel coordinate */
@@ -151,6 +275,10 @@ export class Viewport {
     let maxPrice = -Infinity;
     let maxVol = 0;
 
+    // In log mode a non-positive price has no position on the axis, so
+    // those candles must not pull the range down to (or below) zero.
+    const isLog = this.scaleMode === 'log';
+
     // Scan visible candles for price extrema, skipping NaN/±Infinity
     // entries so one corrupt candle can't poison the whole range. A
     // corrupted upstream feed is the most common source of NaNs; we
@@ -159,16 +287,29 @@ export class Viewport {
       const lo = view.low[i]!;
       const hi = view.high[i]!;
       const vol = view.volume[i]!;
-      if (Number.isFinite(lo) && lo < minPrice) minPrice = lo;
-      if (Number.isFinite(hi) && hi > maxPrice) maxPrice = hi;
+      if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
+      if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
       if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
     }
 
-    // Every candle in the window was NaN/Infinity. Keep the previous
-    // range (don't overwrite with Infinity sentinels) — the chart will
-    // render empty space but won't crash.
+    // Every candle in the window was NaN/Infinity (or non-positive in
+    // log mode). Keep the previous range (don't overwrite with Infinity
+    // sentinels) — the chart will render empty space but won't crash.
     if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) {
       return;
+    }
+
+    // Percentage / indexed modes anchor on the first visible finite
+    // close. Recomputed every frame so the base tracks horizontal
+    // scroll. (Frozen in manual mode via the early return above.)
+    if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
+      for (let i = 0; i < view.length; i++) {
+        const c = view.close[i]!;
+        if (Number.isFinite(c)) {
+          this._priceBase = c;
+          break;
+        }
+      }
     }
 
     // Flat range protection (all candles share the same low/high).
@@ -180,10 +321,19 @@ export class Viewport {
       range = maxPrice - minPrice;
     }
 
-    // Add padding
-    const pad = range * PRICE_PADDING_RATIO;
-    this.priceMin = minPrice - pad;
-    this.priceMax = maxPrice + pad;
+    if (isLog) {
+      // Pad in log space — a linear 5% pad on a log axis squashes the
+      // top of the range. exp(logMin - pad) stays strictly positive.
+      const logMin = Math.log(minPrice);
+      const logMax = Math.log(maxPrice);
+      const logPad = (logMax - logMin) * PRICE_PADDING_RATIO;
+      this.priceMin = Math.exp(logMin - logPad);
+      this.priceMax = Math.exp(logMax + logPad);
+    } else {
+      const pad = range * PRICE_PADDING_RATIO;
+      this.priceMin = minPrice - pad;
+      this.priceMax = maxPrice + pad;
+    }
     this.volumeMax = maxVol;
   }
 
@@ -199,11 +349,19 @@ export class Viewport {
    */
   scalePriceRangeBy(factor: number, anchorY: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
-    const anchorPrice = this.yToPrice(anchorY);
     // Clamp factor so a single drag can't blow the range out by 1000×.
     const safeFactor = clamp(factor, 0.05, 20);
-    const newMin = anchorPrice - (anchorPrice - this.priceMin) * safeFactor;
-    const newMax = anchorPrice + (this.priceMax - anchorPrice) * safeFactor;
+    const mode = this.scaleMode;
+    const base = this._priceBase;
+    // Scale in TRANSFORMED space so a log/percentage axis drag stays
+    // even across decades. For linear this reduces to the original
+    // price-space formula bit-for-bit (the transform is the identity).
+    const anchorPrice = this.yToPrice(anchorY);
+    const tAnchor = priceToTransformed(anchorPrice, mode, base);
+    const tMin = priceToTransformed(this.priceMin, mode, base);
+    const tMax = priceToTransformed(this.priceMax, mode, base);
+    const newMin = transformedToPrice(tAnchor - (tAnchor - tMin) * safeFactor, mode, base);
+    const newMax = transformedToPrice(tAnchor + (tMax - tAnchor) * safeFactor, mode, base);
     if (!Number.isFinite(newMin) || !Number.isFinite(newMax) || newMin >= newMax) return;
     this.priceMin = newMin;
     this.priceMax = newMax;
