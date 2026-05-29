@@ -112,6 +112,10 @@ export { markerY } from './markers/Marker';
 export type { Marker, MarkerPosition, MarkerShape } from './markers/Marker';
 export { MarkerRenderer } from './markers/MarkerRenderer';
 
+// Primitives (programmatic z-ordered overlays)
+export { clipToChart } from './primitives/Primitive';
+export type { Primitive, PrimitiveZOrder } from './primitives/Primitive';
+
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';
 export { toRenko } from './transforms/renko';

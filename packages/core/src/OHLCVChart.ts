@@ -25,6 +25,7 @@ import { Channel } from './drawings/Channel';
 import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { Marker } from './markers/Marker';
+import type { Primitive } from './primitives/Primitive';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 import { isFullState } from './state/ChartState';
 import { migrateState } from './state/migrations';
@@ -600,6 +601,25 @@ export class OHLCVChart {
   /** Remove all markers. */
   clearMarkers(): void {
     this._engine.setMarkers([]);
+  }
+
+  /**
+   * Attach a programmatic overlay primitive (watermark, price line, custom
+   * band) rendered at its z-tier. Primitives are runtime annotations — they
+   * are not included in `saveLayoutState`.
+   */
+  attachPrimitive(primitive: Primitive): void {
+    this._engine.attachPrimitive(primitive);
+  }
+
+  /** Detach a primitive by id. Returns true if one was removed. */
+  detachPrimitive(id: string): boolean {
+    return this._engine.detachPrimitive(id);
+  }
+
+  /** The attached primitives, in attach order. */
+  getPrimitives(): readonly Primitive[] {
+    return this._engine.primitives;
   }
 
   /** Redo the last undone drawing mutation. Returns true if applied. */

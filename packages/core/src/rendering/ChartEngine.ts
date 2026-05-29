@@ -24,6 +24,7 @@ import { MarkerRenderer } from '../markers/MarkerRenderer';
 import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
+import type { Primitive, PrimitiveZOrder } from '../primitives/Primitive';
 
 /** Palette used to color indicator series in deterministic order. */
 const INDICATOR_COLORS = [
@@ -62,6 +63,8 @@ export class ChartEngine {
   private _drawingLayer: DrawingLayer | null = null;
   /** Point markers anchored to candles by timestamp. */
   private _markers: Marker[] = [];
+  /** Programmatic z-ordered overlays (watermark, price lines, custom bands). */
+  private _primitives: Primitive[] = [];
   /** Routes indicator-compute / render errors to the host's `onError`. */
   private _reporter: ErrorReporter | null = null;
 
@@ -328,6 +331,45 @@ export class ChartEngine {
     return this._markers;
   }
 
+  /** Attach a programmatic overlay primitive (rendered at its z-tier). */
+  attachPrimitive(primitive: Primitive): void {
+    this._primitives.push(primitive);
+    this.requestRender();
+  }
+
+  /** Detach a primitive by id. Returns true if one was removed. */
+  detachPrimitive(id: string): boolean {
+    const idx = this._primitives.findIndex((p) => p.id === id);
+    if (idx === -1) return false;
+    this._primitives.splice(idx, 1);
+    this.requestRender();
+    return true;
+  }
+
+  /** The attached primitives, in attach order. */
+  get primitives(): readonly Primitive[] {
+    return this._primitives;
+  }
+
+  /**
+   * Topmost primitive whose `hitTest` passes at (x, y) in CSS pixels,
+   * searched in reverse paint order (last attached wins). Used to route
+   * drags to draggable price lines.
+   */
+  hitTestPrimitives(x: number, y: number, tolerance?: number): Primitive | null {
+    for (let i = this._primitives.length - 1; i >= 0; i--) {
+      const p = this._primitives[i]!;
+      if (p.hitTest && p.hitTest(x, y, this._layout, this.viewport, tolerance)) return p;
+    }
+    return null;
+  }
+
+  private _drawPrimitives(ctx: CanvasRenderingContext2D, tier: PrimitiveZOrder): void {
+    for (const p of this._primitives) {
+      if (p.zOrder === tier) p.draw(ctx, this._layout, this.viewport, this._theme);
+    }
+  }
+
   /** Mark chart + UI for re-render */
   requestRender(): void {
     this._chartDirty = true;
@@ -487,6 +529,9 @@ export class ChartEngine {
       ctx.fillStyle = this._theme.background;
       ctx.fillRect(0, 0, width, height);
 
+      // 'bottom' primitives sit behind the grid + series (e.g. watermark).
+      this._drawPrimitives(ctx, 'bottom');
+
       // Grid → Volume → primary series (by chart type) → overlay indicators
       // → drawings → Axes. Drawings sit above indicators so a trend line
       // is visible on top of SMA/EMA/BB clutter.
@@ -555,6 +600,9 @@ export class ChartEngine {
         this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
       }
 
+      // 'normal' primitives sit with the drawing layer, above the series.
+      this._drawPrimitives(ctx, 'normal');
+
       this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
 
       // Sub-pane indicators. Each gets one band of equal height in
@@ -619,6 +667,10 @@ export class ChartEngine {
       } else {
         this.goToLiveRenderer.hide();
       }
+
+      // 'top' primitives paint above the chart on the UI layer (e.g. price
+      // lines and their axis pills, above the series and indicators).
+      this._drawPrimitives(ctx, 'top');
     }
 
     if (this._crosshairDirty) {
