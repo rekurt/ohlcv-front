@@ -115,6 +115,8 @@ export { MarkerRenderer } from './markers/MarkerRenderer';
 // Primitives (programmatic z-ordered overlays)
 export { clipToChart } from './primitives/Primitive';
 export type { Primitive, PrimitiveZOrder } from './primitives/Primitive';
+export { WatermarkPrimitive } from './primitives/WatermarkPrimitive';
+export type { WatermarkOptions, WatermarkPosition } from './primitives/WatermarkPrimitive';
 
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';

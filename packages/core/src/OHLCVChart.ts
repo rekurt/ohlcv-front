@@ -26,7 +26,11 @@ import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { Marker } from './markers/Marker';
 import type { Primitive } from './primitives/Primitive';
+import { WatermarkPrimitive, type WatermarkOptions } from './primitives/WatermarkPrimitive';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
+
+/** Stable primitive id for the single host-managed watermark. */
+const WATERMARK_ID = 'ohlcv:watermark';
 import { isFullState } from './state/ChartState';
 import { migrateState } from './state/migrations';
 
@@ -620,6 +624,21 @@ export class OHLCVChart {
   /** The attached primitives, in attach order. */
   getPrimitives(): readonly Primitive[] {
     return this._engine.primitives;
+  }
+
+  /**
+   * Set (or replace) a faint background watermark — text (symbol/timeframe)
+   * or an image (logo), painted behind the grid and series. Runtime-only;
+   * not included in `saveLayoutState`.
+   */
+  setWatermark(options: WatermarkOptions): void {
+    this._engine.detachPrimitive(WATERMARK_ID);
+    this._engine.attachPrimitive(new WatermarkPrimitive(WATERMARK_ID, options));
+  }
+
+  /** Remove the watermark, if one is set. */
+  clearWatermark(): void {
+    this._engine.detachPrimitive(WATERMARK_ID);
   }
 
   /** Redo the last undone drawing mutation. Returns true if applied. */
