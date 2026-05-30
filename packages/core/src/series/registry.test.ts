@@ -101,6 +101,26 @@ describe('ChartEngine series dispatch', () => {
     expect(buf.length).toBe(80);
   });
 
+  it('autoscale excludes the +1 render-only bar on the transformed path', () => {
+    registerSeriesType({
+      type: 'test:rangebar',
+      draw: () => {},
+      priceRange: (view, i) => ({ min: view.low[i]!, max: view.high[i]! }),
+    });
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 5; i++) {
+      const high = i === 4 ? 99_999 : 101; // index 4 is the +1 render bar at visibleCount=4
+      buf.append({ o: 100, h: high, l: 99, c: 100, v: 10, t: 1_700_000_000 + i * 60 });
+    }
+    engine.setBuffer(buf);
+    engine.viewport.startIndex = 0;
+    engine.viewport.visibleCount = 4; // visible [0,4); index 4 is off-screen
+    engine.setChartType('test:rangebar');
+    forceRender(engine);
+    // priceMax reflects only the visible bars (~101), not the off-screen spike.
+    expect(engine.viewport.priceMax).toBeLessThan(1000);
+  });
+
   it('Heikin-Ashi now feeds autoscale from the HA view (bug fix)', () => {
     const buf = fillEngine(engine, 80);
     engine.setChartType('heikinashi');

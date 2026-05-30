@@ -1,4 +1,4 @@
-import type { ThemeColors, ChartLayout, Candle } from '../types';
+import type { ThemeColors, ChartLayout, Candle, CandleView } from '../types';
 import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
 import { conflate } from '../data/conflate';
@@ -31,6 +31,28 @@ import type { Primitive, PrimitiveZOrder } from '../primitives/Primitive';
  * interpolate between neighbors so drawings positioned mid-bar still land
  * sensibly on a value-spaced axis.
  */
+/**
+ * Length-capped view over the same backing arrays (zero-copy subarrays).
+ * Used to scan only the visible bars for autoscale while keeping the +1
+ * render-only bar in the view used for drawing. Returns the input unchanged
+ * when no capping is needed.
+ */
+function capView(view: CandleView, count: number): CandleView {
+  if (count >= view.length) return view;
+  const n = Math.max(0, count);
+  return {
+    open: view.open.subarray(0, n),
+    high: view.high.subarray(0, n),
+    low: view.low.subarray(0, n),
+    close: view.close.subarray(0, n),
+    volume: view.volume.subarray(0, n),
+    time: view.time.subarray(0, n),
+    length: n,
+    offset: view.offset,
+    repIndex: view.repIndex ? view.repIndex.subarray(0, n) : undefined,
+  };
+}
+
 function domainValueAt(
   behavior: HorzScaleBehavior,
   buffer: CandleBuffer,
@@ -557,6 +579,12 @@ export class ChartEngine {
 
     const start = Math.max(0, Math.floor(this.viewport.startIndex));
     const end = Math.min(this._buffer.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
+    // Visible end WITHOUT the +1 render-only bar — used for autoscale and the
+    // non-uniform domain edge so an off-screen bar can't skew either.
+    const visibleEnd = Math.min(
+      this._buffer.length,
+      Math.ceil(this.viewport.startIndex + this.viewport.visibleCount),
+    );
     const rawView = this._buffer.sliceView(start, end);
 
     // Non-uniform horizontal geometry (value-based scales, e.g. yield curve):
@@ -569,14 +597,10 @@ export class ChartEngine {
       // Bind to preserve `this`: a custom behavior's domainToCoord01 may read
       // instance options (spacing params, etc.); detaching it would lose them.
       const toCoord = hs.domainToCoord01.bind(hs);
-      // Use the last truly-visible index for the right edge, NOT `end - 1`:
-      // `end` carries a +1 render-only bar, and a distant off-screen domain
-      // value (e.g. a 30Y tenor after a visible 5Y) would otherwise become the
-      // scale's right edge and compress the real visible candles.
-      const visibleEnd = Math.min(
-        buffer.length,
-        Math.ceil(this.viewport.startIndex + this.viewport.visibleCount),
-      );
+      // Right edge = last truly-visible index, NOT `end - 1`: `end` carries a
+      // +1 render-only bar, and a distant off-screen domain value (e.g. a 30Y
+      // tenor after a visible 5Y) would otherwise become the scale's right
+      // edge and compress the real visible candles.
       const lastIdx = Math.max(start, Math.min(buffer.length - 1, visibleEnd - 1));
       const from = hs.fromLogical(start, buffer);
       const to = hs.fromLogical(lastIdx, buffer);
@@ -599,7 +623,10 @@ export class ChartEngine {
       ? series.transformView(this._buffer, start, end)
       : rawView;
     if (series.transformView || series.priceRange) {
-      this.viewport.autoScaleFromView(this._buffer, baseView, series.priceRange);
+      // Scale from the VISIBLE bars only (exclude the +1 render bar), matching
+      // the default path; the +1 bar stays in baseView for drawing.
+      const scaleView = capView(baseView, visibleEnd - start);
+      this.viewport.autoScaleFromView(this._buffer, scaleView, series.priceRange);
     } else {
       this.viewport.autoScale(this._buffer, this._rangePyramid ?? undefined);
     }
