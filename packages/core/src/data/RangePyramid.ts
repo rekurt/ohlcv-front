@@ -15,6 +15,13 @@ export interface PriceVolumeRange {
  */
 const BLOCK = 256;
 
+/** Reallocate a Float64Array to length `n`, preserving existing contents. */
+function growFloat64(arr: Float64Array, n: number): Float64Array<ArrayBuffer> {
+  const out = new Float64Array(n);
+  out.set(arr);
+  return out;
+}
+
 /**
  * Lazily-built coarse range index over a {@link CandleBuffer}, used to
  * accelerate `Viewport.autoScale` once the visible window grows past a few
@@ -111,20 +118,27 @@ export class RangePyramid {
     // intact. That's guaranteed when (a) no structural reset happened since
     // the last build (generation unchanged — rules out a setData reload, even
     // one re-establishing the same length/timestamps) AND (b) the head hasn't
-    // moved (firstTime unchanged — rules out prepend/evictHead). The only
-    // remaining mutations are append/appendBatch/updateLast, all of which
-    // leave [0, _builtLength) untouched, so we can rebuild just the tail.
-    const tailOnly =
+    // moved (firstTime unchanged — rules out prepend/evictHead) AND (c) the
+    // length didn't shrink. The only remaining mutations are append/
+    // appendBatch/updateLast, all of which leave [0, _builtLength) untouched.
+    const appendLike =
       this._builtLength > 0 &&
       generation === this._builtGeneration &&
       firstTime === this._builtFirstTime &&
-      len >= this._builtLength &&
-      blockCount <= this._blockMinLow.length;
+      len >= this._builtLength;
 
-    if (tailOnly) {
-      // Recompute only the last previously-built block (updateLast may have
-      // changed it) plus any blocks the new tail added.
-      const fromBlock = this._builtLength > 0 ? Math.floor((this._builtLength - 1) / BLOCK) : 0;
+    if (appendLike) {
+      // Grow the block arrays in place (preserving already-computed blocks) if
+      // the append crossed a block boundary — never a full O(n) rescan just
+      // because length passed a 256-candle multiple.
+      if (blockCount > this._blockMinLow.length) {
+        this._blockMinLow = growFloat64(this._blockMinLow, blockCount);
+        this._blockMaxHigh = growFloat64(this._blockMaxHigh, blockCount);
+        this._blockMaxVol = growFloat64(this._blockMaxVol, blockCount);
+      }
+      // Recompute the block that held the old last candle (it may have gained
+      // candles or been updated) plus any new blocks.
+      const fromBlock = Math.floor((this._builtLength - 1) / BLOCK);
       for (let b = fromBlock; b < blockCount; b++) this._buildBlock(b, len);
     } else {
       this._blockMinLow = new Float64Array(blockCount);

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RangePyramid, type PriceVolumeRange } from './RangePyramid';
 import { CandleBuffer } from './CandleBuffer';
 import type { Candle } from '../types';
@@ -160,6 +160,27 @@ describe('RangePyramid', () => {
     const out = pyr.rangeOf(0, buf.length);
     expect(out.maxHigh).toBe(88_888);
     expectEqualRange(out, brute(buf, 0, buf.length));
+  });
+
+  it('grows block arrays incrementally when appends cross a block boundary', () => {
+    const buf = fillBuffer(600); // 3 blocks (0,1,2)
+    const pyr = new RangePyramid(buf);
+    pyr.rangeOf(0, 600); // initial full build
+    const spy = vi.spyOn(
+      pyr as unknown as { _buildBlock: (b: number, len: number) => void },
+      '_buildBlock',
+    );
+    // Append 250 candles → length 850 → 4 blocks (crosses into block 3).
+    for (let i = 600; i < 850; i++) {
+      buf.append({ o: 100, h: i === 800 ? 99_999 : 101, l: 99, c: 100, v: 1, t: 1_700_000_000 + i * 60 });
+    }
+    const r = pyr.rangeOf(0, buf.length);
+    expect(r.maxHigh).toBe(99_999); // new tail reflected
+    expectEqualRange(r, brute(buf, 0, buf.length));
+    // Only the old-last block + new blocks rebuilt — NOT a full 4-block rescan.
+    const rebuilt = new Set(spy.mock.calls.map((c) => c[0]));
+    expect(rebuilt.size).toBeLessThan(4);
+    spy.mockRestore();
   });
 
   it('still incrementally tracks a genuine append (prefix intact)', () => {
