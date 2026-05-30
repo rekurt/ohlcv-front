@@ -61,7 +61,9 @@ export class PriceAxisRenderer {
     if (y < layout.chartTop || y > layout.chartBottom) return;
 
     const axisX = layout.chartRight;
-    const text = fmt(price);
+    // In percentage/indexed modes use the transformed label (e.g. "+10.00%")
+    // so the pill matches the grid-tick labels — not a raw price.
+    const text = viewport.formatPriceLabel(price) ?? fmt(price);
     const labelWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
 
     // Background — round the y origin so the rectangle aligns to a

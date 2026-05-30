@@ -226,6 +226,26 @@ export class Viewport {
   }
 
   /**
+   * Format a price value as a Y-axis label in the active scale mode.
+   * Returns a pre-formatted string for `percentage`/`indexedTo100` modes
+   * (e.g. `"+10.00%"`) so all axis pills — grid ticks, current-price pill,
+   * and crosshair pill — show consistent transformed units. Returns `null`
+   * for `linear` and `log` so the caller applies its own price formatter.
+   */
+  formatPriceLabel(price: number): string | null {
+    const mode = this.scaleMode;
+    if (mode === 'percentage') {
+      const t = priceToTransformed(price, 'percentage', this._priceBase);
+      return formatPercent(t);
+    }
+    if (mode === 'indexedTo100') {
+      const t = priceToTransformed(price, 'indexedTo100', this._priceBase);
+      return t.toFixed(2);
+    }
+    return null; // linear/log: let the caller apply its formatter
+  }
+
+  /**
    * Price-axis grid ticks for the current scale mode. Shared by the
    * grid renderer and the price-axis renderer so they never diverge.
    * For linear/log, `label` is null (caller formats the price); for
@@ -285,7 +305,16 @@ export class Viewport {
   /** Zoom around a center X coordinate */
   zoom(factor: number, centerX: number): void {
     const centerIndex = this.xToIndex(centerX);
-    const newWidth = clamp(this.candleWidth * factor, MIN_CANDLE_WIDTH, MAX_CANDLE_WIDTH);
+    // When fitAll has left a sub-pixel candleWidth (< MIN_CANDLE_WIDTH),
+    // clamping every zoom to MIN_CANDLE_WIDTH would make even a zoom-out
+    // gesture (factor > 1) jump massively inward. Use the absolute limits
+    // only in the correct direction: zoom-out can stay sub-pixel, zoom-in
+    // never exceeds MAX_CANDLE_WIDTH.
+    const rawWidth = this.candleWidth * factor;
+    const newWidth =
+      factor >= 1
+        ? Math.min(rawWidth, MAX_CANDLE_WIDTH)          // zoom-out: allow sub-pixel, cap at max
+        : Math.max(rawWidth, MIN_CANDLE_WIDTH);          // zoom-in: enforce visible minimum
 
     if (newWidth === this.candleWidth) return;
     this.candleWidth = newWidth;

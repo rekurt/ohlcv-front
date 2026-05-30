@@ -125,6 +125,23 @@ describe('Viewport.fitAll', () => {
     expect(vp.visibleCount).toBeGreaterThanOrEqual(100_000); // all candles fit
   });
 
+  it('zoom-out after fitAll stays sub-pixel instead of jumping to MIN_CANDLE_WIDTH', () => {
+    // Codex P2: before this fix, clamping newWidth to MIN_CANDLE_WIDTH meant
+    // even a zoom-out (factor > 1) from a sub-pixel candleWidth jumped
+    // massively inward, discarding the fit-all view.
+    const LAYOUT_LOCAL = LAYOUT;
+    vp.setLayout(LAYOUT_LOCAL);
+    vp.fitAll(100_000);
+    const subPixelWidth = vp.candleWidth; // << MIN_CANDLE_WIDTH
+    expect(subPixelWidth).toBeLessThan(2);
+
+    const midX = (LAYOUT_LOCAL.chartLeft + LAYOUT_LOCAL.chartRight) / 2;
+    vp.zoom(1.5, midX); // zoom-out: factor > 1
+    // Should grow from the sub-pixel base, not jump to 2px.
+    expect(vp.candleWidth).toBeGreaterThan(subPixelWidth);
+    expect(vp.candleWidth).toBeLessThan(2); // still sub-pixel (1.5 × sub-pixel is still sub-pixel)
+  });
+
   it('clamps candleWidth to MAX_CANDLE_WIDTH for very small buffers', () => {
     vp.fitAll(3);
     expect(vp.candleWidth).toBeLessThanOrEqual(30); // MAX_CANDLE_WIDTH

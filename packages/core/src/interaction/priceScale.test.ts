@@ -235,6 +235,60 @@ describe('Viewport percentage / indexed scale', () => {
   });
 });
 
+describe('Viewport.formatPriceLabel', () => {
+  let vp: Viewport;
+
+  beforeEach(() => {
+    vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    vp.priceMin = 90;
+    vp.priceMax = 110;
+    // Set a percentage base so the transform has a real anchor.
+    const buf = fillBuffer(50, () => 100);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+  });
+
+  it('returns null for linear mode (caller formats)', () => {
+    vp.setScaleMode('linear');
+    expect(vp.formatPriceLabel(105)).toBeNull();
+  });
+
+  it('returns null for log mode (caller formats)', () => {
+    vp.setScaleMode('log');
+    expect(vp.formatPriceLabel(105)).toBeNull();
+  });
+
+  it('returns signed-% string for percentage mode', () => {
+    vp.setScaleMode('percentage');
+    // Re-autoscale so base is derived in the correct mode (base = 100).
+    const buf = fillBuffer(50, () => 100);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    // base = 100, price = 110 → +10.00%
+    expect(vp.formatPriceLabel(110)).toBe('+10.00%');
+    expect(vp.formatPriceLabel(90)).toBe('-10.00%');
+    expect(vp.formatPriceLabel(100)).toBe('0.00%');
+  });
+
+  it('returns decimal string for indexedTo100 mode', () => {
+    vp.setScaleMode('indexedTo100');
+    const buf = fillBuffer(50, () => 100);
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    expect(vp.formatPriceLabel(110)).toBe('110.00'); // 100 * 110/100 = 110
+    expect(vp.formatPriceLabel(50)).toBe('50.00');
+  });
+
+  it('is consistent with gridTick labels at the same price', () => {
+    vp.setScaleMode('percentage');
+    const ticks = vp.gridTicks(6);
+    for (const tick of ticks) {
+      expect(vp.formatPriceLabel(tick.price)).toBe(tick.label);
+    }
+  });
+});
+
 describe('Viewport.setScaleMode', () => {
   let vp: Viewport;
 
