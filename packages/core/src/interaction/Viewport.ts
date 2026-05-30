@@ -396,19 +396,28 @@ export class Viewport {
       // Scan visible candles for price extrema, skipping NaN/±Infinity
       // entries so one corrupt candle can't poison the whole range.
       const view = buffer.sliceView(start, end);
+      let minPositive = Infinity; // log mode: smallest positive low/high seen
       for (let i = 0; i < view.length; i++) {
         const lo = view.low[i]!;
         const hi = view.high[i]!;
         const vol = view.volume[i]!;
         if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
         if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
+        if (isLog) {
+          if (Number.isFinite(lo) && lo > 0 && lo < minPositive) minPositive = lo;
+          if (Number.isFinite(hi) && hi > 0 && hi < minPositive) minPositive = hi;
+        }
         if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
       }
+      // Log mode: the axis minimum is the smallest positive price in the
+      // window. Even if every low is <= 0, a positive high/body still has a
+      // position, so fit to it instead of bailing out and freezing the range.
+      if (isLog && Number.isFinite(minPositive)) minPrice = minPositive;
     }
 
-    // Every candle in the window was NaN/Infinity (or non-positive in
-    // log mode). Keep the previous range (don't overwrite with Infinity
-    // sentinels) — the chart will render empty space but won't crash.
+    // Every candle in the window was NaN/Infinity (or, in log mode, had no
+    // positive price at all). Keep the previous range (don't overwrite with
+    // Infinity sentinels) — the chart renders empty space but won't crash.
     if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) {
       return;
     }
@@ -501,6 +510,7 @@ export class Viewport {
     let minPrice = Infinity;
     let maxPrice = -Infinity;
     let maxVol = 0;
+    let minPositive = Infinity; // log mode: smallest positive low/high seen
     for (let i = 0; i < view.length; i++) {
       let lo: number;
       let hi: number;
@@ -515,8 +525,14 @@ export class Viewport {
       const vol = view.volume[i]!;
       if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
       if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
+      if (isLog) {
+        if (Number.isFinite(lo) && lo > 0 && lo < minPositive) minPositive = lo;
+        if (Number.isFinite(hi) && hi > 0 && hi < minPositive) minPositive = hi;
+      }
       if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
     }
+    // Log mode: fit to the smallest positive price even if every low is <= 0.
+    if (isLog && Number.isFinite(minPositive)) minPrice = minPositive;
 
     if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) return;
 

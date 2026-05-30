@@ -151,6 +151,20 @@ describe('Viewport log scale', () => {
     }
   });
 
+  it('autoScale fits positive highs even when every low is <= 0', () => {
+    // All lows non-positive (bad/zero-low ticks) but highs positive: must fit
+    // the visible positive data, not freeze on the previous range.
+    const buf = new CandleBuffer();
+    buf.append({ o: 5, h: 20, l: 0, c: 10, v: 1, t: 1 }); // low 0
+    buf.append({ o: 10, h: 50, l: -3, c: 40, v: 1, t: 2 }); // low negative
+    buf.append({ o: 40, h: 80, l: 0, c: 60, v: 1, t: 3 });
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    expect(vp.priceMin).toBeGreaterThan(0);
+    expect(vp.priceMax).toBeGreaterThan(vp.priceMin);
+    expect(vp.priceMax).toBeGreaterThanOrEqual(50); // fits the positive highs
+  });
+
   it('autoScale skips non-positive lows and keeps priceMin > 0', () => {
     const buf = new CandleBuffer();
     buf.append({ o: 50, h: 60, l: 0, c: 55, v: 1, t: 1 }); // low = 0
