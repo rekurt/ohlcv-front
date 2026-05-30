@@ -305,16 +305,18 @@ export class Viewport {
   /** Zoom around a center X coordinate */
   zoom(factor: number, centerX: number): void {
     const centerIndex = this.xToIndex(centerX);
-    // When fitAll has left a sub-pixel candleWidth (< MIN_CANDLE_WIDTH),
-    // clamping every zoom to MIN_CANDLE_WIDTH would make even a zoom-out
-    // gesture (factor > 1) jump massively inward. Use the absolute limits
-    // only in the correct direction: zoom-out can stay sub-pixel, zoom-in
-    // never exceeds MAX_CANDLE_WIDTH.
-    const rawWidth = this.candleWidth * factor;
-    const newWidth =
-      factor >= 1
-        ? Math.min(rawWidth, MAX_CANDLE_WIDTH)          // zoom-out: allow sub-pixel, cap at max
-        : Math.max(rawWidth, MIN_CANDLE_WIDTH);          // zoom-in: enforce visible minimum
+    // Always cap at MAX_CANDLE_WIDTH. Apply the MIN_CANDLE_WIDTH floor ONLY
+    // when the current width is already >= MIN (a normal interactive view) —
+    // never when we're in a sub-pixel `fitAll` state. Otherwise any zoom,
+    // in or out, would snap a 100k-bar fit-all view back up to 2px,
+    // discarding it. In sub-pixel state the width then flows smoothly both
+    // ways (zoom-in can cross MIN into normal range; zoom-out stays
+    // sub-pixel); from a normal view, interactive zoom-out still floors at
+    // MIN as before.
+    let newWidth = Math.min(this.candleWidth * factor, MAX_CANDLE_WIDTH);
+    if (this.candleWidth >= MIN_CANDLE_WIDTH) {
+      newWidth = Math.max(newWidth, MIN_CANDLE_WIDTH);
+    }
 
     if (newWidth === this.candleWidth) return;
     this.candleWidth = newWidth;
