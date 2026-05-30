@@ -325,4 +325,13 @@ describe('ChartEngine with a non-uniform horizontal scale', () => {
     const W = LAYOUT.chartRight - LAYOUT.chartLeft;
     expect(vp.indexToX(1)).toBeCloseTo(LAYOUT.chartLeft + (1 / 6) * W, 4);
   });
+
+  it('syncs the chart resolution into a supplied TimeScaleBehavior', () => {
+    const tsb = new TimeScaleBehavior(); // default '' resolution
+    engine.setResolution('1D');
+    engine.setHorzScale(tsb);
+    expect(tsb.resolution).toBe('1D'); // synced on install
+    engine.setResolution('1W');
+    expect(tsb.resolution).toBe('1W'); // synced on later resolution change
+  });
 });

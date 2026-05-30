@@ -83,11 +83,28 @@ export function niceLogGridValues(min: number, max: number, maxTicks = 6): numbe
     return niceGridValues(Math.max(min, LOG_AXIS_FLOOR), Math.max(max, LOG_AXIS_FLOOR), maxTicks);
   }
 
-  const values: number[] = [];
   const loExp = Math.floor(Math.log10(min));
   const hiExp = Math.ceil(Math.log10(max));
-  const mantissas = [1, 2, 5];
-  for (let exp = loExp; exp <= hiExp; exp++) {
+  const decades = hiExp - loExp;
+
+  // Thin the tick density to roughly `maxTicks`, so a wide log range doesn't
+  // emit dozens of overlapping lines/labels:
+  //   - narrow span → full 1/2/5 per decade
+  //   - medium span → one tick per decade (powers of 10)
+  //   - very wide span → one tick every N decades
+  let mantissas: number[];
+  let decadeStep = 1;
+  if (decades * 3 <= maxTicks) {
+    mantissas = [1, 2, 5];
+  } else if (decades <= maxTicks) {
+    mantissas = [1];
+  } else {
+    mantissas = [1];
+    decadeStep = Math.ceil(decades / maxTicks);
+  }
+
+  const values: number[] = [];
+  for (let exp = loExp; exp <= hiExp; exp += decadeStep) {
     const decade = Math.pow(10, exp);
     for (const m of mantissas) {
       const v = m * decade;

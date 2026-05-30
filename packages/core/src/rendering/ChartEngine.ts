@@ -230,14 +230,23 @@ export class ChartEngine {
   setResolution(resolution: string): void {
     this._resolution = resolution;
     this._timeScale.setResolution(resolution);
+    // Keep an active, caller-supplied time scale in sync too.
+    if (this._horzScale instanceof TimeScaleBehavior) {
+      this._horzScale.setResolution(resolution);
+    }
   }
 
   /**
    * Replace the horizontal-scale behavior (time / price / custom). Controls
    * how the X axis is labeled. Pass a {@link TimeScaleBehavior} (default),
-   * {@link PriceScaleBehavior}, or a custom one.
+   * {@link PriceScaleBehavior}, or a custom one. A supplied TimeScaleBehavior
+   * inherits the chart's current resolution so daily/weekly charts don't fall
+   * back to intraday HH:mm labels.
    */
   setHorzScale(behavior: HorzScaleBehavior): void {
+    if (behavior instanceof TimeScaleBehavior) {
+      behavior.setResolution(this._resolution);
+    }
     this._horzScale = behavior;
     this.requestRender();
   }

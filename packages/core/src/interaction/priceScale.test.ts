@@ -77,8 +77,21 @@ describe('priceScale pure transforms', () => {
 });
 
 describe('niceLogGridValues', () => {
-  it('emits 1/2/5 × 10^n decade ticks across the range', () => {
-    expect(niceLogGridValues(1, 1000, 6)).toEqual([1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]);
+  it('emits full 1/2/5 × 10^n ticks for a narrow span within the tick budget', () => {
+    // 100..1000 is one decade → 3*1 <= 6, so the full 1/2/5 set fits.
+    expect(niceLogGridValues(100, 1000, 6)).toEqual([100, 200, 500, 1000]);
+  });
+
+  it('thins to powers of 10 for a medium span (respects maxTicks)', () => {
+    // 1..1000 spans 3 decades → 3*3=9 > 6, so one tick per decade.
+    expect(niceLogGridValues(1, 1000, 6)).toEqual([1, 10, 100, 1000]);
+  });
+
+  it('caps tick count for a very wide range', () => {
+    // 1..1e8 spans 8 decades → stride decades so we stay near maxTicks.
+    const ticks = niceLogGridValues(1, 100_000_000, 6);
+    expect(ticks.length).toBeLessThanOrEqual(6);
+    expect(ticks.length).toBeGreaterThanOrEqual(3);
   });
 
   it('falls back to linear nice values for a tight intra-decade range', () => {
