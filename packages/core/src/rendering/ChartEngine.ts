@@ -557,7 +557,9 @@ export class ChartEngine {
     const hs = this._horzScale;
     if (!hs.uniform && hs.domainToCoord01) {
       const buffer = this._buffer;
-      const toCoord = hs.domainToCoord01;
+      // Bind to preserve `this`: a custom behavior's domainToCoord01 may read
+      // instance options (spacing params, etc.); detaching it would lose them.
+      const toCoord = hs.domainToCoord01.bind(hs);
       const lastIdx = Math.max(start, Math.min(buffer.length - 1, end - 1));
       const from = hs.fromLogical(start, buffer);
       const to = hs.fromLogical(lastIdx, buffer);

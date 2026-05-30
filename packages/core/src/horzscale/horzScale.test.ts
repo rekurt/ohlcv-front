@@ -14,6 +14,7 @@ import { CandleBuffer } from '../data/CandleBuffer';
 import { computeLayout, formatTime, formatPrice } from '../utils';
 import { DARK_THEME } from '../constants';
 import { installCanvasStub } from '../test-utils/canvasStub';
+import type { HorzScaleBehavior } from './HorzScaleBehavior';
 import type { Candle, ChartLayout } from '../types';
 
 const LAYOUT: ChartLayout = computeLayout(1000, 500);
@@ -288,5 +289,40 @@ describe('ChartEngine with a non-uniform horizontal scale', () => {
     // not clamped onto chartLeft/chartRight.
     expect(vp.indexToX(0)).toBeLessThan(LAYOUT.chartLeft);
     expect(vp.indexToX(9)).toBeGreaterThan(LAYOUT.chartRight);
+  });
+
+  it('preserves `this` when calling a custom behavior domainToCoord01', () => {
+    // A class/object behavior whose domainToCoord01 reads instance state must
+    // keep its receiver — detaching the method would make `this._k` undefined.
+    const behavior: HorzScaleBehavior = {
+      uniform: false,
+      _k: 0.5,
+      toLogical: () => 0,
+      fromLogical(logical: number, buffer) {
+        const c = buffer.candleAt(Math.round(logical));
+        return c ? c.t : null;
+      },
+      formatValue: (v: number) => String(v),
+      domainToCoord01(value: number, from: number, to: number): number {
+        return ((value - from) / (to - from)) * (this as { _k: number })._k;
+      },
+    } as HorzScaleBehavior & { _k: number };
+
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 4; i++) {
+      const c = 100 + i;
+      buf.append({ o: c, h: c + 1, l: c - 1, c, v: 10, t: [10, 20, 30, 40][i]! });
+    }
+    engine.setBuffer(buf);
+    engine.viewport.startIndex = 0;
+    engine.viewport.visibleCount = 4;
+    engine.setHorzScale(behavior);
+    expect(() => (engine as unknown as { _render: () => void })._render()).not.toThrow();
+
+    // from=10, to=40, _k=0.5 → coord01(t=25) = ((25-10)/30)*0.5 = 0.25.
+    // Index 1 has t=20 → coord01 = ((20-10)/30)*0.5 = 1/6 → x = left + W/6.
+    const vp = engine.viewport;
+    const W = LAYOUT.chartRight - LAYOUT.chartLeft;
+    expect(vp.indexToX(1)).toBeCloseTo(LAYOUT.chartLeft + (1 / 6) * W, 4);
   });
 });
