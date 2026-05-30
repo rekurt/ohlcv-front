@@ -32,11 +32,17 @@ export class YieldCurveBehavior implements HorzScaleBehavior<number> {
     return this._format(value);
   }
 
-  /** Linear-proportional position of `value` across the visible [from, to]. */
+  /**
+   * Linear-proportional position of `value` across the visible [from, to].
+   * Deliberately NOT clamped to [0, 1]: off-screen domain values must map
+   * outside the chart (coord < 0 or > 1) so `indexToX` returns truly
+   * off-screen coordinates and the renderers' `x < chartLeft || x > chartRight`
+   * culling hides off-screen candles/markers instead of piling them on the
+   * edges.
+   */
   domainToCoord01(value: number, from: number, to: number): number {
     const span = to - from;
     if (span === 0) return 0;
-    const t = (value - from) / span;
-    return t < 0 ? 0 : t > 1 ? 1 : t;
+    return (value - from) / span;
   }
 }

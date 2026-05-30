@@ -151,13 +151,15 @@ describe('YieldCurveBehavior (non-uniform)', () => {
     expect(createHorzScaleBehavior('yield-curve')).toBeInstanceOf(YieldCurveBehavior);
   });
 
-  it('domainToCoord01 positions proportionally and clamps', () => {
+  it('domainToCoord01 positions proportionally, unclamped for off-screen values', () => {
     const b = new YieldCurveBehavior();
     expect(b.domainToCoord01(0, 0, 100)).toBe(0);
     expect(b.domainToCoord01(100, 0, 100)).toBe(1);
     expect(b.domainToCoord01(25, 0, 100)).toBeCloseTo(0.25, 9);
-    expect(b.domainToCoord01(-10, 0, 100)).toBe(0); // clamped
-    expect(b.domainToCoord01(200, 0, 100)).toBe(1); // clamped
+    // Off-screen values must escape [0,1] so renderers' edge-culling hides
+    // them instead of piling them on chartLeft/chartRight.
+    expect(b.domainToCoord01(-10, 0, 100)).toBeCloseTo(-0.1, 9);
+    expect(b.domainToCoord01(200, 0, 100)).toBeCloseTo(2, 9);
     expect(b.domainToCoord01(5, 10, 10)).toBe(0); // zero span guard
   });
 
@@ -267,5 +269,24 @@ describe('ChartEngine with a non-uniform horizontal scale', () => {
     const vp = engine.viewport;
     const expected = LAYOUT.chartLeft + (3 - vp.startIndex) * vp.candleStep + vp.candleWidth / 2;
     expect(vp.indexToX(3)).toBeCloseTo(expected, 6);
+  });
+
+  it('maps off-screen candles outside the chart so renderers cull them', () => {
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 10; i++) {
+      const c = 100 + i;
+      buf.append({ o: c, h: c + 1, l: c - 1, c, v: 10, t: i + 1 }); // tenors 1..10
+    }
+    engine.setBuffer(buf);
+    engine.viewport.startIndex = 2;
+    engine.viewport.visibleCount = 3; // visible window ≈ [2, 6)
+    engine.setHorzScale(new YieldCurveBehavior());
+    (engine as unknown as { _render: () => void })._render();
+
+    const vp = engine.viewport;
+    // Candles before/after the visible domain window must land off-screen,
+    // not clamped onto chartLeft/chartRight.
+    expect(vp.indexToX(0)).toBeLessThan(LAYOUT.chartLeft);
+    expect(vp.indexToX(9)).toBeGreaterThan(LAYOUT.chartRight);
   });
 });
