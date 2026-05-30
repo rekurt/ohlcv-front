@@ -212,6 +212,19 @@ describe('Viewport percentage / indexed scale', () => {
     expect(baseOf(vp)).toBe(frozen);
   });
 
+  it('skips a zero first close when choosing the percentage base', () => {
+    // A bad tick with close 0 (which validateCandle allows) must not become
+    // the base — base = 0 would flatten the whole percentage transform.
+    vp.setScaleMode('percentage');
+    const buf = new CandleBuffer();
+    buf.append({ o: 0, h: 1, l: -1, c: 0, v: 10, t: 1 }); // bad tick: close 0
+    buf.append({ o: 100, h: 101, l: 99, c: 105, v: 10, t: 2 }); // first real close
+    buf.append({ o: 105, h: 106, l: 104, c: 110, v: 10, t: 3 });
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    expect(baseOf(vp)).toBe(105); // first non-zero close, not 0
+  });
+
   it('percentage gridTicks carry signed-% labels and round-trip y', () => {
     vp.setScaleMode('percentage');
     const buf = fillBuffer(50, (i) => 100 + i);

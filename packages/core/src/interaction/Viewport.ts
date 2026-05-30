@@ -421,7 +421,10 @@ export class Viewport {
       const probe = buffer.sliceView(start, Math.min(end, start + 256));
       for (let i = 0; i < probe.length; i++) {
         const c = probe.close[i]!;
-        if (Number.isFinite(c)) {
+        // Skip zero (and non-finite): base = 0 would collapse the percentage
+        // transform to a flat range for every price. Keep the previous base
+        // if no non-zero close is found in the probe window.
+        if (Number.isFinite(c) && c !== 0) {
           this._priceBase = c;
           break;
         }
@@ -517,7 +520,9 @@ export class Viewport {
     if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
       for (let i = 0; i < view.length; i++) {
         const c = view.close[i]!;
-        if (Number.isFinite(c)) {
+        // Skip zero (and non-finite) — base = 0 collapses the percentage
+        // transform; keep the previous base if no non-zero close is found.
+        if (Number.isFinite(c) && c !== 0) {
           this._priceBase = c;
           break;
         }
