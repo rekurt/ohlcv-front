@@ -90,9 +90,12 @@ export class CrosshairController {
 
     const candle = this._buffer.candleAt(index);
     const snappedX = viewport.indexToX(index);
-    // Label via the active horizontal-scale behavior so the crosshair shows
-    // the right domain value (time, strike, …) — consistent with the axis.
-    const timeLabel = candle ? this._engine.horzScale.formatValue(candle.t) : '';
+    // Derive the X value via the behavior's fromLogical (exactly as the axis
+    // does), not from candle.t directly — so a custom domain whose value
+    // differs from the raw timestamp stays consistent between crosshair,
+    // hover, and the rendered X axis.
+    const horzValue = this._engine.horzScale.fromLogical(index, this._buffer);
+    const timeLabel = horzValue !== null ? this._engine.horzScale.formatValue(horzValue) : '';
 
     this._engine.setCrosshair(snappedX, y, index, candle, timeLabel);
 
