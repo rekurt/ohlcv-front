@@ -16,6 +16,8 @@ import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
 import { getSeriesType, DEFAULT_SERIES } from '../series/registry';
+import { TimeScaleBehavior } from '../horzscale/TimeScaleBehavior';
+import type { HorzScaleBehavior } from '../horzscale/HorzScaleBehavior';
 import { MarkerRenderer } from '../markers/MarkerRenderer';
 import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
@@ -52,6 +54,10 @@ export class ChartEngine {
   private _priceFormat?: (price: number) => string;
   private _volumeFormat?: (volume: number) => string;
   private _chartType: string = 'candles';
+
+  /** Horizontal-domain behavior (axis labels). Defaults to time. */
+  private _timeScale = new TimeScaleBehavior();
+  private _horzScale: HorzScaleBehavior = this._timeScale;
 
   /** User-provided indicators; computed via `computeCached` on dirty render. */
   private _indicators: Indicator[] = [];
@@ -202,6 +208,22 @@ export class ChartEngine {
 
   setResolution(resolution: string): void {
     this._resolution = resolution;
+    this._timeScale.setResolution(resolution);
+  }
+
+  /**
+   * Replace the horizontal-scale behavior (time / price / custom). Controls
+   * how the X axis is labeled. Pass a {@link TimeScaleBehavior} (default),
+   * {@link PriceScaleBehavior}, or a custom one.
+   */
+  setHorzScale(behavior: HorzScaleBehavior): void {
+    this._horzScale = behavior;
+    this.requestRender();
+  }
+
+  /** The active horizontal-scale behavior. */
+  get horzScale(): HorzScaleBehavior {
+    return this._horzScale;
   }
 
   setPriceFormat(fn?: (price: number) => string): void {
@@ -619,7 +641,7 @@ export class ChartEngine {
         }
       }
 
-      this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._resolution, this._theme);
+      this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._horzScale, this._theme);
     }
 
     if (this._uiDirty) {

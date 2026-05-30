@@ -135,6 +135,16 @@ export type { PriceLineOptions, PriceLineHandle } from './primitives/PriceLinePr
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';
 export { toRenko } from './transforms/renko';
 
+// Horizontal-scale behaviors (X-axis domain abstraction)
+export type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
+export { TimeScaleBehavior } from './horzscale/TimeScaleBehavior';
+export { PriceScaleBehavior } from './horzscale/PriceScaleBehavior';
+export {
+  registerHorzScaleBehavior,
+  createHorzScaleBehavior,
+  listHorzScaleBehaviors,
+} from './horzscale/registry';
+
 // Interaction
 export { Viewport } from './interaction/Viewport';
 export type { GridTick } from './interaction/Viewport';

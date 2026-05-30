@@ -1,5 +1,6 @@
 import type { Candle, ChartConfig, ChartType, ThemeColors, ThemeMode, HoverInfo } from './types';
 import type { PriceScaleMode } from './interaction/priceScale';
+import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 import { resolveTheme } from './utils';
 import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
@@ -151,6 +152,7 @@ export class OHLCVChart {
     if (config.volumeFormat) this._engine.setVolumeFormat(config.volumeFormat);
     if (config.chartType) this._engine.setChartType(config.chartType);
     if (config.priceScaleMode) this._engine.viewport.setScaleMode(config.priceScaleMode);
+    if (config.horzScale) this._engine.setHorzScale(config.horzScale);
     config.container.style.backgroundColor = theme.background;
 
     // Auto-managed drawing layer. Hosts that need a custom layer can
@@ -451,6 +453,15 @@ export class OHLCVChart {
   /** Read the current price-axis scale mode. */
   getPriceScaleMode(): PriceScaleMode {
     return this._engine.viewport.scaleMode;
+  }
+
+  /**
+   * Replace the horizontal-scale behavior, controlling how the X axis is
+   * labeled — time (default), price/strike (options charts), or custom.
+   * Note: the crosshair X-label still uses the time formatter for now.
+   */
+  setHorzScale(behavior: HorzScaleBehavior): void {
+    this._engine.setHorzScale(behavior);
   }
 
   /**

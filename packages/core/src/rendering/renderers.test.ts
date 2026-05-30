@@ -4,6 +4,7 @@ import { CandleRenderer } from './CandleRenderer';
 import { VolumeRenderer } from './VolumeRenderer';
 import { PriceAxisRenderer } from './PriceAxis';
 import { TimeAxisRenderer } from './TimeAxis';
+import { TimeScaleBehavior } from '../horzscale/TimeScaleBehavior';
 import { CrosshairRenderer, type CrosshairState } from './CrosshairRenderer';
 import { PriceLineRenderer } from './PriceLineRenderer';
 import { LegendRenderer } from './LegendRenderer';
@@ -130,7 +131,7 @@ describe('renderers — smoke (empty / 1 / 1000)', () => {
       it('TimeAxisRenderer does not throw', () => {
         const { viewport } = buildViewportWith(c.buffer);
         const r = new TimeAxisRenderer();
-        expect(() => r.render(ctx, LAYOUT, viewport, c.buffer, '1H', DARK_THEME)).not.toThrow();
+        expect(() => r.render(ctx, LAYOUT, viewport, c.buffer, new TimeScaleBehavior('1H'), DARK_THEME)).not.toThrow();
       });
 
       it('CrosshairRenderer hidden does not throw', () => {

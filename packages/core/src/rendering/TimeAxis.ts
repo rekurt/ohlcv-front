@@ -1,7 +1,7 @@
 import type { ThemeColors, ChartLayout } from '../types';
-import { formatTime } from '../utils';
 import type { Viewport } from '../interaction/Viewport';
 import type { CandleBuffer } from '../data/CandleBuffer';
+import type { HorzScaleBehavior } from '../horzscale/HorzScaleBehavior';
 import { AXIS_FONT, TIME_AXIS_LABEL_GAP } from '../constants';
 
 export class TimeAxisRenderer {
@@ -10,7 +10,7 @@ export class TimeAxisRenderer {
     layout: ChartLayout,
     viewport: Viewport,
     buffer: CandleBuffer,
-    resolution: string,
+    horzScale: HorzScaleBehavior,
     theme: ThemeColors,
   ): void {
     // The time axis sits below any sub-pane indicator bands. Use
@@ -40,10 +40,12 @@ export class TimeAxisRenderer {
       const x = viewport.indexToX(i);
       if (x < layout.chartLeft || x > layout.chartRight) continue;
 
-      const candle = buffer.candleAt(i);
-      if (!candle) continue;
+      // The horizontal-scale behavior maps the index to its domain value
+      // (time, strike, …) and formats it. Null means no candle here → skip.
+      const value = horzScale.fromLogical(i, buffer);
+      if (value === null) continue;
 
-      const label = formatTime(candle.t, resolution);
+      const label = horzScale.formatValue(value);
       ctx.fillText(label, Math.round(x), Math.round(axisY + TIME_AXIS_LABEL_GAP));
     }
   }

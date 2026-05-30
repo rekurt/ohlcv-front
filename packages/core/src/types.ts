@@ -1,5 +1,6 @@
 import type { CandleBuffer } from './data/CandleBuffer';
 import type { PriceScaleMode } from './interaction/priceScale';
+import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 
 /**
  * A single OHLCV candle. Times are Unix seconds (not milliseconds).
@@ -199,6 +200,12 @@ export interface ChartConfig {
   chartType?: ChartType;
   /** Initial price-axis scale mode. Default: `'linear'`. */
   priceScaleMode?: PriceScaleMode;
+  /**
+   * Horizontal-domain behavior controlling X-axis labels (time / price /
+   * custom). Default: time. Use `PriceScaleBehavior` for options-style
+   * numeric (strike) axes.
+   */
+  horzScale?: HorzScaleBehavior;
   onCandleClick?: (candle: Candle, index: number) => void;
   onVisibleRangeChange?: (from: number, to: number) => void;
   /** Called on every crosshair move with the currently-snapped candle. */
