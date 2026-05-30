@@ -28,12 +28,19 @@ export interface Primitive {
   readonly id: string;
   /** Paint tier. */
   zOrder: PrimitiveZOrder;
-  /** Paint the primitive. Should self-clip if it must stay inside the chart. */
+  /**
+   * Paint the primitive. Should self-clip if it must stay inside the chart.
+   * `priceFormat` is the chart's host-supplied price formatter (from
+   * `ChartConfig.priceFormat`), so primitives that render a price label
+   * (e.g. price lines) match the axis/crosshair formatting instead of
+   * falling back to the library default.
+   */
   draw(
     ctx: CanvasRenderingContext2D,
     layout: ChartLayout,
     viewport: Viewport,
     theme: ThemeColors,
+    priceFormat?: (price: number) => string,
   ): void;
   /**
    * Optional pointer hit-test in CSS pixels. Used to route drags (e.g. a

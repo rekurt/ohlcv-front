@@ -81,6 +81,7 @@ export class PriceLinePrimitive implements Primitive {
     layout: ChartLayout,
     viewport: Viewport,
     theme: ThemeColors,
+    priceFormat?: (price: number) => string,
   ): void {
     const y = viewport.priceToY(this._price);
     if (y < layout.chartTop || y > layout.chartBottom) return;
@@ -96,11 +97,14 @@ export class PriceLinePrimitive implements Primitive {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Right-axis label pill: an explicit title wins; otherwise use the
-    // viewport's scale-aware label (e.g. "+10.00%" in percentage mode) so the
-    // pill matches the axis, falling back to a raw price for linear/log.
+    // Right-axis label pill: an explicit title wins; otherwise the viewport's
+    // scale-aware label (e.g. "+10.00%" in percentage mode); else the chart's
+    // host price formatter (so currency/precision matches the axis), falling
+    // back to the library default only when none was supplied.
     const label =
-      this._options.title ?? viewport.formatPriceLabel(this._price) ?? formatPrice(this._price);
+      this._options.title ??
+      viewport.formatPriceLabel(this._price) ??
+      (priceFormat ?? formatPrice)(this._price);
     const pillWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
     ctx.fillStyle = color;
     ctx.fillRect(

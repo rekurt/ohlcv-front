@@ -67,6 +67,13 @@ describe('PriceLinePrimitive', () => {
     expect(ctx.__ops.find((o) => o.name === 'fillText')?.args?.[0]).toBe('TP');
   });
 
+  it('uses the supplied chart price formatter for the default linear pill', () => {
+    const ctx = makeCtx();
+    const fmt = (p: number) => `$${p.toFixed(0)}`;
+    new PriceLinePrimitive('p', { price: 150 }).draw(ctx, LAYOUT, vpWith(100, 200), DARK_THEME, fmt);
+    expect(ctx.__ops.find((o) => o.name === 'fillText')?.args?.[0]).toBe('$150');
+  });
+
   it('uses the scale-aware label for the default pill in percentage mode', () => {
     // Build a percentage viewport with base = 100 so 100.5 → +0.50%.
     const buf = new CandleBuffer();
@@ -262,5 +269,25 @@ describe('OHLCVChart.createPriceLine', () => {
 
     expect(line.price).not.toBe(price);
     expect(line.price).toBeLessThan(price); // dragged down → lower price (linear)
+  });
+
+  it('threads the chart price formatter into primitive draw', () => {
+    const c = document.createElement('div');
+    c.getBoundingClientRect = () =>
+      ({ width: 1000, height: 500, x: 0, y: 0, top: 0, left: 0, right: 1000, bottom: 500, toJSON() {} }) as DOMRect;
+    document.body.appendChild(c);
+    const fmt = (p: number) => `#${p.toFixed(0)}`;
+    const chart2 = new OHLCVChart({ container: c, symbol: 'X', resolution: '1H', priceFormat: fmt });
+    try {
+      const line = new PriceLinePrimitive('ext', { price: 120 });
+      const spy = vi.spyOn(line, 'draw');
+      chart2.attachPrimitive(line);
+      (chart2 as unknown as { _engine: { _render: () => void } })._engine._render();
+      expect(spy).toHaveBeenCalled();
+      expect(spy.mock.calls[0]![4]).toBe(fmt); // 5th draw arg = chart price formatter
+    } finally {
+      chart2.destroy();
+      c.remove();
+    }
   });
 });

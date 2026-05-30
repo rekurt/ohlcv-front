@@ -432,7 +432,8 @@ export class ChartEngine {
 
   private _drawPrimitives(ctx: CanvasRenderingContext2D, tier: PrimitiveZOrder): void {
     for (const p of this._primitives) {
-      if (p.zOrder === tier) p.draw(ctx, this._layout, this.viewport, this._theme);
+      // Pass the host price formatter so price-line pills match the axis.
+      if (p.zOrder === tier) p.draw(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
     }
   }
 
