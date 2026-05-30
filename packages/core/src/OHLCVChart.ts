@@ -691,6 +691,19 @@ export class OHLCVChart {
   setWatermark(options: WatermarkOptions): void {
     this._engine.detachPrimitive(WATERMARK_ID);
     this._engine.attachPrimitive(new WatermarkPrimitive(WATERMARK_ID, options));
+    // An image passed before it finished loading draws nothing on the single
+    // attach-render, and nothing later marks the chart dirty — so repaint once
+    // it loads, otherwise a static chart never shows the image watermark.
+    const img = options.image as HTMLImageElement | undefined;
+    if (img && typeof img.addEventListener === 'function' && img.complete === false) {
+      img.addEventListener(
+        'load',
+        () => {
+          if (!this._destroyed) this._engine.requestRender();
+        },
+        { once: true },
+      );
+    }
   }
 
   /** Remove the watermark, if one is set. */

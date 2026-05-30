@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { WatermarkPrimitive } from './WatermarkPrimitive';
+import { OHLCVChart } from '../OHLCVChart';
 import { Viewport } from '../interaction/Viewport';
 import { computeLayout } from '../utils';
 import { DARK_THEME } from '../constants';
+import { installCanvasStub } from '../test-utils/canvasStub';
 import type { ChartLayout } from '../types';
 
 const LAYOUT: ChartLayout = computeLayout(1000, 500);
@@ -113,5 +115,59 @@ describe('WatermarkPrimitive', () => {
     wm.draw(ctx, LAYOUT, vp, DARK_THEME);
     const fillText = ctx.__ops.find((o) => o.name === 'fillText');
     expect(fillText?.args?.[0]).toBe('NEW');
+  });
+});
+
+describe('OHLCVChart.setWatermark image loading', () => {
+  let container: HTMLDivElement;
+  let chart: OHLCVChart;
+
+  beforeAll(() => installCanvasStub());
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 500, x: 0, y: 0, top: 0, left: 0, right: 1000, bottom: 500, toJSON() {} }) as DOMRect;
+    document.body.appendChild(container);
+    chart = new OHLCVChart({ container, symbol: 'X', resolution: '1H' });
+  });
+
+  afterEach(() => {
+    chart.destroy();
+    container.remove();
+  });
+
+  it('repaints once an incomplete image watermark finishes loading', () => {
+    const engine = (chart as unknown as { _engine: { requestRender: () => void } })._engine;
+    const spy = vi.spyOn(engine, 'requestRender');
+    let loadCb: (() => void) | null = null;
+    const img = {
+      complete: false,
+      width: 10,
+      height: 10,
+      addEventListener: (type: string, cb: () => void) => {
+        if (type === 'load') loadCb = cb;
+      },
+    } as unknown as CanvasImageSource;
+
+    chart.setWatermark({ image: img });
+    const before = spy.mock.calls.length;
+    expect(loadCb).not.toBeNull();
+    loadCb!();
+    expect(spy.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it('does not attach a load listener for an already-complete image', () => {
+    let attached = false;
+    const img = {
+      complete: true,
+      width: 10,
+      height: 10,
+      addEventListener: () => {
+        attached = true;
+      },
+    } as unknown as CanvasImageSource;
+    chart.setWatermark({ image: img });
+    expect(attached).toBe(false);
   });
 });

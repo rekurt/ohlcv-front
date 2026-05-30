@@ -201,6 +201,15 @@ describe('Viewport non-uniform coordinate mapping', () => {
     expect(vp.xToIndex(LAYOUT.chartLeft + 0.95 * W)).toBe(4);
     expect(vp.xToIndex(LAYOUT.chartLeft)).toBe(0);
   });
+
+  it('snaps the left edge to the first visible index when scrolled (not off-screen)', () => {
+    // startIndex = 2 → indices 0,1 are off-screen. A value-based mapping
+    // clamps their coord01 to 0, which used to tie against index 1 at
+    // chartLeft and report the wrong (off-screen) candle.
+    vp.startIndex = 2;
+    vp.setCoordinateMapping((i) => (i < 2 ? 0 : (i - 2) / (4 - 2))); // visible [2,4]
+    expect(vp.xToIndex(LAYOUT.chartLeft)).toBe(2);
+  });
 });
 
 describe('ChartEngine with a non-uniform horizontal scale', () => {

@@ -147,7 +147,8 @@ export class Viewport {
     if (this._bufferLength <= 0) return 0;
     const chartWidth = this.layout.chartRight - this.layout.chartLeft;
     const target = chartWidth === 0 ? 0 : (x - this.layout.chartLeft) / chartWidth;
-    let lo = Math.max(0, Math.floor(this.startIndex));
+    const loStart = Math.max(0, Math.floor(this.startIndex));
+    let lo = loStart;
     let hi = Math.max(lo, Math.min(this._bufferLength - 1, Math.ceil(this.startIndex + this.visibleCount)));
     // coord01 increases monotonically with index (sorted domain) → binary
     // search for the first index whose coord01 >= target.
@@ -156,8 +157,11 @@ export class Viewport {
       if (fn(mid) < target) lo = mid + 1;
       else hi = mid;
     }
-    // Pick whichever of (lo-1, lo) sits nearer the cursor.
-    if (lo > 0 && Math.abs(fn(lo - 1) - target) <= Math.abs(fn(lo) - target)) return lo - 1;
+    // Pick whichever of (lo-1, lo) sits nearer the cursor — but never below
+    // the first visible index. Otherwise, since a value-based mapping clamps
+    // off-screen domain values to 0, a cursor at chartLeft would tie against
+    // an off-screen candle and snap crosshair/click to the wrong bar.
+    if (lo > loStart && Math.abs(fn(lo - 1) - target) <= Math.abs(fn(lo) - target)) return lo - 1;
     return lo;
   }
 
