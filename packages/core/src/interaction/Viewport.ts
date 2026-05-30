@@ -86,6 +86,14 @@ export class Viewport {
 
   private _bufferLength = 0;
 
+  /**
+   * Non-uniform horizontal mapping: logical index → 0..1 position across the
+   * chart width. Set by the engine for value-based (e.g. yield-curve)
+   * horizontal scales; null for the default uniform index spacing, where
+   * indexToX/xToIndex use the original closed-form arithmetic unchanged.
+   */
+  private _coord01: ((index: number) => number) | null = null;
+
   // --- transformed-extrema cache -------------------------------------
   // priceToY/yToPrice are called thousands of times per frame; cache the
   // transformed min/max and recompute only when an input changed. The
@@ -110,12 +118,47 @@ export class Viewport {
 
   /** Convert buffer index to X pixel coordinate */
   indexToX(index: number): number {
+    if (this._coord01) {
+      return this.layout.chartLeft + this._coord01(index) * (this.layout.chartRight - this.layout.chartLeft);
+    }
     return this.layout.chartLeft + (index - this.startIndex) * this.candleStep + this.candleWidth / 2;
   }
 
   /** Convert X pixel to nearest buffer index */
   xToIndex(x: number): number {
+    if (this._coord01) {
+      return this._coord01ToIndex(x);
+    }
     return Math.round((x - this.layout.chartLeft - this.candleWidth / 2) / this.candleStep + this.startIndex);
+  }
+
+  /**
+   * Install a non-uniform index→0..1 horizontal mapping (value-based scales),
+   * or pass null to restore uniform index spacing. The default is null, so
+   * the standard time chart's geometry is untouched.
+   */
+  setCoordinateMapping(fn: ((index: number) => number) | null): void {
+    this._coord01 = fn;
+  }
+
+  /** Inverse of the non-uniform mapping: nearest index for a pixel X. */
+  private _coord01ToIndex(x: number): number {
+    const fn = this._coord01!;
+    if (this._bufferLength <= 0) return 0;
+    const chartWidth = this.layout.chartRight - this.layout.chartLeft;
+    const target = chartWidth === 0 ? 0 : (x - this.layout.chartLeft) / chartWidth;
+    let lo = Math.max(0, Math.floor(this.startIndex));
+    let hi = Math.max(lo, Math.min(this._bufferLength - 1, Math.ceil(this.startIndex + this.visibleCount)));
+    // coord01 increases monotonically with index (sorted domain) → binary
+    // search for the first index whose coord01 >= target.
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (fn(mid) < target) lo = mid + 1;
+      else hi = mid;
+    }
+    // Pick whichever of (lo-1, lo) sits nearer the cursor.
+    if (lo > 0 && Math.abs(fn(lo - 1) - target) <= Math.abs(fn(lo) - target)) return lo - 1;
+    return lo;
   }
 
   /** Convert price to Y pixel coordinate */

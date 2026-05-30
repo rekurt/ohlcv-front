@@ -24,6 +24,27 @@ import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 import type { Primitive, PrimitiveZOrder } from '../primitives/Primitive';
 
+/**
+ * Interpolated domain value at a (possibly fractional) logical index — used
+ * to build the non-uniform horizontal coordinate mapping. Integer indices
+ * (the common case) return the exact value; fractional indices linearly
+ * interpolate between neighbors so drawings positioned mid-bar still land
+ * sensibly on a value-spaced axis.
+ */
+function domainValueAt(
+  behavior: HorzScaleBehavior,
+  buffer: CandleBuffer,
+  index: number,
+): number {
+  const lo = Math.floor(index);
+  const a = behavior.fromLogical(lo, buffer);
+  if (a === null) return behavior.fromLogical(Math.round(index), buffer) ?? 0;
+  const frac = index - lo;
+  if (frac === 0) return a;
+  const b = behavior.fromLogical(lo + 1, buffer);
+  return b === null ? a : a + (b - a) * frac;
+}
+
 /** Palette used to color indicator series in deterministic order. */
 const INDICATOR_COLORS = [
   '#2962ff', // blue
@@ -528,6 +549,28 @@ export class ChartEngine {
     const start = Math.max(0, Math.floor(this.viewport.startIndex));
     const end = Math.min(this._buffer.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
     const rawView = this._buffer.sliceView(start, end);
+
+    // Non-uniform horizontal geometry (value-based scales, e.g. yield curve):
+    // install a per-index 0..1 mapping so bars sit at value-proportional X.
+    // Uniform scales (default time/price) clear it, keeping index geometry
+    // bit-for-bit unchanged.
+    const hs = this._horzScale;
+    if (!hs.uniform && hs.domainToCoord01) {
+      const buffer = this._buffer;
+      const toCoord = hs.domainToCoord01;
+      const lastIdx = Math.max(start, Math.min(buffer.length - 1, end - 1));
+      const from = hs.fromLogical(start, buffer);
+      const to = hs.fromLogical(lastIdx, buffer);
+      if (from !== null && to !== null) {
+        this.viewport.setCoordinateMapping((index) =>
+          toCoord(domainValueAt(hs, buffer, index), from, to),
+        );
+      } else {
+        this.viewport.setCoordinateMapping(null);
+      }
+    } else {
+      this.viewport.setCoordinateMapping(null);
+    }
 
     // Series transform (e.g. Heikin-Ashi) → autoscale → conflate → draw.
     // A series with a transformView or custom priceRange auto-scales from

@@ -139,6 +139,7 @@ export { toRenko } from './transforms/renko';
 export type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 export { TimeScaleBehavior } from './horzscale/TimeScaleBehavior';
 export { PriceScaleBehavior } from './horzscale/PriceScaleBehavior';
+export { YieldCurveBehavior } from './horzscale/YieldCurveBehavior';
 export {
   registerHorzScaleBehavior,
   createHorzScaleBehavior,

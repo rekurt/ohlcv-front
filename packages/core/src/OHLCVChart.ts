@@ -230,7 +230,7 @@ export class OHLCVChart {
     // than they resolve.
     this._loadingMore = false;
 
-    this._crosshair = new CrosshairController(this._engine, this._buffer, config.resolution);
+    this._crosshair = new CrosshairController(this._engine, this._buffer);
     if (config.onHover) {
       this._onHover = config.onHover;
       this._crosshair.setOnHover(config.onHover);
@@ -376,7 +376,6 @@ export class OHLCVChart {
     this._config.resolution = resolution;
     this._engine.setSymbol(symbol);
     this._engine.setResolution(resolution);
-    this._crosshair.setResolution(resolution);
     await this._dataFeed.connect({ symbol, resolution });
   }
 
@@ -890,7 +889,6 @@ export class OHLCVChart {
       this._config.resolution = state.resolution;
       this._engine.setSymbol(state.symbol);
       this._engine.setResolution(state.resolution);
-      this._crosshair.setResolution(state.resolution);
     }
     this._engine.setChartType(state.chartType);
     this.setTheme(state.theme);
