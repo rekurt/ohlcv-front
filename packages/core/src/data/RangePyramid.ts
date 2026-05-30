@@ -34,6 +34,7 @@ export class RangePyramid {
   private _builtVersion = -1;
   private _builtLength = -1;
   private _builtFirstTime = Number.NaN;
+  private _builtLastTime = Number.NaN;
 
   constructor(buffer: CandleBuffer) {
     this._buffer = buffer;
@@ -104,12 +105,20 @@ export class RangePyramid {
     if (version === this._builtVersion && len === this._builtLength) return;
 
     const firstTime = this._buffer.firstTime();
+    const lastTime = this._buffer.lastTime();
     const blockCount = Math.ceil(len / BLOCK);
+    // Incremental rebuild is safe only for a true append (length grew, head
+    // unchanged) or an in-place last-bar update (same length AND same first
+    // AND last timestamps — what updateLast produces, since it preserves the
+    // last candle's time). A full reload that happens to keep the same length
+    // and firstTime but rewrote middle candles will differ in lastTime (or
+    // length) and falls through to a full rebuild, so stale middle blocks
+    // can't survive.
+    const headUnchanged = this._builtLength >= 0 && firstTime === this._builtFirstTime;
+    const grew = len > this._builtLength;
+    const sameTail = len === this._builtLength && lastTime === this._builtLastTime;
     const tailOnly =
-      this._builtLength >= 0 &&
-      len >= this._builtLength &&
-      firstTime === this._builtFirstTime && // head unchanged → append/updateLast
-      blockCount <= this._blockMinLow.length;
+      headUnchanged && blockCount <= this._blockMinLow.length && (grew || sameTail);
 
     if (tailOnly) {
       // Recompute only the last previously-built block (updateLast may have
@@ -126,6 +135,7 @@ export class RangePyramid {
     this._builtVersion = version;
     this._builtLength = len;
     this._builtFirstTime = firstTime;
+    this._builtLastTime = lastTime;
   }
 
   private _buildBlock(b: number, len: number): void {

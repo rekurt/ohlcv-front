@@ -124,4 +124,23 @@ describe('RangePyramid', () => {
     expect(r.maxHigh).toBe(-Infinity);
     expect(r.maxVol).toBe(0);
   });
+
+  it('fully rebuilds after a same-length reload that changes middle candles', () => {
+    // Build, then reload the SAME buffer with the same length + firstTime but
+    // a different time step (so lastTime differs) and a spike in the middle.
+    // The tailOnly heuristic must not mistake this for updateLast/append.
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 600; i++) buf.append({ o: 100, h: 101, l: 99, c: 100, v: 1, t: 1000 + i * 60 });
+    const pyr = new RangePyramid(buf);
+    expect(pyr.rangeOf(0, 600).maxHigh).toBe(101); // initial build
+
+    buf.clear();
+    for (let i = 0; i < 600; i++) {
+      const high = i === 300 ? 99_999 : 101; // spike in the middle block
+      buf.append({ o: 100, h: high, l: 99, c: 100, v: 1, t: 1000 + i * 120 }); // same first t, diff step → diff lastTime
+    }
+    const r = pyr.rangeOf(0, 600);
+    expect(r.maxHigh).toBe(99_999); // middle spike must be reflected
+    expectEqualRange(r, brute(buf, 0, 600));
+  });
 });
