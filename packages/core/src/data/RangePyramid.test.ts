@@ -143,4 +143,34 @@ describe('RangePyramid', () => {
     expect(r.maxHigh).toBe(99_999); // middle spike must be reflected
     expectEqualRange(r, brute(buf, 0, 600));
   });
+
+  it('fully rebuilds after a reload that GROWS within the same block count', () => {
+    // 600 → 700 (same first ~ block count grows by 1) with a rewritten middle
+    // block. `grew` alone would treat it as append and keep stale blocks.
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 600; i++) buf.append({ o: 100, h: 101, l: 99, c: 100, v: 1, t: 1000 + i * 60 });
+    const pyr = new RangePyramid(buf);
+    expect(pyr.rangeOf(0, 600).maxHigh).toBe(101);
+
+    buf.clear();
+    for (let i = 0; i < 700; i++) {
+      const high = i === 100 ? 88_888 : 101; // spike in an early full block
+      buf.append({ o: 100, h: high, l: 99, c: 100, v: 1, t: 1000 + i * 60 }); // same firstTime, longer
+    }
+    const out = pyr.rangeOf(0, buf.length);
+    expect(out.maxHigh).toBe(88_888);
+    expectEqualRange(out, brute(buf, 0, buf.length));
+  });
+
+  it('still incrementally tracks a genuine append (prefix intact)', () => {
+    const buf = fillBuffer(600);
+    const pyr = new RangePyramid(buf);
+    const before = pyr.rangeOf(0, 600);
+    // True append: existing candles untouched, one extreme candle added.
+    buf.append({ o: 100, h: 90_000, l: 0.01, c: 100, v: 5, t: 1_700_000_000 + 600 * 60 });
+    const after = pyr.rangeOf(0, buf.length);
+    expect(after.maxHigh).toBe(90_000);
+    expect(after.minLow).toBeLessThan(before.minLow); // prefix extrema preserved + new min
+    expectEqualRange(after, brute(buf, 0, buf.length));
+  });
 });

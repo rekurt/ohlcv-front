@@ -34,7 +34,7 @@ export class RangePyramid {
   private _builtVersion = -1;
   private _builtLength = -1;
   private _builtFirstTime = Number.NaN;
-  private _builtLastTime = Number.NaN;
+  private _builtGeneration = -1;
 
   constructor(buffer: CandleBuffer) {
     this._buffer = buffer;
@@ -105,20 +105,21 @@ export class RangePyramid {
     if (version === this._builtVersion && len === this._builtLength) return;
 
     const firstTime = this._buffer.firstTime();
-    const lastTime = this._buffer.lastTime();
+    const generation = this._buffer.generation;
     const blockCount = Math.ceil(len / BLOCK);
-    // Incremental rebuild is safe only for a true append (length grew, head
-    // unchanged) or an in-place last-bar update (same length AND same first
-    // AND last timestamps — what updateLast produces, since it preserves the
-    // last candle's time). A full reload that happens to keep the same length
-    // and firstTime but rewrote middle candles will differ in lastTime (or
-    // length) and falls through to a full rebuild, so stale middle blocks
-    // can't survive.
-    const headUnchanged = this._builtLength >= 0 && firstTime === this._builtFirstTime;
-    const grew = len > this._builtLength;
-    const sameTail = len === this._builtLength && lastTime === this._builtLastTime;
+    // Incremental rebuild is safe only when the existing prefix is provably
+    // intact. That's guaranteed when (a) no structural reset happened since
+    // the last build (generation unchanged — rules out a setData reload, even
+    // one re-establishing the same length/timestamps) AND (b) the head hasn't
+    // moved (firstTime unchanged — rules out prepend/evictHead). The only
+    // remaining mutations are append/appendBatch/updateLast, all of which
+    // leave [0, _builtLength) untouched, so we can rebuild just the tail.
     const tailOnly =
-      headUnchanged && blockCount <= this._blockMinLow.length && (grew || sameTail);
+      this._builtLength > 0 &&
+      generation === this._builtGeneration &&
+      firstTime === this._builtFirstTime &&
+      len >= this._builtLength &&
+      blockCount <= this._blockMinLow.length;
 
     if (tailOnly) {
       // Recompute only the last previously-built block (updateLast may have
@@ -135,7 +136,7 @@ export class RangePyramid {
     this._builtVersion = version;
     this._builtLength = len;
     this._builtFirstTime = firstTime;
-    this._builtLastTime = lastTime;
+    this._builtGeneration = generation;
   }
 
   private _buildBlock(b: number, len: number): void {
