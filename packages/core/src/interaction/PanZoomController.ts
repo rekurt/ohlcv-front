@@ -139,6 +139,13 @@ export class PanZoomController {
         this._draggingPrimitiveId = hit.id;
         this._lastMouseX = e.clientX;
         this._lastMouseY = e.clientY;
+        // Kill any pan momentum still in flight — otherwise the old RAF keeps
+        // panning the chart out from under the cursor while we drag the line.
+        this._velocity = 0;
+        if (this._momentumRafId) {
+          cancelAnimationFrame(this._momentumRafId);
+          this._momentumRafId = 0;
+        }
         this._canvas.style.cursor = 'ns-resize';
         this._callbacks.onDragStateChange?.(true);
         this._canvas.focus();

@@ -173,6 +173,25 @@ describe('PanZoomController price-line drag gate', () => {
     document.dispatchEvent(new MouseEvent('mouseup', { clientX: 360, clientY: 200, bubbles: true }));
     pz.destroy();
   });
+
+  it('cancels active pan momentum when grabbing a draggable price line', () => {
+    const vp = vpWith(100, 200);
+    const pz = new PanZoomController(canvas, vp, {
+      hitTestDraggable: (x, y) => (x < 900 && Math.abs(y - 100) < 10 ? { id: 'L' } : null),
+      onDragDraggable: () => {},
+    });
+    // Simulate in-flight momentum from a prior pan.
+    const internal = pz as unknown as { _momentumRafId: number; _velocity: number };
+    internal._momentumRafId = requestAnimationFrame(() => {});
+    internal._velocity = 5;
+
+    canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: 100, clientY: 100, button: 0, bubbles: true }));
+    expect(internal._momentumRafId).toBe(0); // cancelled
+    expect(internal._velocity).toBe(0); // reset
+
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 100, clientY: 100, bubbles: true }));
+    pz.destroy();
+  });
 });
 
 describe('OHLCVChart.createPriceLine', () => {
