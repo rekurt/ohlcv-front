@@ -404,14 +404,20 @@ export class Viewport {
         if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
         if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
         if (isLog) {
-          if (Number.isFinite(lo) && lo > 0 && lo < minPositive) minPositive = lo;
-          if (Number.isFinite(hi) && hi > 0 && hi < minPositive) minPositive = hi;
+          // Smallest positive across the full OHLC (low/open/close/high), so a
+          // candle with low <= 0 but a positive body is still fully fit.
+          if (lo > 0 && lo < minPositive) minPositive = lo;
+          if (hi > 0 && hi < minPositive) minPositive = hi;
+          const op = view.open[i]!;
+          const cl = view.close[i]!;
+          if (Number.isFinite(op) && op > 0 && op < minPositive) minPositive = op;
+          if (Number.isFinite(cl) && cl > 0 && cl < minPositive) minPositive = cl;
         }
         if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
       }
       // Log mode: the axis minimum is the smallest positive price in the
-      // window. Even if every low is <= 0, a positive high/body still has a
-      // position, so fit to it instead of bailing out and freezing the range.
+      // window. Even if every low is <= 0, positive body/high prices still
+      // have a position, so fit to them instead of freezing the range.
       if (isLog && Number.isFinite(minPositive)) minPrice = minPositive;
     }
 
@@ -526,8 +532,13 @@ export class Viewport {
       if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
       if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
       if (isLog) {
-        if (Number.isFinite(lo) && lo > 0 && lo < minPositive) minPositive = lo;
-        if (Number.isFinite(hi) && hi > 0 && hi < minPositive) minPositive = hi;
+        // Smallest positive across the entry's range + the candle body.
+        if (lo > 0 && lo < minPositive) minPositive = lo;
+        if (hi > 0 && hi < minPositive) minPositive = hi;
+        const op = view.open[i]!;
+        const cl = view.close[i]!;
+        if (Number.isFinite(op) && op > 0 && op < minPositive) minPositive = op;
+        if (Number.isFinite(cl) && cl > 0 && cl < minPositive) minPositive = cl;
       }
       if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
     }
