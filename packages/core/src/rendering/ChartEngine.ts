@@ -569,7 +569,15 @@ export class ChartEngine {
       // Bind to preserve `this`: a custom behavior's domainToCoord01 may read
       // instance options (spacing params, etc.); detaching it would lose them.
       const toCoord = hs.domainToCoord01.bind(hs);
-      const lastIdx = Math.max(start, Math.min(buffer.length - 1, end - 1));
+      // Use the last truly-visible index for the right edge, NOT `end - 1`:
+      // `end` carries a +1 render-only bar, and a distant off-screen domain
+      // value (e.g. a 30Y tenor after a visible 5Y) would otherwise become the
+      // scale's right edge and compress the real visible candles.
+      const visibleEnd = Math.min(
+        buffer.length,
+        Math.ceil(this.viewport.startIndex + this.viewport.visibleCount),
+      );
+      const lastIdx = Math.max(start, Math.min(buffer.length - 1, visibleEnd - 1));
       const from = hs.fromLogical(start, buffer);
       const to = hs.fromLogical(lastIdx, buffer);
       if (from !== null && to !== null) {

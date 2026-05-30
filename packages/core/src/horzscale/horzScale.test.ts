@@ -334,4 +334,25 @@ describe('ChartEngine with a non-uniform horizontal scale', () => {
     engine.setResolution('1W');
     expect(tsb.resolution).toBe('1W'); // synced on later resolution change
   });
+
+  it('excludes the render-only extra bar from the non-uniform domain', () => {
+    const buf = new CandleBuffer();
+    const tenors = [1, 2, 3, 4, 1000]; // index 4 is far outside the visible window
+    for (let i = 0; i < tenors.length; i++) {
+      const c = 100 + i;
+      buf.append({ o: c, h: c + 1, l: c - 1, c, v: 10, t: tenors[i]! });
+    }
+    engine.setBuffer(buf);
+    engine.viewport.startIndex = 0;
+    engine.viewport.visibleCount = 4; // visible [0,4); index 4 is the +1 render bar
+    engine.setHorzScale(new YieldCurveBehavior());
+    (engine as unknown as { _render: () => void })._render();
+
+    const vp = engine.viewport;
+    // Last visible candle sits at the right edge — not compressed by the
+    // distant render-only bar.
+    expect(vp.indexToX(3)).toBeCloseTo(LAYOUT.chartRight, 4);
+    // The far render-only bar (tenor 1000) is pushed off-screen right.
+    expect(vp.indexToX(4)).toBeGreaterThan(LAYOUT.chartRight);
+  });
 });
