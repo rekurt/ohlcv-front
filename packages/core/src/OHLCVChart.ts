@@ -109,8 +109,6 @@ export class OHLCVChart {
    * advanced use.
    */
   private _ownDrawingLayer: DrawingLayer;
-  /** Host-created price lines, keyed by id, for drag routing. */
-  private _priceLines = new Map<string, PriceLinePrimitive>();
   private _priceLineSeq = 0;
   /** Set after a price-line drag so the trailing click doesn't fire onCandleClick. */
   private _suppressNextClick = false;
@@ -217,8 +215,14 @@ export class OHLCVChart {
         return null;
       },
       onDragDraggable: (id, price) => {
-        this._priceLines.get(id)?.setPrice(price);
-        this._engine.requestRender();
+        // Resolve the line from the engine's primitives (not a private map),
+        // so lines attached directly via attachPrimitive() are draggable too,
+        // not only those created through createPriceLine().
+        const p = this._engine.primitives.find((pr) => pr.id === id);
+        if (p instanceof PriceLinePrimitive) {
+          p.setPrice(price);
+          this._engine.requestRender();
+        }
       },
       onDragDraggableEnd: () => {
         // Swallow the click that fires right after the drag so we don't
@@ -720,11 +724,9 @@ export class OHLCVChart {
   createPriceLine(options: PriceLineOptions): PriceLineHandle {
     const id = `priceline:${this._priceLineSeq++}`;
     const primitive = new PriceLinePrimitive(id, options);
-    this._priceLines.set(id, primitive);
     this._engine.attachPrimitive(primitive);
 
     const engine = this._engine;
-    const lines = this._priceLines;
     return {
       id,
       setPrice(price: number): void {
@@ -740,7 +742,6 @@ export class OHLCVChart {
       },
       remove(): void {
         engine.detachPrimitive(id);
-        lines.delete(id);
       },
     };
   }

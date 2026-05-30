@@ -237,4 +237,30 @@ describe('OHLCVChart.createPriceLine', () => {
     const engine = (chart as unknown as { _engine: { hitTestPrimitives: (x: number, y: number) => { id: string } | null } })._engine;
     expect(engine.hitTestPrimitives(400, y)?.id).toBe(line.id);
   });
+
+  it('drags a directly-attached PriceLinePrimitive, not only createPriceLine ones', () => {
+    const vp = chart.getViewport();
+    // autoScale runs on the RAF render; force it so priceMin/Max are real.
+    const buf = chart.getBuffer();
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf);
+    const price = vp.priceMin + (vp.priceMax - vp.priceMin) * 0.5;
+    const line = new PriceLinePrimitive('ext', { price, draggable: true });
+    chart.attachPrimitive(line);
+
+    const engine = (chart as unknown as { _engine: { topCanvas: HTMLCanvasElement } })._engine;
+    const top = engine.topCanvas;
+    top.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    const layout = vp.layout;
+    const midX = (layout.chartLeft + layout.chartRight) / 2;
+    const y0 = vp.priceToY(price);
+
+    top.dispatchEvent(new MouseEvent('mousedown', { clientX: midX, clientY: y0, button: 0, bubbles: true }));
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: midX, clientY: y0 + 50, bubbles: true }));
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: midX, clientY: y0 + 50, bubbles: true }));
+
+    expect(line.price).not.toBe(price);
+    expect(line.price).toBeLessThan(price); // dragged down → lower price (linear)
+  });
 });
