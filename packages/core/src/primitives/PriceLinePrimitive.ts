@@ -96,8 +96,11 @@ export class PriceLinePrimitive implements Primitive {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Right-axis label pill.
-    const label = this._options.title ?? formatPrice(this._price);
+    // Right-axis label pill: an explicit title wins; otherwise use the
+    // viewport's scale-aware label (e.g. "+10.00%" in percentage mode) so the
+    // pill matches the axis, falling back to a raw price for linear/log.
+    const label =
+      this._options.title ?? viewport.formatPriceLabel(this._price) ?? formatPrice(this._price);
     const pillWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
     ctx.fillStyle = color;
     ctx.fillRect(

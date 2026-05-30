@@ -44,8 +44,10 @@ export class HorizontalLine extends Drawing {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Price pill on the axis
-    const label = formatPrice(anchor.price);
+    // Price pill on the axis. Use the viewport's scale-aware label so it
+    // matches the axis under percentage/indexed modes (falls back to a raw
+    // price for linear/log).
+    const label = viewport.formatPriceLabel(anchor.price) ?? formatPrice(anchor.price);
     const pillWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
     ctx.fillStyle = this.color ?? theme.text;
     ctx.fillRect(

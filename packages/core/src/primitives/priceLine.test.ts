@@ -2,6 +2,8 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import { PriceLinePrimitive } from './PriceLinePrimitive';
 import { PanZoomController } from '../interaction/PanZoomController';
 import { Viewport } from '../interaction/Viewport';
+import { CandleBuffer } from '../data/CandleBuffer';
+import { HorizontalLine } from '../drawings/HorizontalLine';
 import { OHLCVChart } from '../OHLCVChart';
 import { computeLayout, formatPrice } from '../utils';
 import { DARK_THEME, DRAWING_HIT_TOLERANCE_PX } from '../constants';
@@ -63,6 +65,40 @@ describe('PriceLinePrimitive', () => {
     const ctx = makeCtx();
     new PriceLinePrimitive('p', { price: 150, title: 'TP' }).draw(ctx, LAYOUT, vpWith(100, 200), DARK_THEME);
     expect(ctx.__ops.find((o) => o.name === 'fillText')?.args?.[0]).toBe('TP');
+  });
+
+  it('uses the scale-aware label for the default pill in percentage mode', () => {
+    // Build a percentage viewport with base = 100 so 100.5 → +0.50%.
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 10; i++) buf.append({ o: 100, h: 101, l: 99, c: 100, v: 1, t: 1_700_000_000 + i * 60 });
+    const vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    vp.setScaleMode('percentage');
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf); // base = 100, transformed range ~±1%
+
+    const ctx = makeCtx();
+    new PriceLinePrimitive('p', { price: 100.5 }).draw(ctx, LAYOUT, vp, DARK_THEME);
+    expect(ctx.__ops.find((o) => o.name === 'fillText')?.args?.[0]).toBe('+0.50%');
+  });
+
+  it('HorizontalLine drawing pill also uses the scale-aware label', () => {
+    // The hline drawing tool shares the same axis-pill consistency concern.
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 10; i++) buf.append({ o: 100, h: 101, l: 99, c: 100, v: 1, t: 1_700_000_000 + i * 60 });
+    const vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    vp.setScaleMode('percentage');
+    vp.scrollToEnd(buf.length);
+    vp.autoScale(buf); // base = 100
+
+    const line = new HorizontalLine();
+    line.addPoint({ index: 0, price: 100.5 });
+    const ctx = makeCtx();
+    line.render(ctx, LAYOUT, vp, DARK_THEME);
+    // Pill label is the last fillText (the axis pill), not a raw price.
+    const labels = ctx.__ops.filter((o) => o.name === 'fillText').map((o) => o.args?.[0]);
+    expect(labels).toContain('+0.50%');
   });
 
   it('hitTest is true within tolerance of the line and false outside', () => {
