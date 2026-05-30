@@ -418,12 +418,15 @@ export class Viewport {
     // in manual mode via the early return above). Bounded probe keeps this
     // O(1)-ish even on the accelerated huge-window path.
     if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
-      const probe = buffer.sliceView(start, Math.min(end, start + 256));
+      // Scan the whole visible window for the first non-zero finite close
+      // (sliceView is a zero-copy subarray; the loop breaks on the first
+      // valid close, so it's O(1) in the common case and only walks far when
+      // the window starts with a run of zero/bad closes). base = 0 would
+      // collapse the percentage transform; keep the previous base if the
+      // entire window has no usable close.
+      const probe = buffer.sliceView(start, end);
       for (let i = 0; i < probe.length; i++) {
         const c = probe.close[i]!;
-        // Skip zero (and non-finite): base = 0 would collapse the percentage
-        // transform to a flat range for every price. Keep the previous base
-        // if no non-zero close is found in the probe window.
         if (Number.isFinite(c) && c !== 0) {
           this._priceBase = c;
           break;

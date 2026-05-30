@@ -225,6 +225,17 @@ describe('Viewport percentage / indexed scale', () => {
     expect(baseOf(vp)).toBe(105); // first non-zero close, not 0
   });
 
+  it('scans the full visible window for a non-zero base (beyond the first 256)', () => {
+    // First valid close is at index 300 — past the old 256-candle probe cap.
+    vp.setScaleMode('percentage');
+    const buf = new CandleBuffer();
+    for (let i = 0; i < 300; i++) buf.append({ o: 0, h: 0, l: 0, c: 0, v: 1, t: i + 1 });
+    buf.append({ o: 50, h: 51, l: 49, c: 55, v: 1, t: 301 });
+    vp.fitAll(buf.length); // whole buffer visible (startIndex 0)
+    vp.autoScale(buf);
+    expect(baseOf(vp)).toBe(55);
+  });
+
   it('percentage gridTicks carry signed-% labels and round-trip y', () => {
     vp.setScaleMode('percentage');
     const buf = fillBuffer(50, (i) => 100 + i);
