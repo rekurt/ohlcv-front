@@ -335,24 +335,31 @@ describe('ChartEngine with a non-uniform horizontal scale', () => {
     expect(tsb.resolution).toBe('1W'); // synced on later resolution change
   });
 
-  it('excludes the render-only extra bar from the non-uniform domain', () => {
+  it('anchors the non-uniform domain on the fractional window (smooth pan)', () => {
     const buf = new CandleBuffer();
-    const tenors = [1, 2, 3, 4, 1000]; // index 4 is far outside the visible window
-    for (let i = 0; i < tenors.length; i++) {
+    for (let i = 0; i < 12; i++) {
       const c = 100 + i;
-      buf.append({ o: c, h: c + 1, l: c - 1, c, v: 10, t: tenors[i]! });
+      buf.append({ o: c, h: c + 1, l: c - 1, c, v: 10, t: i * 10 }); // evenly spaced tenors
     }
     engine.setBuffer(buf);
-    engine.viewport.startIndex = 0;
-    engine.viewport.visibleCount = 4; // visible [0,4); index 4 is the +1 render bar
+    engine.viewport.visibleCount = 4;
     engine.setHorzScale(new YieldCurveBehavior());
-    (engine as unknown as { _render: () => void })._render();
-
     const vp = engine.viewport;
-    // Last visible candle sits at the right edge — not compressed by the
-    // distant render-only bar.
-    expect(vp.indexToX(3)).toBeCloseTo(LAYOUT.chartRight, 4);
-    // The far render-only bar (tenor 1000) is pushed off-screen right.
-    expect(vp.indexToX(4)).toBeGreaterThan(LAYOUT.chartRight);
+    const render = () => (engine as unknown as { _render: () => void })._render();
+
+    // Integer window [2, 6]: those candles anchor the two edges; off-window
+    // candles cull on both sides.
+    vp.startIndex = 2;
+    render();
+    expect(vp.indexToX(2)).toBeCloseTo(LAYOUT.chartLeft, 3);
+    expect(vp.indexToX(6)).toBeCloseTo(LAYOUT.chartRight, 3);
+    expect(vp.indexToX(0)).toBeLessThan(LAYOUT.chartLeft);
+    expect(vp.indexToX(10)).toBeGreaterThan(LAYOUT.chartRight);
+
+    // Pan half a candle: edges move smoothly via fractional interpolation, so
+    // candle 2 slips partially off the left edge instead of snapping to it.
+    vp.startIndex = 2.5;
+    render();
+    expect(vp.indexToX(2)).toBeLessThan(LAYOUT.chartLeft);
   });
 });

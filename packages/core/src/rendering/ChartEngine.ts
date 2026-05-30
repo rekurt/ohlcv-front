@@ -597,14 +597,21 @@ export class ChartEngine {
       // Bind to preserve `this`: a custom behavior's domainToCoord01 may read
       // instance options (spacing params, etc.); detaching it would lose them.
       const toCoord = hs.domainToCoord01.bind(hs);
-      // Right edge = last truly-visible index, NOT `end - 1`: `end` carries a
-      // +1 render-only bar, and a distant off-screen domain value (e.g. a 30Y
-      // tenor after a visible 5Y) would otherwise become the scale's right
-      // edge and compress the real visible candles.
-      const lastIdx = Math.max(start, Math.min(buffer.length - 1, visibleEnd - 1));
-      const from = hs.fromLogical(start, buffer);
-      const to = hs.fromLogical(lastIdx, buffer);
-      if (from !== null && to !== null) {
+      // Anchor the domain on the FRACTIONAL visible window edges
+      // [startIndex, startIndex + visibleCount] via domainValueAt (which
+      // interpolates between candles), so drag/wheel panning moves the curve
+      // smoothly instead of snapping to whole candles. The right edge is the
+      // visible extent (the fractional position, not the integer `end - 1`
+      // that carries the +1 render-only bar). Both anchors clamp into buffer.
+      const maxIdx = Math.max(0, buffer.length - 1);
+      const leftIdx = Math.max(0, Math.min(maxIdx, this.viewport.startIndex));
+      const rightIdx = Math.max(
+        0,
+        Math.min(maxIdx, this.viewport.startIndex + this.viewport.visibleCount),
+      );
+      const from = domainValueAt(hs, buffer, leftIdx);
+      const to = domainValueAt(hs, buffer, rightIdx);
+      if (Number.isFinite(from) && Number.isFinite(to)) {
         this.viewport.setCoordinateMapping((index) =>
           toCoord(domainValueAt(hs, buffer, index), from, to),
         );
