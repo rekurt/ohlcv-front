@@ -1,13 +1,11 @@
-import type { ThemeColors, ChartLayout, Candle, ChartType } from '../types';
+import type { ThemeColors, ChartLayout, Candle, CandleView } from '../types';
 import { computeLayout, resizeHiDPICanvas, createHiDPICanvas } from '../utils';
 import type { CandleBuffer } from '../data/CandleBuffer';
+import { conflate } from '../data/conflate';
+import { RangePyramid } from '../data/RangePyramid';
 import type { ErrorReporter } from '../ErrorReporter';
 import { Viewport } from '../interaction/Viewport';
 import { GridRenderer } from './GridRenderer';
-import { CandleRenderer } from './CandleRenderer';
-import { LineRenderer } from './LineRenderer';
-import { AreaRenderer } from './AreaRenderer';
-import { OHLCBarRenderer } from './OHLCBarRenderer';
 import { VolumeRenderer } from './VolumeRenderer';
 import { PriceAxisRenderer } from './PriceAxis';
 import { TimeAxisRenderer } from './TimeAxis';
@@ -17,11 +15,57 @@ import { LegendRenderer } from './LegendRenderer';
 import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
-import { HeikinAshiRenderer } from './HeikinAshiRenderer';
+import { getSeriesType, DEFAULT_SERIES } from '../series/registry';
+import { TimeScaleBehavior } from '../horzscale/TimeScaleBehavior';
+import type { HorzScaleBehavior } from '../horzscale/HorzScaleBehavior';
 import { MarkerRenderer } from '../markers/MarkerRenderer';
 import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
+import type { Primitive, PrimitiveZOrder } from '../primitives/Primitive';
+
+/**
+ * Interpolated domain value at a (possibly fractional) logical index — used
+ * to build the non-uniform horizontal coordinate mapping. Integer indices
+ * (the common case) return the exact value; fractional indices linearly
+ * interpolate between neighbors so drawings positioned mid-bar still land
+ * sensibly on a value-spaced axis.
+ */
+/**
+ * Length-capped view over the same backing arrays (zero-copy subarrays).
+ * Used to scan only the visible bars for autoscale while keeping the +1
+ * render-only bar in the view used for drawing. Returns the input unchanged
+ * when no capping is needed.
+ */
+function capView(view: CandleView, count: number): CandleView {
+  if (count >= view.length) return view;
+  const n = Math.max(0, count);
+  return {
+    open: view.open.subarray(0, n),
+    high: view.high.subarray(0, n),
+    low: view.low.subarray(0, n),
+    close: view.close.subarray(0, n),
+    volume: view.volume.subarray(0, n),
+    time: view.time.subarray(0, n),
+    length: n,
+    offset: view.offset,
+    repIndex: view.repIndex ? view.repIndex.subarray(0, n) : undefined,
+  };
+}
+
+function domainValueAt(
+  behavior: HorzScaleBehavior,
+  buffer: CandleBuffer,
+  index: number,
+): number {
+  const lo = Math.floor(index);
+  const a = behavior.fromLogical(lo, buffer);
+  if (a === null) return behavior.fromLogical(Math.round(index), buffer) ?? 0;
+  const frac = index - lo;
+  if (frac === 0) return a;
+  const b = behavior.fromLogical(lo + 1, buffer);
+  return b === null ? a : a + (b - a) * frac;
+}
 
 /** Palette used to color indicator series in deterministic order. */
 const INDICATOR_COLORS = [
@@ -46,11 +90,17 @@ export class ChartEngine {
   private _layout!: ChartLayout;
   private _theme: ThemeColors;
   private _buffer: CandleBuffer | null = null;
+  /** Coarse range index over the buffer; accelerates autoScale on huge windows. */
+  private _rangePyramid: RangePyramid | null = null;
   private _symbol = '';
   private _resolution = '';
   private _priceFormat?: (price: number) => string;
   private _volumeFormat?: (volume: number) => string;
-  private _chartType: ChartType = 'candles';
+  private _chartType: string = 'candles';
+
+  /** Horizontal-domain behavior (axis labels). Defaults to time. */
+  private _timeScale = new TimeScaleBehavior();
+  private _horzScale: HorzScaleBehavior = this._timeScale;
 
   /** User-provided indicators; computed via `computeCached` on dirty render. */
   private _indicators: Indicator[] = [];
@@ -58,16 +108,14 @@ export class ChartEngine {
   private _drawingLayer: DrawingLayer | null = null;
   /** Point markers anchored to candles by timestamp. */
   private _markers: Marker[] = [];
+  /** Programmatic z-ordered overlays (watermark, price lines, custom bands). */
+  private _primitives: Primitive[] = [];
   /** Routes indicator-compute / render errors to the host's `onError`. */
   private _reporter: ErrorReporter | null = null;
 
-  // Renderers
+  // Renderers. Primary price series are dispatched through the series
+  // registry (see _render); only the chrome renderers are held here.
   private _gridRenderer = new GridRenderer();
-  private _candleRenderer = new CandleRenderer();
-  private _heikinAshiRenderer = new HeikinAshiRenderer();
-  private _lineRenderer = new LineRenderer();
-  private _areaRenderer = new AreaRenderer();
-  private _ohlcBarRenderer = new OHLCBarRenderer();
   private _volumeRenderer = new VolumeRenderer();
   private _priceAxisRenderer = new PriceAxisRenderer();
   private _timeAxisRenderer = new TimeAxisRenderer();
@@ -186,6 +234,7 @@ export class ChartEngine {
 
   setBuffer(buffer: CandleBuffer): void {
     this._buffer = buffer;
+    this._rangePyramid = new RangePyramid(buffer);
   }
 
   /**
@@ -202,6 +251,31 @@ export class ChartEngine {
 
   setResolution(resolution: string): void {
     this._resolution = resolution;
+    this._timeScale.setResolution(resolution);
+    // Keep an active, caller-supplied time scale in sync too.
+    if (this._horzScale instanceof TimeScaleBehavior) {
+      this._horzScale.setResolution(resolution);
+    }
+  }
+
+  /**
+   * Replace the horizontal-scale behavior (time / price / custom). Controls
+   * how the X axis is labeled. Pass a {@link TimeScaleBehavior} (default),
+   * {@link PriceScaleBehavior}, or a custom one. A supplied TimeScaleBehavior
+   * inherits the chart's current resolution so daily/weekly charts don't fall
+   * back to intraday HH:mm labels.
+   */
+  setHorzScale(behavior: HorzScaleBehavior): void {
+    if (behavior instanceof TimeScaleBehavior) {
+      behavior.setResolution(this._resolution);
+    }
+    this._horzScale = behavior;
+    this.requestRender();
+  }
+
+  /** The active horizontal-scale behavior. */
+  get horzScale(): HorzScaleBehavior {
+    return this._horzScale;
   }
 
   setPriceFormat(fn?: (price: number) => string): void {
@@ -253,14 +327,14 @@ export class ChartEngine {
   private _idleCursor = 'crosshair';
   private _isActivelyDragging = false;
 
-  /** Switch the primary price-series rendering style. */
-  setChartType(chartType: ChartType): void {
+  /** Switch the primary price-series rendering style (built-in or custom). */
+  setChartType(chartType: string): void {
     if (this._chartType === chartType) return;
     this._chartType = chartType;
     this.requestRender();
   }
 
-  get chartType(): ChartType {
+  get chartType(): string {
     return this._chartType;
   }
 
@@ -321,6 +395,46 @@ export class ChartEngine {
   /** The current markers, in draw order. */
   get markers(): readonly Marker[] {
     return this._markers;
+  }
+
+  /** Attach a programmatic overlay primitive (rendered at its z-tier). */
+  attachPrimitive(primitive: Primitive): void {
+    this._primitives.push(primitive);
+    this.requestRender();
+  }
+
+  /** Detach a primitive by id. Returns true if one was removed. */
+  detachPrimitive(id: string): boolean {
+    const idx = this._primitives.findIndex((p) => p.id === id);
+    if (idx === -1) return false;
+    this._primitives.splice(idx, 1);
+    this.requestRender();
+    return true;
+  }
+
+  /** The attached primitives, in attach order. */
+  get primitives(): readonly Primitive[] {
+    return this._primitives;
+  }
+
+  /**
+   * Topmost primitive whose `hitTest` passes at (x, y) in CSS pixels,
+   * searched in reverse paint order (last attached wins). Used to route
+   * drags to draggable price lines.
+   */
+  hitTestPrimitives(x: number, y: number, tolerance?: number): Primitive | null {
+    for (let i = this._primitives.length - 1; i >= 0; i--) {
+      const p = this._primitives[i]!;
+      if (p.hitTest && p.hitTest(x, y, this._layout, this.viewport, tolerance)) return p;
+    }
+    return null;
+  }
+
+  private _drawPrimitives(ctx: CanvasRenderingContext2D, tier: PrimitiveZOrder): void {
+    for (const p of this._primitives) {
+      // Pass the host price formatter so price-line pills match the axis.
+      if (p.zOrder === tier) p.draw(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
+    }
   }
 
   /** Mark chart + UI for re-render */
@@ -461,12 +575,74 @@ export class ChartEngine {
   private _render(): void {
     if (!this._buffer) return;
 
-    // Auto-scale
-    this.viewport.autoScale(this._buffer);
+    // Resolve the active primary series (registry; unknown → candles).
+    const series = getSeriesType(this._chartType) ?? DEFAULT_SERIES;
 
     const start = Math.max(0, Math.floor(this.viewport.startIndex));
     const end = Math.min(this._buffer.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
-    const view = this._buffer.sliceView(start, end);
+    // Visible end WITHOUT the +1 render-only bar — used for autoscale and the
+    // non-uniform domain edge so an off-screen bar can't skew either.
+    const visibleEnd = Math.min(
+      this._buffer.length,
+      Math.ceil(this.viewport.startIndex + this.viewport.visibleCount),
+    );
+    const rawView = this._buffer.sliceView(start, end);
+
+    // Non-uniform horizontal geometry (value-based scales, e.g. yield curve):
+    // install a per-index 0..1 mapping so bars sit at value-proportional X.
+    // Uniform scales (default time/price) clear it, keeping index geometry
+    // bit-for-bit unchanged.
+    const hs = this._horzScale;
+    if (!hs.uniform && hs.domainToCoord01) {
+      const buffer = this._buffer;
+      // Bind to preserve `this`: a custom behavior's domainToCoord01 may read
+      // instance options (spacing params, etc.); detaching it would lose them.
+      const toCoord = hs.domainToCoord01.bind(hs);
+      // Anchor the domain on the FRACTIONAL visible window edges
+      // [startIndex, startIndex + visibleCount] via domainValueAt (which
+      // interpolates between candles), so drag/wheel panning moves the curve
+      // smoothly instead of snapping to whole candles. The right edge is the
+      // visible extent (the fractional position, not the integer `end - 1`
+      // that carries the +1 render-only bar). Both anchors clamp into buffer.
+      const maxIdx = Math.max(0, buffer.length - 1);
+      const leftIdx = Math.max(0, Math.min(maxIdx, this.viewport.startIndex));
+      const rightIdx = Math.max(
+        0,
+        Math.min(maxIdx, this.viewport.startIndex + this.viewport.visibleCount),
+      );
+      const from = domainValueAt(hs, buffer, leftIdx);
+      const to = domainValueAt(hs, buffer, rightIdx);
+      if (Number.isFinite(from) && Number.isFinite(to)) {
+        this.viewport.setCoordinateMapping((index) =>
+          toCoord(domainValueAt(hs, buffer, index), from, to),
+        );
+      } else {
+        this.viewport.setCoordinateMapping(null);
+      }
+    } else {
+      this.viewport.setCoordinateMapping(null);
+    }
+
+    // Series transform (e.g. Heikin-Ashi) → autoscale → conflate → draw.
+    // A series with a transformView or custom priceRange auto-scales from
+    // its (transformed) view; everything else uses the raw, pyramid-
+    // accelerated path. Either way priceMin/priceMax are set every frame.
+    const baseView = series.transformView
+      ? series.transformView(this._buffer, start, end)
+      : rawView;
+    if (series.transformView || series.priceRange) {
+      // Scale from the VISIBLE bars only (exclude the +1 render bar), matching
+      // the default path; the +1 bar stays in baseView for drawing.
+      const scaleView = capView(baseView, visibleEnd - start);
+      this.viewport.autoScaleFromView(this._buffer, scaleView, series.priceRange);
+    } else {
+      this.viewport.autoScale(this._buffer, this._rangePyramid ?? undefined);
+    }
+
+    // Downsample to ~1 bar per pixel column when candles are sub-pixel
+    // dense (true fit-all over millions of bars). A no-op at normal zoom:
+    // returns `baseView` unchanged so the standard render path is untouched.
+    const drawView = conflate(baseView, this.viewport, this._layout);
 
     if (this._chartDirty) {
       this._chartDirty = false;
@@ -478,38 +654,24 @@ export class ChartEngine {
       ctx.fillStyle = this._theme.background;
       ctx.fillRect(0, 0, width, height);
 
+      // 'bottom' primitives sit behind the grid + series (e.g. watermark).
+      this._drawPrimitives(ctx, 'bottom');
+
       // Grid → Volume → primary series (by chart type) → overlay indicators
       // → drawings → Axes. Drawings sit above indicators so a trend line
       // is visible on top of SMA/EMA/BB clutter.
       this._gridRenderer.render(ctx, this._layout, this.viewport, this._theme);
-      this._volumeRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
+      this._volumeRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
 
-      switch (this._chartType) {
-        case 'line':
-          this._lineRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
-          break;
-        case 'area':
-          this._areaRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
-          break;
-        case 'ohlc':
-          this._ohlcBarRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
-          break;
-        case 'heikinashi':
-          this._heikinAshiRenderer.render(
-            ctx,
-            this._layout,
-            this.viewport,
-            this._buffer,
-            start,
-            end,
-            this._theme,
-          );
-          break;
-        case 'candles':
-        default:
-          this._candleRenderer.render(ctx, this._layout, this.viewport, view, this._theme);
-          break;
-      }
+      // Primary price series via the registry (candles/line/area/ohlc/
+      // heikinashi or a host-registered custom type).
+      series.draw({
+        ctx,
+        layout: this._layout,
+        viewport: this.viewport,
+        view: drawView,
+        theme: this._theme,
+      });
 
       // Overlay indicators (drawn on the main price area).
       let colorIdx = 0;
@@ -546,6 +708,9 @@ export class ChartEngine {
         this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
       }
 
+      // 'normal' primitives sit with the drawing layer, above the series.
+      this._drawPrimitives(ctx, 'normal');
+
       this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
 
       // Sub-pane indicators. Each gets one band of equal height in
@@ -573,7 +738,7 @@ export class ChartEngine {
         }
       }
 
-      this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._resolution, this._theme);
+      this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._horzScale, this._theme);
     }
 
     if (this._uiDirty) {
@@ -610,6 +775,10 @@ export class ChartEngine {
       } else {
         this.goToLiveRenderer.hide();
       }
+
+      // 'top' primitives paint above the chart on the UI layer (e.g. price
+      // lines and their axis pills, above the series and indicators).
+      this._drawPrimitives(ctx, 'top');
     }
 
     if (this._crosshairDirty) {

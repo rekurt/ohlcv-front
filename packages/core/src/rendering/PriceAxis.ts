@@ -1,5 +1,5 @@
 import type { ThemeColors, ChartLayout } from '../types';
-import { niceGridValues, formatPrice } from '../utils';
+import { formatPrice } from '../utils';
 import type { Viewport } from '../interaction/Viewport';
 import {
   AXIS_FONT,
@@ -27,19 +27,21 @@ export class PriceAxisRenderer {
     ctx.lineTo(axisX + 0.5, layout.chartBottom);
     ctx.stroke();
 
-    // Price labels
-    const values = niceGridValues(viewport.priceMin, viewport.priceMax, 6);
+    // Price labels. Ticks come from the viewport so axis + grid agree
+    // across scale modes. `tick.label` is pre-formatted for
+    // percentage/indexed axes; for linear/log it's null and we apply the
+    // host's price formatter.
+    const ticks = viewport.gridTicks(6);
     ctx.fillStyle = theme.text;
     ctx.font = AXIS_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
-    for (const price of values) {
-      const y = viewport.priceToY(price);
-      if (y >= layout.chartTop && y <= layout.chartBottom) {
+    for (const tick of ticks) {
+      if (tick.y >= layout.chartTop && tick.y <= layout.chartBottom) {
         // Round the baseline to whole pixels so text rasterizes
         // sharply on DPR=1 displays.
-        ctx.fillText(fmt(price), axisX + AXIS_LABEL_TEXT_PAD, Math.round(y));
+        ctx.fillText(tick.label ?? fmt(tick.price), axisX + AXIS_LABEL_TEXT_PAD, Math.round(tick.y));
       }
     }
   }
@@ -59,7 +61,9 @@ export class PriceAxisRenderer {
     if (y < layout.chartTop || y > layout.chartBottom) return;
 
     const axisX = layout.chartRight;
-    const text = fmt(price);
+    // In percentage/indexed modes use the transformed label (e.g. "+10.00%")
+    // so the pill matches the grid-tick labels — not a raw price.
+    const text = viewport.formatPriceLabel(price) ?? fmt(price);
     const labelWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
 
     // Background — round the y origin so the rectangle aligns to a

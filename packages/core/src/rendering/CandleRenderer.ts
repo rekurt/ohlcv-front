@@ -10,7 +10,9 @@ export class CandleRenderer {
     view: CandleView,
     theme: ThemeColors,
   ): void {
-    const bodyWidth = viewport.candleWidth;
+    // Conflated views (sub-pixel candles collapsed to one bar per pixel
+    // column) widen to at least 1px so the downsampled bars stay visible.
+    const bodyWidth = view.repIndex ? Math.max(1, viewport.candleWidth) : viewport.candleWidth;
 
     // Two-pass rendering: bearish first, then bullish (minimize fillStyle changes)
     this._renderPass(ctx, layout, viewport, view, theme.bearCandle, false, bodyWidth);
@@ -35,7 +37,7 @@ export class CandleRenderer {
       const bull = close >= open;
       if (bull !== isBull) continue;
 
-      const bufferIndex = view.offset + i;
+      const bufferIndex = view.repIndex ? view.repIndex[i]! : view.offset + i;
       const x = viewport.indexToX(bufferIndex);
       const halfBody = bodyWidth / 2;
 

@@ -115,9 +115,45 @@ describe('Viewport.fitAll', () => {
     expect(vp.candleWidth).toBeLessThanOrEqual(chartWidth / 100 + 1);
   });
 
-  it('clamps candleWidth to MIN_CANDLE_WIDTH for very large buffers', () => {
+  it('goes sub-pixel for very large buffers so the whole history fits', () => {
+    // F2: fitAll uses MIN_CANDLE_WIDTH_FIT (not MIN_CANDLE_WIDTH) so a
+    // multi-million-bar buffer truly fits on screen; the conflation render
+    // path then collapses the sub-pixel candles to one bar per column.
     vp.fitAll(100_000);
-    expect(vp.candleWidth).toBeGreaterThanOrEqual(2); // MIN_CANDLE_WIDTH
+    expect(vp.candleWidth).toBeGreaterThan(0);
+    expect(vp.candleWidth).toBeLessThan(2); // would have been clamped to 2 before
+    expect(vp.visibleCount).toBeGreaterThanOrEqual(100_000); // all candles fit
+  });
+
+  it('zoom from a sub-pixel fitAll state never snaps back to MIN_CANDLE_WIDTH', () => {
+    // Codex P2: the MIN_CANDLE_WIDTH floor must not apply while sub-pixel —
+    // otherwise a single zoom gesture (either direction) discards fitAll.
+    // factor > 1 = zoom IN (wider candles); factor < 1 = zoom OUT (narrower).
+    const midX = (LAYOUT.chartLeft + LAYOUT.chartRight) / 2;
+
+    // Zoom OUT (factor < 1) from sub-pixel → narrower still, NOT jump to 2px.
+    vp.fitAll(100_000);
+    const subPixel = vp.candleWidth;
+    expect(subPixel).toBeLessThan(2);
+    vp.zoom(0.8, midX);
+    expect(vp.candleWidth).toBeLessThan(subPixel); // shrank further
+    expect(vp.candleWidth).toBeLessThan(2); // still sub-pixel
+
+    // Zoom IN (factor > 1) by a small step from sub-pixel → grows, no snap.
+    vp.fitAll(100_000);
+    const subPixel2 = vp.candleWidth;
+    vp.zoom(1.2, midX);
+    expect(vp.candleWidth).toBeGreaterThan(subPixel2);
+    expect(vp.candleWidth).toBeLessThan(2); // 1.2 × sub-pixel is still sub-pixel
+  });
+
+  it('interactive zoom-out from a normal view still floors at MIN_CANDLE_WIDTH', () => {
+    // Preserve the original interactive contract: from a normal (>= MIN)
+    // width, repeated zoom-out can't go sub-pixel — only fitAll does.
+    const midX = (LAYOUT.chartLeft + LAYOUT.chartRight) / 2;
+    vp.candleWidth = 2.2; // just above MIN
+    vp.zoom(0.1, midX); // aggressive zoom out
+    expect(vp.candleWidth).toBe(2); // MIN_CANDLE_WIDTH
   });
 
   it('clamps candleWidth to MAX_CANDLE_WIDTH for very small buffers', () => {

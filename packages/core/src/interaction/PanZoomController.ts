@@ -31,6 +31,17 @@ export interface PanZoomCallbacks {
    * defer logic).
    */
   onDragStateChange?: (dragging: boolean) => void;
+  /**
+   * Hit-test for a draggable overlay (e.g. a price line) at the given
+   * canvas-local point. Return its id to begin dragging it instead of
+   * panning, or null to fall through to pan / price-scale. Only consulted
+   * for points left of the price-axis strip.
+   */
+  hitTestDraggable?: (x: number, y: number) => { id: string } | null;
+  /** Fired on each move while dragging a draggable overlay, with the new price. */
+  onDragDraggable?: (id: string, price: number) => void;
+  /** Fired when a draggable-overlay drag ends. */
+  onDragDraggableEnd?: (id: string) => void;
 }
 
 export class PanZoomController {
@@ -49,6 +60,8 @@ export class PanZoomController {
   private _priceScaleAnchorY = 0;
   private _lastMouseX = 0;
   private _lastMouseY = 0;
+  /** Id of the draggable overlay (price line) currently being dragged, or null. */
+  private _draggingPrimitiveId: string | null = null;
 
   // Touch state
   private _lastTouchDist = 0;
@@ -116,6 +129,32 @@ export class PanZoomController {
     const localX = e.clientX - rect.left;
     const localY = e.clientY - rect.top;
     const layout = this._viewport.layout;
+
+    // A draggable overlay (price line) under the cursor takes priority over
+    // panning — but not over the price-axis scale strip (x >= chartRight),
+    // which must still rescale the axis.
+    if (layout && localX < layout.chartRight) {
+      const hit = this._callbacks.hitTestDraggable?.(localX, localY);
+      if (hit) {
+        this._draggingPrimitiveId = hit.id;
+        this._lastMouseX = e.clientX;
+        this._lastMouseY = e.clientY;
+        // Kill any pan momentum still in flight — otherwise the old RAF keeps
+        // panning the chart out from under the cursor while we drag the line.
+        this._velocity = 0;
+        if (this._momentumRafId) {
+          cancelAnimationFrame(this._momentumRafId);
+          this._momentumRafId = 0;
+        }
+        this._canvas.style.cursor = 'ns-resize';
+        this._callbacks.onDragStateChange?.(true);
+        this._canvas.focus();
+        document.addEventListener('mousemove', this._onMouseMove);
+        document.addEventListener('mouseup', this._onMouseUp);
+        return;
+      }
+    }
+
     this._isPriceScaleDrag =
       !!layout &&
       localX >= layout.chartRight &&
@@ -142,6 +181,16 @@ export class PanZoomController {
 
   private _handleMouseMove(e: MouseEvent): void {
     if (!this._isDragging) return;
+
+    // Dragging a price line: map the cursor Y to a price (correct in any
+    // scale mode via yToPrice) and let the host move the line. No pan.
+    if (this._draggingPrimitiveId !== null) {
+      const rect = this._canvas.getBoundingClientRect();
+      const localY = e.clientY - rect.top;
+      this._callbacks.onDragDraggable?.(this._draggingPrimitiveId, this._viewport.yToPrice(localY));
+      return;
+    }
+
     const dx = e.clientX - this._lastMouseX;
     const dy = e.clientY - this._lastMouseY;
 
@@ -176,6 +225,19 @@ export class PanZoomController {
   }
 
   private _handleMouseUp(_e: MouseEvent): void {
+    // End a price-line drag — no momentum, no pan.
+    if (this._draggingPrimitiveId !== null) {
+      const id = this._draggingPrimitiveId;
+      this._draggingPrimitiveId = null;
+      this._isDragging = false;
+      this._canvas.style.cursor = this._callbacks.getIdleCursor?.() ?? 'crosshair';
+      this._callbacks.onDragStateChange?.(false);
+      document.removeEventListener('mousemove', this._onMouseMove);
+      document.removeEventListener('mouseup', this._onMouseUp);
+      this._callbacks.onDragDraggableEnd?.(id);
+      return;
+    }
+
     const wasPriceScaleDrag = this._isPriceScaleDrag;
     this._isDragging = false;
     this._isPriceScaleDrag = false;

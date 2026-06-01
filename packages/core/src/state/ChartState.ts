@@ -1,4 +1,5 @@
 import type { Candle, ChartType, ThemeMode, ThemeColors } from '../types';
+import type { PriceScaleMode } from '../interaction/priceScale';
 import type { IndicatorConfig } from '../indicators/registry';
 import type { DrawingSnapshot } from '../drawings/Drawing';
 
@@ -19,12 +20,18 @@ export interface LayoutState {
   version: 1;
   symbol: string;
   resolution: string;
-  chartType: ChartType;
+  /** Built-in type, or a host-registered custom series type. */
+  chartType: ChartType | (string & {});
   theme: ThemeMode | ThemeColors;
   viewport: {
     startIndex: number;
     candleWidth: number;
     autoFollow: boolean;
+    /**
+     * Price-axis scale mode. Optional + additive: states written before
+     * F1 omit it and load back as `'linear'`, so no schema bump needed.
+     */
+    priceScaleMode?: PriceScaleMode;
   };
   indicators: IndicatorConfig[];
   drawings: DrawingSnapshot[];

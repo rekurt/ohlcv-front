@@ -1,13 +1,43 @@
-import type { ChartLayout } from '../types';
+import type { ChartLayout, CandleView } from '../types';
 import {
   DEFAULT_CANDLE_WIDTH,
   MIN_CANDLE_WIDTH,
+  MIN_CANDLE_WIDTH_FIT,
   MAX_CANDLE_WIDTH,
   CANDLE_GAP_RATIO,
   PRICE_PADDING_RATIO,
+  RANGE_ACCEL_THRESHOLD,
 } from '../constants';
-import { clamp } from '../utils';
+import { clamp, niceGridValues, niceLogGridValues, formatPercent } from '../utils';
 import { CandleBuffer } from '../data/CandleBuffer';
+import {
+  type PriceScaleMode,
+  priceToTransformed,
+  transformedToPrice,
+} from './priceScale';
+
+/**
+ * A single price-axis grid line: the price it sits at, its Y pixel, and
+ * a pre-formatted label. `label` is `null` for price-based modes
+ * (linear/log) so the renderer can apply the host's custom price
+ * formatter; it is a ready string for percentage/indexed modes whose
+ * axis reads percentages, not prices.
+ */
+export interface GridTick {
+  price: number;
+  y: number;
+  label: string | null;
+}
+
+/**
+ * Optional coarse range index passed to {@link Viewport.autoScale} so a
+ * huge (sub-pixel `fitAll`) visible window doesn't get scanned candle-by-
+ * candle every frame. Structural so the viewport stays decoupled from the
+ * concrete `RangePyramid`.
+ */
+export interface RangeSource {
+  rangeOf(start: number, end: number): { minLow: number; maxHigh: number; maxVol: number };
+}
 
 export class Viewport {
   startIndex = 0;
@@ -39,7 +69,42 @@ export class Viewport {
    */
   manualPriceScale = false;
 
+  /**
+   * Active price-axis transform. `'linear'` keeps the original render
+   * path byte-for-byte; `'log'`/`'percentage'`/`'indexedTo100'` route
+   * through {@link priceToTransformed}. Set via {@link setScaleMode}.
+   */
+  scaleMode: PriceScaleMode = 'linear';
+
+  /**
+   * Anchor for percentage / indexedTo100 modes — the first visible
+   * candle's close. Recomputed every `autoScale` (so it tracks
+   * horizontal scroll); frozen while `manualPriceScale` is on so the
+   * %-axis doesn't jump during a price-axis drag.
+   */
+  private _priceBase = 0;
+
   private _bufferLength = 0;
+
+  /**
+   * Non-uniform horizontal mapping: logical index → 0..1 position across the
+   * chart width. Set by the engine for value-based (e.g. yield-curve)
+   * horizontal scales; null for the default uniform index spacing, where
+   * indexToX/xToIndex use the original closed-form arithmetic unchanged.
+   */
+  private _coord01: ((index: number) => number) | null = null;
+
+  // --- transformed-extrema cache -------------------------------------
+  // priceToY/yToPrice are called thousands of times per frame; cache the
+  // transformed min/max and recompute only when an input changed. The
+  // cache is keyed on the raw inputs (not refreshed by autoScale alone)
+  // so direct priceMin/priceMax mutations in tests stay correct.
+  private _txMode: PriceScaleMode | null = null;
+  private _txMin = 0;
+  private _txMax = 0;
+  private _txBase = 0;
+  private _tMin = 0;
+  private _tMax = 0;
 
   setLayout(layout: ChartLayout): void {
     this.layout = layout;
@@ -53,26 +118,164 @@ export class Viewport {
 
   /** Convert buffer index to X pixel coordinate */
   indexToX(index: number): number {
+    if (this._coord01) {
+      return this.layout.chartLeft + this._coord01(index) * (this.layout.chartRight - this.layout.chartLeft);
+    }
     return this.layout.chartLeft + (index - this.startIndex) * this.candleStep + this.candleWidth / 2;
   }
 
   /** Convert X pixel to nearest buffer index */
   xToIndex(x: number): number {
+    if (this._coord01) {
+      return this._coord01ToIndex(x);
+    }
     return Math.round((x - this.layout.chartLeft - this.candleWidth / 2) / this.candleStep + this.startIndex);
+  }
+
+  /**
+   * Install a non-uniform index→0..1 horizontal mapping (value-based scales),
+   * or pass null to restore uniform index spacing. The default is null, so
+   * the standard time chart's geometry is untouched.
+   */
+  setCoordinateMapping(fn: ((index: number) => number) | null): void {
+    this._coord01 = fn;
+  }
+
+  /** Inverse of the non-uniform mapping: nearest index for a pixel X. */
+  private _coord01ToIndex(x: number): number {
+    const fn = this._coord01!;
+    if (this._bufferLength <= 0) return 0;
+    const chartWidth = this.layout.chartRight - this.layout.chartLeft;
+    const target = chartWidth === 0 ? 0 : (x - this.layout.chartLeft) / chartWidth;
+    const loStart = Math.max(0, Math.floor(this.startIndex));
+    let lo = loStart;
+    let hi = Math.max(lo, Math.min(this._bufferLength - 1, Math.ceil(this.startIndex + this.visibleCount)));
+    // coord01 increases monotonically with index (sorted domain) → binary
+    // search for the first index whose coord01 >= target.
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (fn(mid) < target) lo = mid + 1;
+      else hi = mid;
+    }
+    // Pick whichever of (lo-1, lo) sits nearer the cursor — but never below
+    // the first visible index. Otherwise, since a value-based mapping clamps
+    // off-screen domain values to 0, a cursor at chartLeft would tie against
+    // an off-screen candle and snap crosshair/click to the wrong bar.
+    if (lo > loStart && Math.abs(fn(lo - 1) - target) <= Math.abs(fn(lo) - target)) return lo - 1;
+    return lo;
   }
 
   /** Convert price to Y pixel coordinate */
   priceToY(price: number): number {
-    const range = this.priceMax - this.priceMin;
-    if (range === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
-    return this.layout.chartTop + (1 - (price - this.priceMin) / range) * (this.layout.chartBottom - this.layout.chartTop);
+    // Linear fast-path: identical arithmetic to the pre-F1 implementation
+    // so the default render path stays bit-for-bit unchanged.
+    if (this.scaleMode === 'linear') {
+      const range = this.priceMax - this.priceMin;
+      if (range === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
+      return this.layout.chartTop + (1 - (price - this.priceMin) / range) * (this.layout.chartBottom - this.layout.chartTop);
+    }
+    this._ensureTransform();
+    const tRange = this._tMax - this._tMin;
+    if (tRange === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
+    const t = priceToTransformed(price, this.scaleMode, this._priceBase);
+    return this.layout.chartTop + (1 - (t - this._tMin) / tRange) * (this.layout.chartBottom - this.layout.chartTop);
   }
 
   /** Convert Y pixel to price */
   yToPrice(y: number): number {
     const chartHeight = this.layout.chartBottom - this.layout.chartTop;
     if (chartHeight === 0) return this.priceMin;
-    return this.priceMax - ((y - this.layout.chartTop) / chartHeight) * (this.priceMax - this.priceMin);
+    if (this.scaleMode === 'linear') {
+      return this.priceMax - ((y - this.layout.chartTop) / chartHeight) * (this.priceMax - this.priceMin);
+    }
+    this._ensureTransform();
+    const t = this._tMax - ((y - this.layout.chartTop) / chartHeight) * (this._tMax - this._tMin);
+    return transformedToPrice(t, this.scaleMode, this._priceBase);
+  }
+
+  /**
+   * Recompute the cached transformed extrema if any input changed.
+   * Cheap no-op on a cache hit (the common case within a frame).
+   */
+  private _ensureTransform(): void {
+    if (
+      this._txMode === this.scaleMode &&
+      this._txMin === this.priceMin &&
+      this._txMax === this.priceMax &&
+      this._txBase === this._priceBase
+    ) {
+      return;
+    }
+    this._txMode = this.scaleMode;
+    this._txMin = this.priceMin;
+    this._txMax = this.priceMax;
+    this._txBase = this._priceBase;
+    this._tMin = priceToTransformed(this.priceMin, this.scaleMode, this._priceBase);
+    this._tMax = priceToTransformed(this.priceMax, this.scaleMode, this._priceBase);
+  }
+
+  /**
+   * Switch the price-axis transform. Clears any manual (frozen) scale so
+   * the next `autoScale` re-derives a sane range for the new mode.
+   */
+  setScaleMode(mode: PriceScaleMode): void {
+    if (this.scaleMode === mode) return;
+    this.scaleMode = mode;
+    this.manualPriceScale = false;
+    this._txMode = null; // invalidate transform cache
+  }
+
+  /**
+   * Format a price value as a Y-axis label in the active scale mode.
+   * Returns a pre-formatted string for `percentage`/`indexedTo100` modes
+   * (e.g. `"+10.00%"`) so all axis pills — grid ticks, current-price pill,
+   * and crosshair pill — show consistent transformed units. Returns `null`
+   * for `linear` and `log` so the caller applies its own price formatter.
+   */
+  formatPriceLabel(price: number): string | null {
+    const mode = this.scaleMode;
+    if (mode === 'percentage') {
+      const t = priceToTransformed(price, 'percentage', this._priceBase);
+      return formatPercent(t);
+    }
+    if (mode === 'indexedTo100') {
+      const t = priceToTransformed(price, 'indexedTo100', this._priceBase);
+      return t.toFixed(2);
+    }
+    return null; // linear/log: let the caller apply its formatter
+  }
+
+  /**
+   * Price-axis grid ticks for the current scale mode. Shared by the
+   * grid renderer and the price-axis renderer so they never diverge.
+   * For linear/log, `label` is null (caller formats the price); for
+   * percentage/indexed, `label` is the pre-formatted axis string.
+   */
+  gridTicks(maxTicks = 6): GridTick[] {
+    const out: GridTick[] = [];
+    if (this.scaleMode === 'log') {
+      for (const price of niceLogGridValues(this.priceMin, this.priceMax, maxTicks)) {
+        out.push({ price, y: this.priceToY(price), label: null });
+      }
+      return out;
+    }
+    if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
+      const base = this._priceBase;
+      const mode = this.scaleMode;
+      const tMin = priceToTransformed(this.priceMin, mode, base);
+      const tMax = priceToTransformed(this.priceMax, mode, base);
+      for (const t of niceGridValues(tMin, tMax, maxTicks)) {
+        const price = transformedToPrice(t, mode, base);
+        const label = mode === 'percentage' ? formatPercent(t) : t.toFixed(2);
+        out.push({ price, y: this.priceToY(price), label });
+      }
+      return out;
+    }
+    // Linear
+    for (const price of niceGridValues(this.priceMin, this.priceMax, maxTicks)) {
+      out.push({ price, y: this.priceToY(price), label: null });
+    }
+    return out;
   }
 
   /** Convert volume to Y pixel coordinate */
@@ -102,7 +305,18 @@ export class Viewport {
   /** Zoom around a center X coordinate */
   zoom(factor: number, centerX: number): void {
     const centerIndex = this.xToIndex(centerX);
-    const newWidth = clamp(this.candleWidth * factor, MIN_CANDLE_WIDTH, MAX_CANDLE_WIDTH);
+    // Always cap at MAX_CANDLE_WIDTH. Apply the MIN_CANDLE_WIDTH floor ONLY
+    // when the current width is already >= MIN (a normal interactive view) —
+    // never when we're in a sub-pixel `fitAll` state. Otherwise any zoom,
+    // in or out, would snap a 100k-bar fit-all view back up to 2px,
+    // discarding it. In sub-pixel state the width then flows smoothly both
+    // ways (zoom-in can cross MIN into normal range; zoom-out stays
+    // sub-pixel); from a normal view, interactive zoom-out still floors at
+    // MIN as before.
+    let newWidth = Math.min(this.candleWidth * factor, MAX_CANDLE_WIDTH);
+    if (this.candleWidth >= MIN_CANDLE_WIDTH) {
+      newWidth = Math.max(newWidth, MIN_CANDLE_WIDTH);
+    }
 
     if (newWidth === this.candleWidth) return;
     this.candleWidth = newWidth;
@@ -114,26 +328,46 @@ export class Viewport {
     this._clampRange();
   }
 
-  /** Auto-scale price/volume from visible buffer data */
-  autoScale(buffer: CandleBuffer): void {
+  /**
+   * Auto-scale price/volume from the visible buffer data.
+   *
+   * `accel` (optional) is a coarse range index used only when the visible
+   * window is huge (sub-pixel `fitAll`) and the mode isn't log — it turns a
+   * per-frame O(window) scan into ≈ O(window / block). Omit it and the
+   * original linear scan runs, preserving all four guards (manual-mode
+   * volume rescan, empty window, NaN-skip, flat-range).
+   */
+  autoScale(buffer: CandleBuffer, accel?: RangeSource): void {
     this._bufferLength = buffer.length;
-    // Manual scale mode (user has dragged the price axis): keep
-    // priceMin/priceMax frozen, but still update volumeMax so volume
-    // bars stay correct.
-    if (this.manualPriceScale) {
-      const startM = Math.max(0, Math.floor(this.startIndex));
-      const endM = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
-      let maxVol = 0;
-      const viewM = buffer.sliceView(startM, endM);
-      for (let i = 0; i < viewM.length; i++) {
-        const v = viewM.volume[i]!;
-        if (Number.isFinite(v) && v > maxVol) maxVol = v;
-      }
-      this.volumeMax = maxVol;
-      return;
-    }
+
     const start = Math.max(0, Math.floor(this.startIndex));
     const end = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
+    const windowSize = end - start;
+    // Log mode's ≤0 skip needs per-candle filtering the coarse index can't
+    // do, so log always uses the linear scan.
+    const accelOk =
+      accel != null && windowSize > RANGE_ACCEL_THRESHOLD && this.scaleMode !== 'log';
+
+    // Manual scale mode (user dragged the price axis): keep priceMin/
+    // priceMax frozen, but still refresh volumeMax so volume bars track.
+    if (this.manualPriceScale) {
+      if (start >= end) {
+        this.volumeMax = 0;
+        return;
+      }
+      if (accelOk) {
+        this.volumeMax = accel!.rangeOf(start, end).maxVol;
+      } else {
+        let maxVol = 0;
+        const viewM = buffer.sliceView(start, end);
+        for (let i = 0; i < viewM.length; i++) {
+          const v = viewM.volume[i]!;
+          if (Number.isFinite(v) && v > maxVol) maxVol = v;
+        }
+        this.volumeMax = maxVol;
+      }
+      return;
+    }
 
     // Empty visible window (no data, zero-width chart) — reset to a
     // safe default range so priceToY doesn't divide by zero.
@@ -146,32 +380,85 @@ export class Viewport {
       return;
     }
 
-    const view = buffer.sliceView(start, end);
+    // In log mode a non-positive price has no position on the axis, so
+    // those candles must not pull the range down to (or below) zero.
+    const isLog = this.scaleMode === 'log';
     let minPrice = Infinity;
     let maxPrice = -Infinity;
     let maxVol = 0;
 
-    // Scan visible candles for price extrema, skipping NaN/±Infinity
-    // entries so one corrupt candle can't poison the whole range. A
-    // corrupted upstream feed is the most common source of NaNs; we
-    // want the chart to keep rendering the rest of the window.
-    for (let i = 0; i < view.length; i++) {
-      const lo = view.low[i]!;
-      const hi = view.high[i]!;
-      const vol = view.volume[i]!;
-      if (Number.isFinite(lo) && lo < minPrice) minPrice = lo;
-      if (Number.isFinite(hi) && hi > maxPrice) maxPrice = hi;
-      if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
+    if (accelOk) {
+      const r = accel!.rangeOf(start, end);
+      minPrice = r.minLow;
+      maxPrice = r.maxHigh;
+      maxVol = r.maxVol;
+    } else {
+      // Scan visible candles for price extrema, skipping NaN/±Infinity
+      // entries so one corrupt candle can't poison the whole range.
+      const view = buffer.sliceView(start, end);
+      let minPositive = Infinity; // log mode: smallest positive low/high seen
+      for (let i = 0; i < view.length; i++) {
+        const lo = view.low[i]!;
+        const hi = view.high[i]!;
+        const vol = view.volume[i]!;
+        if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
+        if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
+        if (isLog) {
+          // Smallest positive across the full OHLC (low/open/close/high), so a
+          // candle with low <= 0 but a positive body is still fully fit.
+          if (lo > 0 && lo < minPositive) minPositive = lo;
+          if (hi > 0 && hi < minPositive) minPositive = hi;
+          const op = view.open[i]!;
+          const cl = view.close[i]!;
+          if (Number.isFinite(op) && op > 0 && op < minPositive) minPositive = op;
+          if (Number.isFinite(cl) && cl > 0 && cl < minPositive) minPositive = cl;
+        }
+        if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
+      }
+      // Log mode: the axis minimum is the smallest positive price in the
+      // window. Even if every low is <= 0, positive body/high prices still
+      // have a position, so fit to them instead of freezing the range.
+      if (isLog && Number.isFinite(minPositive)) minPrice = minPositive;
     }
 
-    // Every candle in the window was NaN/Infinity. Keep the previous
-    // range (don't overwrite with Infinity sentinels) — the chart will
-    // render empty space but won't crash.
+    // Every candle in the window was NaN/Infinity (or, in log mode, had no
+    // positive price at all). Keep the previous range (don't overwrite with
+    // Infinity sentinels) — the chart renders empty space but won't crash.
     if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) {
       return;
     }
 
-    // Flat range protection (all candles share the same low/high).
+    // Percentage / indexed modes anchor on the first visible finite close.
+    // Recomputed every frame so the base tracks horizontal scroll (frozen
+    // in manual mode via the early return above). Bounded probe keeps this
+    // O(1)-ish even on the accelerated huge-window path.
+    if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
+      // Scan the whole visible window for the first non-zero finite close
+      // (sliceView is a zero-copy subarray; the loop breaks on the first
+      // valid close, so it's O(1) in the common case and only walks far when
+      // the window starts with a run of zero/bad closes). base = 0 would
+      // collapse the percentage transform; keep the previous base if the
+      // entire window has no usable close.
+      const probe = buffer.sliceView(start, end);
+      for (let i = 0; i < probe.length; i++) {
+        const c = probe.close[i]!;
+        if (Number.isFinite(c) && c !== 0) {
+          this._priceBase = c;
+          break;
+        }
+      }
+    }
+
+    this._applyPriceRange(minPrice, maxPrice);
+    this.volumeMax = maxVol;
+  }
+
+  /**
+   * Apply flat-range protection + mode-aware padding to a raw [min, max]
+   * pair and commit it to priceMin/priceMax. Shared by autoScale and
+   * autoScaleFromView so both paths pad identically.
+   */
+  private _applyPriceRange(minPrice: number, maxPrice: number): void {
     let range = maxPrice - minPrice;
     if (range === 0) {
       const padding = Math.abs(maxPrice) * 0.01 || 1;
@@ -179,11 +466,100 @@ export class Viewport {
       maxPrice += padding;
       range = maxPrice - minPrice;
     }
+    if (this.scaleMode === 'log') {
+      // Pad in log space — a linear 5% pad on a log axis squashes the top.
+      const logMin = Math.log(minPrice);
+      const logMax = Math.log(maxPrice);
+      const logPad = (logMax - logMin) * PRICE_PADDING_RATIO;
+      this.priceMin = Math.exp(logMin - logPad);
+      this.priceMax = Math.exp(logMax + logPad);
+    } else {
+      const pad = range * PRICE_PADDING_RATIO;
+      this.priceMin = minPrice - pad;
+      this.priceMax = maxPrice + pad;
+    }
+  }
 
-    // Add padding
-    const pad = range * PRICE_PADDING_RATIO;
-    this.priceMin = minPrice - pad;
-    this.priceMax = maxPrice + pad;
+  /**
+   * Auto-scale from a pre-built (possibly transformed) view rather than the
+   * raw buffer — used by series with a `transformView` (Heikin-Ashi) or a
+   * custom `priceRange`. Scans the view linearly (no range pyramid). Honors
+   * the same manual / empty / NaN / log / flat-range guards as autoScale.
+   */
+  autoScaleFromView(
+    buffer: CandleBuffer,
+    view: CandleView,
+    priceRange?: (v: CandleView, i: number) => { min: number; max: number },
+  ): void {
+    this._bufferLength = buffer.length;
+
+    if (this.manualPriceScale) {
+      let maxVol = 0;
+      for (let i = 0; i < view.length; i++) {
+        const v = view.volume[i]!;
+        if (Number.isFinite(v) && v > maxVol) maxVol = v;
+      }
+      this.volumeMax = maxVol;
+      return;
+    }
+
+    if (view.length === 0) {
+      if (this.priceMin === this.priceMax) {
+        this.priceMin = 0;
+        this.priceMax = 1;
+        this.volumeMax = 0;
+      }
+      return;
+    }
+
+    const isLog = this.scaleMode === 'log';
+    let minPrice = Infinity;
+    let maxPrice = -Infinity;
+    let maxVol = 0;
+    let minPositive = Infinity; // log mode: smallest positive low/high seen
+    for (let i = 0; i < view.length; i++) {
+      let lo: number;
+      let hi: number;
+      if (priceRange) {
+        const r = priceRange(view, i);
+        lo = r.min;
+        hi = r.max;
+      } else {
+        lo = view.low[i]!;
+        hi = view.high[i]!;
+      }
+      const vol = view.volume[i]!;
+      if (Number.isFinite(lo) && (!isLog || lo > 0) && lo < minPrice) minPrice = lo;
+      if (Number.isFinite(hi) && (!isLog || hi > 0) && hi > maxPrice) maxPrice = hi;
+      if (isLog) {
+        // Smallest positive across the entry's range + the candle body.
+        if (lo > 0 && lo < minPositive) minPositive = lo;
+        if (hi > 0 && hi < minPositive) minPositive = hi;
+        const op = view.open[i]!;
+        const cl = view.close[i]!;
+        if (Number.isFinite(op) && op > 0 && op < minPositive) minPositive = op;
+        if (Number.isFinite(cl) && cl > 0 && cl < minPositive) minPositive = cl;
+      }
+      if (Number.isFinite(vol) && vol > maxVol) maxVol = vol;
+    }
+    // Log mode: fit to the smallest positive price even if every low is <= 0.
+    if (isLog && Number.isFinite(minPositive)) minPrice = minPositive;
+
+    if (!Number.isFinite(minPrice) || !Number.isFinite(maxPrice)) return;
+
+    if (this.scaleMode === 'percentage' || this.scaleMode === 'indexedTo100') {
+      for (let i = 0; i < view.length; i++) {
+        const c = view.close[i]!;
+        // Skip zero (and non-finite) — base = 0 collapses the percentage
+        // transform; keep the previous base if no non-zero close is found.
+        if (Number.isFinite(c) && c !== 0) {
+          this._priceBase = c;
+          break;
+        }
+      }
+    }
+
+    this._applyPriceRange(minPrice, maxPrice);
     this.volumeMax = maxVol;
   }
 
@@ -199,11 +575,19 @@ export class Viewport {
    */
   scalePriceRangeBy(factor: number, anchorY: number): void {
     if (!Number.isFinite(factor) || factor <= 0) return;
-    const anchorPrice = this.yToPrice(anchorY);
     // Clamp factor so a single drag can't blow the range out by 1000×.
     const safeFactor = clamp(factor, 0.05, 20);
-    const newMin = anchorPrice - (anchorPrice - this.priceMin) * safeFactor;
-    const newMax = anchorPrice + (this.priceMax - anchorPrice) * safeFactor;
+    const mode = this.scaleMode;
+    const base = this._priceBase;
+    // Scale in TRANSFORMED space so a log/percentage axis drag stays
+    // even across decades. For linear this reduces to the original
+    // price-space formula bit-for-bit (the transform is the identity).
+    const anchorPrice = this.yToPrice(anchorY);
+    const tAnchor = priceToTransformed(anchorPrice, mode, base);
+    const tMin = priceToTransformed(this.priceMin, mode, base);
+    const tMax = priceToTransformed(this.priceMax, mode, base);
+    const newMin = transformedToPrice(tAnchor - (tAnchor - tMin) * safeFactor, mode, base);
+    const newMax = transformedToPrice(tAnchor + (tMax - tAnchor) * safeFactor, mode, base);
     if (!Number.isFinite(newMin) || !Number.isFinite(newMax) || newMin >= newMax) return;
     this.priceMin = newMin;
     this.priceMax = newMax;
@@ -235,7 +619,10 @@ export class Viewport {
     const chartWidth = this.layout.chartRight - this.layout.chartLeft;
     const stepForAll = chartWidth / bufferLength;
     const rawWidth = stepForAll / (1 + CANDLE_GAP_RATIO);
-    this.candleWidth = clamp(rawWidth, MIN_CANDLE_WIDTH, MAX_CANDLE_WIDTH);
+    // Use the sub-pixel fit floor (not MIN_CANDLE_WIDTH) so "fit all" truly
+    // shows the entire buffer — even millions of bars. At sub-pixel widths
+    // the conflation render path collapses to one bar per pixel column.
+    this.candleWidth = clamp(rawWidth, MIN_CANDLE_WIDTH_FIT, MAX_CANDLE_WIDTH);
     this._recalcVisibleCount();
     this.startIndex = 0;
     this.autoFollow = false;

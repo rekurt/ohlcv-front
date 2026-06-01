@@ -68,6 +68,64 @@ export function niceGridValues(min: number, max: number, maxTicks = 8): number[]
   return values;
 }
 
+/**
+ * Generate logarithmically-spaced "nice" grid values (1, 2, 5 × 10^n)
+ * spanning [min, max]. Used by the log price-scale mode so axis ticks
+ * land on round decade multiples instead of evenly-spaced prices.
+ *
+ * Falls back to {@link niceGridValues} when the range is non-positive,
+ * `min` is not strictly positive, or the decade walk yields fewer than
+ * three ticks (a tight zoom inside a single decade — linear nice values
+ * read better there).
+ */
+export function niceLogGridValues(min: number, max: number, maxTicks = 6): number[] {
+  if (!(max > min) || min <= 0) {
+    return niceGridValues(Math.max(min, LOG_AXIS_FLOOR), Math.max(max, LOG_AXIS_FLOOR), maxTicks);
+  }
+
+  const loExp = Math.floor(Math.log10(min));
+  const hiExp = Math.ceil(Math.log10(max));
+  const decades = hiExp - loExp;
+
+  // Thin the tick density to roughly `maxTicks`, so a wide log range doesn't
+  // emit dozens of overlapping lines/labels:
+  //   - narrow span → full 1/2/5 per decade
+  //   - medium span → one tick per decade (powers of 10)
+  //   - very wide span → one tick every N decades
+  let mantissas: number[];
+  let decadeStep = 1;
+  if (decades * 3 <= maxTicks) {
+    mantissas = [1, 2, 5];
+  } else if (decades <= maxTicks) {
+    mantissas = [1];
+  } else {
+    mantissas = [1];
+    decadeStep = Math.ceil(decades / maxTicks);
+  }
+
+  const values: number[] = [];
+  for (let exp = loExp; exp <= hiExp; exp += decadeStep) {
+    const decade = Math.pow(10, exp);
+    for (const m of mantissas) {
+      const v = m * decade;
+      if (v >= min && v <= max) values.push(v);
+    }
+  }
+
+  if (values.length < 3) return niceGridValues(min, max, maxTicks);
+  return values;
+}
+
+/** Smallest positive value used to clamp a log axis with a bad lower bound. */
+const LOG_AXIS_FLOOR = 1e-9;
+
+/** Format a signed percentage for the percentage/indexed price-scale axis. */
+export function formatPercent(value: number): string {
+  if (!Number.isFinite(value)) return '';
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${value.toFixed(2)}%`;
+}
+
 /** Format price with auto-precision */
 export function formatPrice(price: number): string {
   if (Math.abs(price) >= 1000) return price.toFixed(2);

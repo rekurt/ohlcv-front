@@ -1,12 +1,11 @@
 import type { ChartEngine } from '../rendering/ChartEngine';
 import type { CandleBuffer } from '../data/CandleBuffer';
 import type { HoverInfo } from '../types';
-import { formatTime, clamp } from '../utils';
+import { clamp } from '../utils';
 
 export class CrosshairController {
   private _engine: ChartEngine;
   private _buffer: CandleBuffer;
-  private _resolution: string;
   private _rafId = 0;
   private _destroyed = false;
   private _lastX = 0;
@@ -16,10 +15,9 @@ export class CrosshairController {
   private _onMouseMove: (e: MouseEvent) => void;
   private _onMouseLeave: (e: MouseEvent) => void;
 
-  constructor(engine: ChartEngine, buffer: CandleBuffer, resolution: string) {
+  constructor(engine: ChartEngine, buffer: CandleBuffer) {
     this._engine = engine;
     this._buffer = buffer;
-    this._resolution = resolution;
 
     const canvas = engine.topCanvas;
     canvas.style.cursor = 'crosshair';
@@ -38,10 +36,6 @@ export class CrosshairController {
 
   setBuffer(buffer: CandleBuffer): void {
     this._buffer = buffer;
-  }
-
-  setResolution(resolution: string): void {
-    this._resolution = resolution;
   }
 
   destroy(): void {
@@ -96,7 +90,12 @@ export class CrosshairController {
 
     const candle = this._buffer.candleAt(index);
     const snappedX = viewport.indexToX(index);
-    const timeLabel = candle ? formatTime(candle.t, this._resolution) : '';
+    // Derive the X value via the behavior's fromLogical (exactly as the axis
+    // does), not from candle.t directly — so a custom domain whose value
+    // differs from the raw timestamp stays consistent between crosshair,
+    // hover, and the rendered X axis.
+    const horzValue = this._engine.horzScale.fromLogical(index, this._buffer);
+    const timeLabel = horzValue !== null ? this._engine.horzScale.formatValue(horzValue) : '';
 
     this._engine.setCrosshair(snappedX, y, index, candle, timeLabel);
 

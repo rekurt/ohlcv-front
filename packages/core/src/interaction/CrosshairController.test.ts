@@ -4,6 +4,7 @@ import { ChartEngine } from '../rendering/ChartEngine';
 import { CandleBuffer } from '../data/CandleBuffer';
 import { DARK_THEME } from '../constants';
 import { installCanvasStub } from '../test-utils/canvasStub';
+import type { HorzScaleBehavior } from '../horzscale/HorzScaleBehavior';
 import type { Candle } from '../types';
 
 function makeCandle(i: number): Candle {
@@ -41,7 +42,8 @@ describe('CrosshairController', () => {
     // Same rect for topCanvas — normally computed from DOM layout.
     engine.topCanvas.getBoundingClientRect = container.getBoundingClientRect;
 
-    controller = new CrosshairController(engine, buffer, '1H');
+    engine.setResolution('1H');
+    controller = new CrosshairController(engine, buffer);
   });
 
   afterEach(() => {
@@ -119,8 +121,29 @@ describe('CrosshairController', () => {
     expect(() => controller.setBuffer(newBuf)).not.toThrow();
   });
 
-  it('setResolution updates the label format', () => {
-    expect(() => controller.setResolution('1D')).not.toThrow();
+  it('labels the crosshair via the engine horizontal-scale behavior', async () => {
+    // Default time behavior → label is formatTime(candle.t, resolution).
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const label = setCrosshairSpy.mock.calls.at(-1)![4] as string;
+    expect(label).toMatch(/^\d{2}:\d{2}$/);
+  });
+
+  it('derives the crosshair label via fromLogical, not candle.t', async () => {
+    // Custom behavior whose domain value is unrelated to the raw timestamp:
+    // fromLogical returns a constant. The crosshair must format THAT, proving
+    // it goes through fromLogical (candle.t would yield a timestamp instead).
+    const custom: HorzScaleBehavior = {
+      uniform: true,
+      toLogical: () => 0,
+      fromLogical: () => 42,
+      formatValue: (v) => `v=${v}`,
+    };
+    engine.setHorzScale(custom);
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const label = setCrosshairSpy.mock.calls.at(-1)![4] as string;
+    expect(label).toBe('v=42');
   });
 
   it('destroy detaches listeners — further mousemoves are no-ops', async () => {

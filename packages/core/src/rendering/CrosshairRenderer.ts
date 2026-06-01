@@ -29,7 +29,7 @@ export class CrosshairRenderer {
   render(
     ctx: CanvasRenderingContext2D,
     layout: ChartLayout,
-    _viewport: Viewport,
+    viewport: Viewport,
     state: CrosshairState,
     theme: ThemeColors,
     customPriceFormat?: (price: number) => string,
@@ -64,7 +64,9 @@ export class CrosshairRenderer {
     // Price label on Y-axis — pixel-snapped to keep text sharp. Suppressed
     // over sub-panes where the main price scale doesn't apply.
     if (inMainPane) {
-      const priceText = fmt(price);
+      // In percentage/indexed modes show the transformed label (e.g.
+      // "+10.00%") so the crosshair pill matches the grid-tick labels.
+      const priceText = viewport.formatPriceLabel(price) ?? fmt(price);
       const priceWidth = layout.priceAxisWidth - AXIS_LABEL_BG_INSET * 2;
       const priceY = Math.round(y - AXIS_LABEL_HEIGHT / 2);
 

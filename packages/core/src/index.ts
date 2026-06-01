@@ -87,11 +87,22 @@ export { StochRSI } from './indicators/StochRSI';
 export { ROC } from './indicators/ROC';
 export { ZigZag } from './indicators/ZigZag';
 
-// Alternative chart-type renderers (opt-in, not wired into ChartEngine yet)
+// Primary-series renderers (also reused by the built-in series definitions).
 export { LineRenderer } from './rendering/LineRenderer';
 export { AreaRenderer } from './rendering/AreaRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
-export { HeikinAshiRenderer } from './rendering/HeikinAshiRenderer';
+export { HeikinAshiRenderer, buildHeikinAshiView, HEIKIN_ASHI_WARMUP } from './rendering/HeikinAshiRenderer';
+
+// Custom Series API (registry-dispatched primary series)
+export type { SeriesDefinition, SeriesRenderContext, SeriesPriceRange } from './series/Series';
+export { registerSeriesType, getSeriesType, listSeriesTypes } from './series/registry';
+export {
+  candleSeries,
+  lineSeries,
+  areaSeries,
+  ohlcSeries,
+  heikinAshiSeries,
+} from './series/builtins';
 
 // Drawing tools
 export { Drawing } from './drawings/Drawing';
@@ -112,12 +123,34 @@ export { markerY } from './markers/Marker';
 export type { Marker, MarkerPosition, MarkerShape } from './markers/Marker';
 export { MarkerRenderer } from './markers/MarkerRenderer';
 
+// Primitives (programmatic z-ordered overlays)
+export { clipToChart } from './primitives/Primitive';
+export type { Primitive, PrimitiveZOrder } from './primitives/Primitive';
+export { WatermarkPrimitive } from './primitives/WatermarkPrimitive';
+export type { WatermarkOptions, WatermarkPosition } from './primitives/WatermarkPrimitive';
+export { PriceLinePrimitive } from './primitives/PriceLinePrimitive';
+export type { PriceLineOptions, PriceLineHandle } from './primitives/PriceLinePrimitive';
+
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';
 export { toRenko } from './transforms/renko';
 
+// Horizontal-scale behaviors (X-axis domain abstraction)
+export type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
+export { TimeScaleBehavior } from './horzscale/TimeScaleBehavior';
+export { PriceScaleBehavior } from './horzscale/PriceScaleBehavior';
+export { YieldCurveBehavior } from './horzscale/YieldCurveBehavior';
+export {
+  registerHorzScaleBehavior,
+  createHorzScaleBehavior,
+  listHorzScaleBehaviors,
+} from './horzscale/registry';
+
 // Interaction
 export { Viewport } from './interaction/Viewport';
+export type { GridTick } from './interaction/Viewport';
+export { priceToTransformed, transformedToPrice, LOG_MIN_POSITIVE } from './interaction/priceScale';
+export type { PriceScaleMode } from './interaction/priceScale';
 export { PanZoomController } from './interaction/PanZoomController';
 export { CrosshairController } from './interaction/CrosshairController';
 export { KeyboardController } from './interaction/KeyboardController';
@@ -125,4 +158,4 @@ export type { KeyboardCallbacks } from './interaction/KeyboardController';
 
 // Constants & Utilities
 export { DARK_THEME, LIGHT_THEME } from './constants';
-export { resolveTheme, formatPrice, formatVolume, formatTime, computeLayout } from './utils';
+export { resolveTheme, formatPrice, formatVolume, formatPercent, formatTime, computeLayout } from './utils';

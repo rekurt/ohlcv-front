@@ -54,7 +54,7 @@ export class OHLCBarRenderer {
       const bull = close >= open;
       if (bull !== wantBull) continue;
 
-      const bufferIndex = view.offset + i;
+      const bufferIndex = view.repIndex ? view.repIndex[i]! : view.offset + i;
       const x = viewport.indexToX(bufferIndex);
       if (x + tickLen < layout.chartLeft || x - tickLen > layout.chartRight) continue;
 

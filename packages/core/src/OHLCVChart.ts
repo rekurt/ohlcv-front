@@ -1,4 +1,6 @@
 import type { Candle, ChartConfig, ChartType, ThemeColors, ThemeMode, HoverInfo } from './types';
+import type { PriceScaleMode } from './interaction/priceScale';
+import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 import { resolveTheme } from './utils';
 import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
@@ -24,7 +26,19 @@ import { Channel } from './drawings/Channel';
 import { Arrow } from './drawings/Arrow';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { Marker } from './markers/Marker';
+import type { SeriesDefinition } from './series/Series';
+import { registerSeriesType as registerSeriesTypeImpl } from './series/registry';
+import type { Primitive } from './primitives/Primitive';
+import { WatermarkPrimitive, type WatermarkOptions } from './primitives/WatermarkPrimitive';
+import {
+  PriceLinePrimitive,
+  type PriceLineOptions,
+  type PriceLineHandle,
+} from './primitives/PriceLinePrimitive';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
+
+/** Stable primitive id for the single host-managed watermark. */
+const WATERMARK_ID = 'ohlcv:watermark';
 import { isFullState } from './state/ChartState';
 import { migrateState } from './state/migrations';
 
@@ -95,6 +109,9 @@ export class OHLCVChart {
    * advanced use.
    */
   private _ownDrawingLayer: DrawingLayer;
+  private _priceLineSeq = 0;
+  /** Set after a price-line drag so the trailing click doesn't fire onCandleClick. */
+  private _suppressNextClick = false;
 
   constructor(config: ChartConfig) {
     // The chart manipulates the DOM and canvas directly, so it can only be
@@ -132,6 +149,8 @@ export class OHLCVChart {
     if (config.priceFormat) this._engine.setPriceFormat(config.priceFormat);
     if (config.volumeFormat) this._engine.setVolumeFormat(config.volumeFormat);
     if (config.chartType) this._engine.setChartType(config.chartType);
+    if (config.priceScaleMode) this._engine.viewport.setScaleMode(config.priceScaleMode);
+    if (config.horzScale) this._engine.setHorzScale(config.horzScale);
     config.container.style.backgroundColor = theme.background;
 
     // Auto-managed drawing layer. Hosts that need a custom layer can
@@ -188,12 +207,34 @@ export class OHLCVChart {
       // override it via `OHLCVChart.setIdleCursor`.
       getIdleCursor: () => this._engine.idleCursor,
       onDragStateChange: (dragging) => this._engine._setActivelyDragging(dragging),
+      // Draggable price lines: grab the topmost draggable line under the
+      // cursor, then move it with the cursor's price on each drag step.
+      hitTestDraggable: (x, y) => {
+        const hit = this._engine.hitTestPrimitives(x, y);
+        if (hit instanceof PriceLinePrimitive && hit.draggable) return { id: hit.id };
+        return null;
+      },
+      onDragDraggable: (id, price) => {
+        // Resolve the line from the engine's primitives (not a private map),
+        // so lines attached directly via attachPrimitive() are draggable too,
+        // not only those created through createPriceLine().
+        const p = this._engine.primitives.find((pr) => pr.id === id);
+        if (p instanceof PriceLinePrimitive) {
+          p.setPrice(price);
+          this._engine.requestRender();
+        }
+      },
+      onDragDraggableEnd: () => {
+        // Swallow the click that fires right after the drag so we don't
+        // also dispatch onCandleClick for the same gesture.
+        this._suppressNextClick = true;
+      },
     });
     // Track pending load-more-history calls so we don't fire them faster
     // than they resolve.
     this._loadingMore = false;
 
-    this._crosshair = new CrosshairController(this._engine, this._buffer, config.resolution);
+    this._crosshair = new CrosshairController(this._engine, this._buffer);
     if (config.onHover) {
       this._onHover = config.onHover;
       this._crosshair.setOnHover(config.onHover);
@@ -215,6 +256,13 @@ export class OHLCVChart {
     // Click handler: first check the "Go to live" pill (if visible), then
     // the candle click callback.
     this._clickHandler = (e: MouseEvent) => {
+      // A click that immediately follows a price-line drag should not also
+      // fire onCandleClick.
+      if (this._suppressNextClick) {
+        this._suppressNextClick = false;
+        return;
+      }
+
       const rect = this._engine.topCanvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
@@ -332,7 +380,6 @@ export class OHLCVChart {
     this._config.resolution = resolution;
     this._engine.setSymbol(symbol);
     this._engine.setResolution(resolution);
-    this._crosshair.setResolution(resolution);
     await this._dataFeed.connect({ symbol, resolution });
   }
 
@@ -375,9 +422,49 @@ export class OHLCVChart {
     this._engine.requestRender();
   }
 
-  /** Switch the primary price-series rendering style. */
-  setChartType(chartType: ChartType): void {
+  /** Switch the primary price-series rendering style (built-in or custom). */
+  setChartType(chartType: ChartType | (string & {})): void {
     this._engine.setChartType(chartType);
+  }
+
+  /**
+   * Register a custom primary-series type as a first-class citizen — it
+   * participates in autoscale (via its `priceRange`), conflation, and the
+   * crosshair. Use `setChartType(def.type)` to activate it. Register before
+   * `loadState` if a saved chart references the custom type (otherwise the
+   * load falls back to candles at render time).
+   */
+  registerSeriesType(def: SeriesDefinition): void {
+    registerSeriesTypeImpl(def);
+    if (this._engine.chartType === def.type) this._engine.requestRender();
+  }
+
+  /**
+   * Switch the price-axis scale mode:
+   *  - `'linear'` — equal price deltas are equal pixel deltas (default)
+   *  - `'log'` — equal *ratios* are equal pixel deltas (BTC-over-years)
+   *  - `'percentage'` — axis reads % change vs. the first visible candle
+   *  - `'indexedTo100'` — first visible candle anchored at 100
+   *
+   * Clears any manual (dragged) price scale so the new mode auto-fits.
+   */
+  setPriceScaleMode(mode: PriceScaleMode): void {
+    this._engine.viewport.setScaleMode(mode);
+    this._engine.requestRender();
+  }
+
+  /** Read the current price-axis scale mode. */
+  getPriceScaleMode(): PriceScaleMode {
+    return this._engine.viewport.scaleMode;
+  }
+
+  /**
+   * Replace the horizontal-scale behavior, controlling how the X axis is
+   * labeled — time (default), price/strike (options charts), or custom.
+   * Note: the crosshair X-label still uses the time formatter for now.
+   */
+  setHorzScale(behavior: HorzScaleBehavior): void {
+    this._engine.setHorzScale(behavior);
   }
 
   /**
@@ -581,6 +668,84 @@ export class OHLCVChart {
     this._engine.setMarkers([]);
   }
 
+  /**
+   * Attach a programmatic overlay primitive (watermark, price line, custom
+   * band) rendered at its z-tier. Primitives are runtime annotations — they
+   * are not included in `saveLayoutState`.
+   */
+  attachPrimitive(primitive: Primitive): void {
+    this._engine.attachPrimitive(primitive);
+  }
+
+  /** Detach a primitive by id. Returns true if one was removed. */
+  detachPrimitive(id: string): boolean {
+    return this._engine.detachPrimitive(id);
+  }
+
+  /** The attached primitives, in attach order. */
+  getPrimitives(): readonly Primitive[] {
+    return this._engine.primitives;
+  }
+
+  /**
+   * Set (or replace) a faint background watermark — text (symbol/timeframe)
+   * or an image (logo), painted behind the grid and series. Runtime-only;
+   * not included in `saveLayoutState`.
+   */
+  setWatermark(options: WatermarkOptions): void {
+    this._engine.detachPrimitive(WATERMARK_ID);
+    this._engine.attachPrimitive(new WatermarkPrimitive(WATERMARK_ID, options));
+    // An image passed before it finished loading draws nothing on the single
+    // attach-render, and nothing later marks the chart dirty — so repaint once
+    // it loads, otherwise a static chart never shows the image watermark.
+    const img = options.image as HTMLImageElement | undefined;
+    if (img && typeof img.addEventListener === 'function' && img.complete === false) {
+      img.addEventListener(
+        'load',
+        () => {
+          if (!this._destroyed) this._engine.requestRender();
+        },
+        { once: true },
+      );
+    }
+  }
+
+  /** Remove the watermark, if one is set. */
+  clearWatermark(): void {
+    this._engine.detachPrimitive(WATERMARK_ID);
+  }
+
+  /**
+   * Create a horizontal price line at a fixed price, with a right-axis label
+   * pill, optionally draggable. Returns a handle to move/restyle/remove it.
+   * Correct under any price-scale mode (positions via the viewport). Price
+   * lines are runtime-only — not included in `saveLayoutState`.
+   */
+  createPriceLine(options: PriceLineOptions): PriceLineHandle {
+    const id = `priceline:${this._priceLineSeq++}`;
+    const primitive = new PriceLinePrimitive(id, options);
+    this._engine.attachPrimitive(primitive);
+
+    const engine = this._engine;
+    return {
+      id,
+      setPrice(price: number): void {
+        primitive.setPrice(price);
+        engine.requestRender();
+      },
+      getPrice(): number {
+        return primitive.price;
+      },
+      setOptions(opts): void {
+        primitive.setOptions(opts);
+        engine.requestRender();
+      },
+      remove(): void {
+        engine.detachPrimitive(id);
+      },
+    };
+  }
+
   /** Redo the last undone drawing mutation. Returns true if applied. */
   redoDrawing(): boolean {
     const applied = this._ownDrawingLayer.redo();
@@ -655,6 +820,7 @@ export class OHLCVChart {
         startIndex: vp.startIndex,
         candleWidth: vp.candleWidth,
         autoFollow: vp.autoFollow,
+        priceScaleMode: vp.scaleMode,
       },
       indicators: this._indicatorConfigs.slice(),
       drawings: this.getDrawings(),
@@ -737,7 +903,6 @@ export class OHLCVChart {
       this._config.resolution = state.resolution;
       this._engine.setSymbol(state.symbol);
       this._engine.setResolution(state.resolution);
-      this._crosshair.setResolution(state.resolution);
     }
     this._engine.setChartType(state.chartType);
     this.setTheme(state.theme);
@@ -757,6 +922,8 @@ export class OHLCVChart {
     if (vp.layout) vp.setLayout(vp.layout);
     vp.startIndex = state.viewport.startIndex;
     vp.autoFollow = state.viewport.autoFollow;
+    // Optional + additive: pre-F1 states omit priceScaleMode → 'linear'.
+    vp.setScaleMode(state.viewport.priceScaleMode ?? 'linear');
 
     this._engine.requestRender();
   }

@@ -36,7 +36,7 @@ export class AreaRenderer {
     let firstX = 0;
     let lastX = 0;
     for (let i = 0; i < view.length; i++) {
-      const bufferIndex = view.offset + i;
+      const bufferIndex = view.repIndex ? view.repIndex[i]! : view.offset + i;
       const x = viewport.indexToX(bufferIndex);
       if (x < layout.chartLeft - 10 || x > layout.chartRight + 10) continue;
       const y = viewport.priceToY(view.close[i]!);
@@ -69,7 +69,7 @@ export class AreaRenderer {
     ctx.beginPath();
     let first = true;
     for (let i = 0; i < view.length; i++) {
-      const bufferIndex = view.offset + i;
+      const bufferIndex = view.repIndex ? view.repIndex[i]! : view.offset + i;
       const x = viewport.indexToX(bufferIndex);
       if (x < layout.chartLeft - 10 || x > layout.chartRight + 10) continue;
       const y = viewport.priceToY(view.close[i]!);

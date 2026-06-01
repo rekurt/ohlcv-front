@@ -53,6 +53,7 @@ export class CandleBuffer {
   private _capacity: number;
   private _head = 0;
   private _version = 0;
+  private _generation = 0;
 
   constructor(capacity = INITIAL_CAPACITY) {
     this._capacity = capacity;
@@ -77,6 +78,18 @@ export class CandleBuffer {
    */
   get version(): number {
     return this._version;
+  }
+
+  /**
+   * Structural generation, bumped only on `clear()` (a full reset/reload),
+   * never on append-family mutations (`append`/`appendBatch`/`updateLast`).
+   * Lets caches that assume append-mostly growth (e.g. RangePyramid) detect a
+   * `setData` reload even when it re-establishes the same length/timestamps,
+   * and fall back to a full rebuild. (`prepend`/`evictHead` move the head, so
+   * they're already detectable via the first timestamp.)
+   */
+  get generation(): number {
+    return this._generation;
   }
 
   /** O(1) amortized append */
@@ -372,6 +385,7 @@ export class CandleBuffer {
     this._length = 0;
     this._head = 0;
     this._version++;
+    this._generation++;
   }
 
   /**

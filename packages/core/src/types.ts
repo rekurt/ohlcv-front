@@ -1,4 +1,6 @@
 import type { CandleBuffer } from './data/CandleBuffer';
+import type { PriceScaleMode } from './interaction/priceScale';
+import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 
 /**
  * A single OHLCV candle. Times are Unix seconds (not milliseconds).
@@ -37,6 +39,13 @@ export interface CandleView {
   length: number;
   /** Index of the first candle in the parent buffer. */
   offset: number;
+  /**
+   * Present only on a conflated (downsampled) view: for each aggregated
+   * bucket, the buffer index of its first candle. Renderers position a
+   * bucket via `viewport.indexToX(repIndex[i])` instead of `offset + i`.
+   * Absent on normal views, so the standard render path is unaffected.
+   */
+  repIndex?: Int32Array;
 }
 
 /**
@@ -189,6 +198,14 @@ export interface ChartConfig {
   volumeFormat?: (volume: number) => string;
   /** Style of the main price series. Default: `'candles'`. */
   chartType?: ChartType;
+  /** Initial price-axis scale mode. Default: `'linear'`. */
+  priceScaleMode?: PriceScaleMode;
+  /**
+   * Horizontal-domain behavior controlling X-axis labels (time / price /
+   * custom). Default: time. Use `PriceScaleBehavior` for options-style
+   * numeric (strike) axes.
+   */
+  horzScale?: HorzScaleBehavior;
   onCandleClick?: (candle: Candle, index: number) => void;
   onVisibleRangeChange?: (from: number, to: number) => void;
   /** Called on every crosshair move with the currently-snapped candle. */
