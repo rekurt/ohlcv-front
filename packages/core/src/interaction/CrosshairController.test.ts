@@ -5,7 +5,8 @@ import { CandleBuffer } from '../data/CandleBuffer';
 import { DARK_THEME } from '../constants';
 import { installCanvasStub } from '../test-utils/canvasStub';
 import type { HorzScaleBehavior } from '../horzscale/HorzScaleBehavior';
-import type { Candle } from '../types';
+import type { Candle, HoverInfo } from '../types';
+import type { Primitive } from '../primitives/Primitive';
 
 function makeCandle(i: number): Candle {
   return { o: 100, h: 101, l: 99, c: 100.5, v: 10, t: 1_700_000_000 + i * 60 };
@@ -60,6 +61,12 @@ describe('CrosshairController', () => {
 
   function fireLeave(): void {
     engine.topCanvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+  }
+
+  function fireDblClick(clientX: number, clientY: number): void {
+    engine.topCanvas.dispatchEvent(
+      new MouseEvent('dblclick', { clientX, clientY, bubbles: true }),
+    );
   }
 
   it('sets crosshair cursor style on the top canvas', () => {
@@ -144,6 +151,141 @@ describe('CrosshairController', () => {
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     const label = setCrosshairSpy.mock.calls.at(-1)![4] as string;
     expect(label).toBe('v=42');
+  });
+
+  it('normal mode (default) passes the raw cursor Y to setCrosshair', async () => {
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const yArg = setCrosshairSpy.mock.calls.at(-1)![1] as number;
+    expect(yArg).toBe(250);
+  });
+
+  it('magnet mode snaps crosshair Y to the nearest OHLC level of the hovered candle', async () => {
+    controller.setMode('magnet');
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+    const call = setCrosshairSpy.mock.calls.at(-1)!;
+    const yArg = call[1] as number;
+    const index = call[2] as number;
+    const candle = buffer.candleAt(index)!;
+    const levelYs = [candle.o, candle.h, candle.l, candle.c].map((p) =>
+      engine.viewport.priceToY(p),
+    );
+    // The snapped Y must equal one of the four OHLC pixel levels exactly.
+    expect(levelYs.some((ly) => Math.abs(ly - yArg) < 1e-6)).toBe(true);
+    // And it must be the closest one to the raw cursor Y (250).
+    const nearest = levelYs.reduce((a, b) => (Math.abs(b - 250) < Math.abs(a - 250) ? b : a));
+    expect(yArg).toBeCloseTo(nearest, 6);
+  });
+
+  it('reports paneIndex 0 when hovering the main price pane', async () => {
+    const onHover = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnHover(onHover);
+    // Mid-height of the main chart area → main pane.
+    fireMove(500, engine.layout.chartTop + 10);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const info = onHover.mock.lastCall![0] as HoverInfo;
+    expect(info).not.toBeNull();
+    expect(info.paneIndex).toBe(0);
+  });
+
+  it('reports paneIndex > 0 when hovering an indicator sub-pane', async () => {
+    const { RSI } = await import('../indicators/RSI');
+    engine.setIndicators([new RSI(14)]);
+    expect(engine.layout.paneCount).toBe(1);
+    expect(engine.layout.paneAreaBottom).toBeGreaterThan(engine.layout.chartBottom);
+
+    const onHover = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnHover(onHover);
+    // Inside the single sub-pane band (below chartBottom, above paneAreaBottom).
+    const subPaneY = (engine.layout.chartBottom + engine.layout.paneAreaBottom) / 2;
+    fireMove(500, subPaneY);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const info = onHover.mock.lastCall![0] as HoverInfo;
+    expect(info).not.toBeNull();
+    expect(info.paneIndex).toBe(1);
+  });
+
+  it('reports hovered === null when nothing interactive is under the cursor', async () => {
+    const onHover = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnHover(onHover);
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const info = onHover.mock.lastCall![0] as HoverInfo;
+    expect(info).not.toBeNull();
+    expect(info.hovered).toBeNull();
+  });
+
+  it('reports hovered.kind/id for an attached primitive under the cursor', async () => {
+    // A primitive whose hitTest passes anywhere → it is the topmost object.
+    const primitive: Primitive = {
+      id: 'prim-1',
+      zOrder: 'top',
+      draw: () => {},
+      hitTest: () => true,
+    };
+    engine.attachPrimitive(primitive);
+
+    const onHover = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnHover(onHover);
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const info = onHover.mock.lastCall![0] as HoverInfo;
+    expect(info).not.toBeNull();
+    expect(info.hovered).toEqual({ kind: 'primitive', id: 'prim-1' });
+  });
+
+  it('prefers a hit drawing over a primitive (priority order)', async () => {
+    const { HorizontalLine } = await import('../drawings/HorizontalLine');
+    const { DrawingLayer } = await import('../drawings/DrawingLayer');
+    const layer = new DrawingLayer();
+    // Anchor the line at the price under cursor Y=250 so its full-width
+    // geometry sits exactly under the cursor.
+    const price = engine.viewport.yToPrice(250);
+    const line = new HorizontalLine();
+    line.addPoint({ index: 0, price });
+    layer.add(line);
+    engine.setDrawingLayer(layer);
+
+    // Also attach a primitive that would match — the drawing must win.
+    engine.attachPrimitive({ id: 'p', zOrder: 'top', draw: () => {}, hitTest: () => true });
+
+    const onHover = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnHover(onHover);
+    fireMove(500, 250);
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    const info = onHover.mock.lastCall![0] as HoverInfo;
+    expect(info).not.toBeNull();
+    expect(info.hovered).toEqual({ kind: 'drawing', id: line.id });
+  });
+
+  it('invokes onDblClick with a non-null HoverInfo on a dblclick inside the plot', () => {
+    const onDbl = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnDblClick(onDbl);
+    fireDblClick(500, 250);
+    expect(onDbl).toHaveBeenCalledTimes(1);
+    const info = onDbl.mock.calls[0]![0] as HoverInfo | null;
+    expect(info).not.toBeNull();
+    expect(info!.candle).toBeTruthy();
+    expect(info!.paneIndex).toBe(0);
+  });
+
+  it('invokes onDblClick with null when the dblclick is outside the plot', () => {
+    const onDbl = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnDblClick(onDbl);
+    // Past the right axis → outside the plot area.
+    fireDblClick(engine.layout.chartRight + 5, 250);
+    expect(onDbl).toHaveBeenCalledTimes(1);
+    expect(onDbl.mock.calls[0]![0]).toBeNull();
+  });
+
+  it('does not fire onDblClick after destroy', () => {
+    const onDbl = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnDblClick(onDbl);
+    controller.destroy();
+    fireDblClick(500, 250);
+    expect(onDbl).not.toHaveBeenCalled();
   });
 
   it('destroy detaches listeners — further mousemoves are no-ops', async () => {

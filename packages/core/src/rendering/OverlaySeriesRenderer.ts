@@ -1,5 +1,5 @@
 import type { ChartLayout, ThemeColors } from '../types';
-import type { Viewport } from '../interaction/Viewport';
+import type { Viewport, PriceScaleSide } from '../interaction/Viewport';
 import type { IndicatorSeries } from '../indicators/Indicator';
 
 /**
@@ -18,6 +18,7 @@ export class OverlaySeriesRenderer {
     series: IndicatorSeries,
     color: string,
     _theme: ThemeColors,
+    side: PriceScaleSide = 'right',
   ): void {
     const values = series.values;
     if (values.length === 0) return;
@@ -54,7 +55,7 @@ export class OverlaySeriesRenderer {
         continue;
       }
       const x = viewport.indexToX(i);
-      const y = viewport.priceToY(value);
+      const y = viewport.priceToY(value, side);
       if (!pen) {
         ctx.moveTo(x, y);
         pen = true;

@@ -1,6 +1,8 @@
 import type { CandleBuffer } from './data/CandleBuffer';
 import type { PriceScaleMode } from './interaction/priceScale';
 import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
+import type { Alert } from './alerts/Alert';
+import type { Messages } from './i18n/messages';
 
 /**
  * A single OHLCV candle. Times are Unix seconds (not milliseconds).
@@ -153,8 +155,31 @@ export interface ChartError {
  * - `line` — simple close-price line
  * - `area` — close-price line with a gradient fill to chartBottom
  * - `ohlc` — OHLC bars (vertical line with open/close ticks)
+ * - `heikinashi` — smoothed Heikin-Ashi candles
+ * - `baseline` — two-color close area/line relative to a base value
  */
-export type ChartType = 'candles' | 'line' | 'area' | 'ohlc' | 'heikinashi';
+export type ChartType = 'candles' | 'line' | 'area' | 'ohlc' | 'heikinashi' | 'baseline';
+
+/**
+ * Crosshair behavior.
+ * - `normal` — the horizontal line follows the raw cursor Y (default).
+ * - `magnet` — the horizontal line snaps to the nearest OHLC level of the
+ *   candle under the cursor, matching lightweight-charts' Magnet mode.
+ */
+export type CrosshairMode = 'normal' | 'magnet';
+
+/**
+ * Topmost interactive object under the cursor, reported in {@link HoverInfo}.
+ * Lets hosts build context menus, tooltips, or hover highlights without
+ * re-running their own hit-tests. `id` is the object's stable identifier:
+ * - `drawing` — the `Drawing.id` (random string assigned on creation).
+ * - `primitive` — the `Primitive.id` (host-supplied, e.g. `'priceline:0'`).
+ * - `marker` — reserved for a future marker hit-test (not yet emitted).
+ */
+export interface HoveredObject {
+  kind: 'drawing' | 'primitive' | 'marker';
+  id: string;
+}
 
 /**
  * Hover callback payload — invoked by CrosshairController on every
@@ -167,6 +192,10 @@ export interface HoverInfo {
   cursorPrice: number;
   /** ISO-ish time string formatted by the current resolution. */
   timeLabel: string;
+  /** 0 = main price pane; 1..N = indicator sub-panes (top→bottom). */
+  paneIndex: number;
+  /** Topmost interactive object under the cursor, or null. */
+  hovered: HoveredObject | null;
 }
 
 /**
@@ -190,14 +219,32 @@ export interface ChartConfig {
   transport?: DataTransport;
   /** Theme mode (`'dark'` / `'light'` / `'auto'`) or explicit colors. */
   theme?: ThemeMode | ThemeColors;
-  /** Locale hint for future i18n. Currently unused by core renderers. */
+  /**
+   * BCP-47 locale (e.g. `'de-DE'`, `'ja-JP'`) for i18n (C6). When set, axis
+   * numbers/dates, the legend, the crosshair pills, and screen-reader
+   * announcements are formatted via `Intl` for this locale. Omit for the
+   * locale-agnostic defaults (byte-for-byte identical to pre-C6). A
+   * host-supplied `priceFormat` / `volumeFormat` still takes priority over the
+   * locale-aware number formatting.
+   */
   locale?: string;
+  /**
+   * Translatable UI string overrides (C6). Patches any subset of
+   * {@link Messages} — `aria-label`, the OHLC announcement words, the
+   * O/H/L/C/V legend letters, the "Go to live" pill — falling back to the
+   * English {@link DEFAULT_MESSAGES} for the rest. Independent of `locale`:
+   * you can translate strings without switching number/date formatting, or
+   * vice-versa.
+   */
+  messages?: Partial<Messages>;
   /** Custom price formatter. Default: 2 decimal places. */
   priceFormat?: (price: number) => string;
   /** Custom volume formatter. Default: short K/M/B suffixes. */
   volumeFormat?: (volume: number) => string;
   /** Style of the main price series. Default: `'candles'`. */
   chartType?: ChartType;
+  /** Crosshair mode (`'normal'` / `'magnet'`). Default: `'normal'`. */
+  crosshairMode?: CrosshairMode;
   /** Initial price-axis scale mode. Default: `'linear'`. */
   priceScaleMode?: PriceScaleMode;
   /**
@@ -210,6 +257,14 @@ export interface ChartConfig {
   onVisibleRangeChange?: (from: number, to: number) => void;
   /** Called on every crosshair move with the currently-snapped candle. */
   onHover?: (info: HoverInfo | null) => void;
+  /**
+   * Called on a double-click over the plot area with the `HoverInfo` for
+   * the cursor position (or `null` if the cursor is outside the plot). This
+   * is purely additive — the chart's built-in double-click behavior
+   * (fit-visible in the chart area, reset price scale over the axis) still
+   * runs independently.
+   */
+  onDblClick?: (info: HoverInfo | null) => void;
   /**
    * Called whenever the chart encounters a non-fatal or fatal error in its
    * data/render pipeline. If omitted, errors fall back to `console.warn`
@@ -231,6 +286,20 @@ export interface ChartConfig {
    * History prepended via `prependHistory` is never auto-evicted.
    */
   maxCandles?: number;
+  /**
+   * Called on every replay-mode (C1) index change with the last-revealed bar
+   * index and whether playback is running. Fires on `startReplay`,
+   * `stepReplay`, `seekReplay`, each play tick, and `stopReplay`. Use it to
+   * drive a scrubber / play-pause UI. Omit if you don't use replay mode.
+   */
+  onReplayChange?: (index: number, playing: boolean) => void;
+  /**
+   * Called once for each price alert (C3) that fires on a realtime close-price
+   * tick. The alert is one-shot — it is already `active: false` when this
+   * callback runs, so it won't fire again until re-armed. Use it to surface a
+   * toast/sound/notification. Add alerts via `chart.addAlert(...)`.
+   */
+  onAlert?: (alert: Alert) => void;
 }
 
 export interface ChartLayout {
@@ -248,6 +317,13 @@ export interface ChartLayout {
   volumeTop: number;
   volumeBottom: number;
   priceAxisWidth: number;
+  /**
+   * Width (px) reserved on the LEFT for the optional secondary price axis
+   * (B2). `0` when no indicator is bound to the left scale — in that case
+   * `chartLeft` stays at 0 and the layout/render is identical to before.
+   * When > 0, `chartLeft` is shifted right by this much to make room.
+   */
+  leftAxisWidth: number;
   timeAxisHeight: number;
   /** Top of the first sub-pane band (== chartBottom). */
   paneAreaTop: number;

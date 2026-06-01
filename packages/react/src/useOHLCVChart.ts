@@ -14,6 +14,7 @@ import {
   type LayoutState,
   type ThemeMode,
   type ThemeColors,
+  type Messages,
 } from '@rekurt/ohlcv-core';
 
 export interface UseOHLCVChartOptions {
@@ -23,6 +24,8 @@ export interface UseOHLCVChartOptions {
   theme?: ThemeMode | ThemeColors;
   chartType?: ChartType;
   locale?: string;
+  /** Translatable UI string overrides (C6). Falls back to English defaults. */
+  messages?: Partial<Messages>;
   priceFormat?: (price: number) => string;
   volumeFormat?: (volume: number) => string;
   onCandleClick?: (candle: Candle, index: number) => void;
@@ -79,6 +82,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
       theme: options.theme,
       chartType: options.chartType,
       locale: options.locale,
+      messages: options.messages,
       priceFormat: options.priceFormat,
       volumeFormat: options.volumeFormat,
       onCandleClick: (candle, index) => onCandleClickRef.current?.(candle, index),

@@ -447,3 +447,97 @@ describe('Viewport.scalePriceRangeBy (Y-axis drag-to-scale)', () => {
     expect(vp.manualPriceScale).toBe(false);
   });
 });
+
+describe('Viewport secondary (left) price scale (B2)', () => {
+  let vp: Viewport;
+
+  beforeEach(() => {
+    vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    // Right scale: a wide range so left/right projections clearly differ.
+    vp.priceMin = 0;
+    vp.priceMax = 1000;
+  });
+
+  it('defaults the left range to 0..1 before anything binds to it', () => {
+    expect(vp.leftPriceMin).toBe(0);
+    expect(vp.leftPriceMax).toBe(1);
+    expect(vp.leftScaleMode).toBe('linear');
+  });
+
+  it('default priceToY(p) equals priceToY(p, "right") (back-compat)', () => {
+    for (const p of [0, 123.4, 500, 999.9, 1000]) {
+      expect(vp.priceToY(p)).toBe(vp.priceToY(p, 'right'));
+    }
+  });
+
+  it('default yToPrice(y) equals yToPrice(y, "right") (back-compat)', () => {
+    for (const y of [LAYOUT.chartTop, 137, 250.5, LAYOUT.chartBottom]) {
+      expect(vp.yToPrice(y)).toBe(vp.yToPrice(y, 'right'));
+    }
+  });
+
+  it('priceToY(p, "left") uses an independent range (different Y than right)', () => {
+    // Left extrema deliberately different from right's 0..1000.
+    vp.setLeftRange(0, 100);
+    const price = 50;
+    const yLeft = vp.priceToY(price, 'left');
+    const yRight = vp.priceToY(price, 'right');
+    // 50 is mid-range on the left scale but near the bottom on the right
+    // scale, so the two Y pixels must differ substantially.
+    expect(yLeft).not.toBeCloseTo(yRight, 1);
+    // 50 is the midpoint of [0,100] (before padding both bounds symmetrically),
+    // so it lands at the vertical center of the chart area.
+    expect(yLeft).toBeCloseTo((LAYOUT.chartTop + LAYOUT.chartBottom) / 2, 5);
+  });
+
+  it('setLeftRange does not touch the right range', () => {
+    const rMin = vp.priceMin;
+    const rMax = vp.priceMax;
+    vp.setLeftRange(10, 20);
+    expect(vp.priceMin).toBe(rMin);
+    expect(vp.priceMax).toBe(rMax);
+  });
+
+  it('setLeftRange pads the committed range (5% each side, like the right axis)', () => {
+    vp.setLeftRange(0, 100);
+    // PRICE_PADDING_RATIO = 0.05 → range 100 → pad 5 each side.
+    expect(vp.leftPriceMin).toBeCloseTo(-5, 5);
+    expect(vp.leftPriceMax).toBeCloseTo(105, 5);
+  });
+
+  it('setLeftRange protects a flat (min == max) range from divide-by-zero', () => {
+    vp.setLeftRange(42, 42);
+    expect(vp.leftPriceMin).toBeLessThan(vp.leftPriceMax);
+    const y = vp.priceToY(42, 'left');
+    expect(Number.isFinite(y)).toBe(true);
+  });
+
+  it('setLeftRange swaps inverted bounds', () => {
+    vp.setLeftRange(100, 0);
+    expect(vp.leftPriceMin).toBeLessThan(vp.leftPriceMax);
+    // Same committed range as the in-order call.
+    expect(vp.leftPriceMin).toBeCloseTo(-5, 5);
+    expect(vp.leftPriceMax).toBeCloseTo(105, 5);
+  });
+
+  it('setLeftRange ignores non-finite inputs (keeps previous range)', () => {
+    vp.setLeftRange(0, 100);
+    const min = vp.leftPriceMin;
+    const max = vp.leftPriceMax;
+    vp.setLeftRange(NaN, 50);
+    expect(vp.leftPriceMin).toBe(min);
+    expect(vp.leftPriceMax).toBe(max);
+    vp.setLeftRange(0, Infinity);
+    expect(vp.leftPriceMin).toBe(min);
+    expect(vp.leftPriceMax).toBe(max);
+  });
+
+  it('yToPrice(y, "left") round-trips priceToY(p, "left")', () => {
+    vp.setLeftRange(0, 100);
+    for (const p of [-5, 0, 37.5, 105]) {
+      const y = vp.priceToY(p, 'left');
+      expect(vp.yToPrice(y, 'left')).toBeCloseTo(p, 5);
+    }
+  });
+});

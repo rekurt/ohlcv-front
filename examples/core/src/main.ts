@@ -96,6 +96,8 @@ const chart = new OHLCVChart({
       index,
       cursorPrice: candle.c,
       timeLabel: formatTime(candle.t, currentResolution.id),
+      paneIndex: 0,
+      hovered: null,
     });
   },
   onHover: (info) => renderStatus(info),

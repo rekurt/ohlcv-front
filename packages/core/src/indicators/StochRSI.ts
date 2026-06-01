@@ -49,13 +49,16 @@ export class StochRSI extends Indicator {
       ];
     }
 
+    const view = buffer.sliceView(0, n);
+    const close = view.close;
+
     // 1. Wilder RSI.
     const rsi = new Float64Array(n);
     rsi.fill(NaN);
     let gainSum = 0;
     let lossSum = 0;
     for (let i = 1; i <= this.rsiPeriod; i++) {
-      const diff = buffer.candleAt(i)!.c - buffer.candleAt(i - 1)!.c;
+      const diff = close[i]! - close[i - 1]!;
       if (diff >= 0) gainSum += diff;
       else lossSum -= diff;
     }
@@ -63,7 +66,7 @@ export class StochRSI extends Indicator {
     let avgLoss = lossSum / this.rsiPeriod;
     rsi[this.rsiPeriod] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
     for (let i = this.rsiPeriod + 1; i < n; i++) {
-      const diff = buffer.candleAt(i)!.c - buffer.candleAt(i - 1)!.c;
+      const diff = close[i]! - close[i - 1]!;
       const gain = diff > 0 ? diff : 0;
       const loss = diff < 0 ? -diff : 0;
       avgGain = (avgGain * (this.rsiPeriod - 1) + gain) / this.rsiPeriod;

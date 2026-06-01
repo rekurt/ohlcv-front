@@ -44,49 +44,51 @@ export class ParabolicSAR extends Indicator {
     const sar = nanArray(n);
     if (n < 2) return [{ name: 'psar', values: sar }];
 
-    const c0 = buffer.candleAt(0)!;
-    const c1 = buffer.candleAt(1)!;
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+
     // Seed trend by comparing the first two closes.
-    let uptrend = c1.c >= c0.c;
+    let uptrend = close[1]! >= close[0]!;
     let af = this.step;
-    let ep = uptrend ? Math.max(c0.h, c1.h) : Math.min(c0.l, c1.l);
-    let sarVal = uptrend ? Math.min(c0.l, c1.l) : Math.max(c0.h, c1.h);
+    let ep = uptrend ? Math.max(high[0]!, high[1]!) : Math.min(low[0]!, low[1]!);
+    let sarVal = uptrend ? Math.min(low[0]!, low[1]!) : Math.max(high[0]!, high[1]!);
     sar[1] = sarVal;
 
     for (let i = 2; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      const prev = buffer.candleAt(i - 1)!;
-      const prev2 = buffer.candleAt(i - 2)!;
+      const ch = high[i]!;
+      const cl = low[i]!;
 
       // Tentative next SAR.
       let next = sarVal + af * (ep - sarVal);
 
       if (uptrend) {
         // SAR can't be above the prior two lows.
-        next = Math.min(next, prev.l, prev2.l);
-        if (c.l < next) {
+        next = Math.min(next, low[i - 1]!, low[i - 2]!);
+        if (cl < next) {
           // Flip to downtrend.
           uptrend = false;
           next = ep; // reset SAR to the prior EP
-          ep = c.l;
+          ep = cl;
           af = this.step;
         } else {
-          if (c.h > ep) {
-            ep = c.h;
+          if (ch > ep) {
+            ep = ch;
             af = Math.min(this.max, af + this.step);
           }
         }
       } else {
         // SAR can't be below the prior two highs.
-        next = Math.max(next, prev.h, prev2.h);
-        if (c.h > next) {
+        next = Math.max(next, high[i - 1]!, high[i - 2]!);
+        if (ch > next) {
           uptrend = true;
           next = ep;
-          ep = c.h;
+          ep = ch;
           af = this.step;
         } else {
-          if (c.l < ep) {
-            ep = c.l;
+          if (cl < ep) {
+            ep = cl;
             af = Math.min(this.max, af + this.step);
           }
         }

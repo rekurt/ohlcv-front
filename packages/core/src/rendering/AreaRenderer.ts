@@ -91,8 +91,11 @@ export class AreaRenderer {
  * Add an alpha channel to an arbitrary CSS color string. Uses a tiny
  * Canvas2D hack: let the browser parse the color, then extract RGBA.
  * Returns `rgba(r,g,b,a)` regardless of input format (hex/rgb/rgba/named).
+ *
+ * Exported so sibling renderers (e.g. BaselineRenderer) reuse one
+ * implementation instead of duplicating the parser.
  */
-function withAlpha(color: string, alpha: number): string {
+export function withAlpha(color: string, alpha: number): string {
   // Fast path for rgba() — just swap the alpha component.
   const rgbaMatch = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
   if (rgbaMatch) {

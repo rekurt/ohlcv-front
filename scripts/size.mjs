@@ -1,30 +1,81 @@
 #!/usr/bin/env node
 /**
- * Lightweight bundle-size reporter.
+ * Bundle-size reporter + CI gate.
  *
- * Walks each library package's dist/ directory and prints both
- * raw and gzipped sizes for the ESM/CJS entry points (plus
- * subpath exports when present). No external dependencies — uses
- * the Node built-ins zlib + fs.
+ * Two measurements:
+ *  1. Tree-shaken "base chart" — what a real app pays for `import
+ *     { OHLCVChart }` after minify+treeshake (the headline number; this is
+ *     the apples-to-apples comparison against lightweight-charts' ~35 KB).
+ *     Measured via esbuild over the built dist.
+ *  2. Raw dist entries (ESM/CJS) per package — full barrels + subpaths.
  *
- * Intended as a CI signal, not a gate. To turn it into a gate,
- * add a baseline JSON file and fail the script when any entry
- * grows beyond a threshold.
+ * Entries listed in BUDGETS are gated: if any exceeds its gzip budget the
+ * script exits non-zero, failing CI. Other entries are reported only.
+ *
+ * No runtime deps beyond Node built-ins + esbuild (already a tsup dep). If
+ * dist/ hasn't been built, the tree-shaken measurement is skipped with a
+ * notice rather than failing.
  */
 import { gzipSync } from 'node:zlib';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { join, basename, resolve } from 'node:path';
 
-const PACKAGES = [
-  'packages/core',
-  'packages/react',
-  'packages/vue',
-];
-
+const ROOT = process.cwd();
+const PACKAGES = ['packages/core', 'packages/react', 'packages/vue'];
 const TARGET_EXTENSIONS = ['.js', '.cjs'];
+
+/**
+ * Gzip budgets in KB. Crossing one fails the script (CI gate). Numbers carry
+ * a small headroom over the current size so honest growth is allowed but a
+ * regression (e.g. a heavy dep sneaking into the base chart) trips the gate.
+ */
+const BUDGETS = {
+  // Headline: the tree-shaken base chart — what a host importing only
+  // `OHLCVChart` actually ships after treeshake + `sideEffects:false` — must
+  // stay at/under lightweight-charts (~35 KB gzip). This is the gate that
+  // matters: it tracks real consumer cost. Currently ~31 KB.
+  'tree-shaken:OHLCVChart': 35,
+  // Framework wrappers are thin. Currently ~2 KB each.
+  'packages/react:index.js': 3.5,
+  'packages/vue:index.js': 4,
+};
+
+// NOT gated (reported only): the full barrel `packages/core:index.js`. It
+// re-exports EVERY indicator/drawing/primitive/interaction, so it grows
+// legitimately with each feature and does NOT reflect what a real consumer
+// pays (tree-shaking removes the unused parts — see the headline gate above).
+// Gating it would just force a budget bump per feature, which is noise.
+
+const failures = [];
 
 function formatKB(bytes) {
   return (bytes / 1024).toFixed(2) + ' KB';
+}
+
+function gateNote(key, gzipBytes) {
+  const budget = BUDGETS[key];
+  if (budget === undefined) return '';
+  const gzipKB = gzipBytes / 1024;
+  if (gzipKB > budget) {
+    failures.push(`${key}: ${gzipKB.toFixed(2)} KB > budget ${budget} KB`);
+    return `  ❌ > ${budget} KB`;
+  }
+  return `  ✓ ≤ ${budget} KB`;
+}
+
+/** Bundle a synthetic entry with esbuild and return its gzipped byte size. */
+async function measureTreeShaken(exportStmt) {
+  const mod = await import('esbuild');
+  const esbuild = mod.default ?? mod;
+  const result = await esbuild.build({
+    stdin: { contents: exportStmt, resolveDir: ROOT, loader: 'js' },
+    bundle: true,
+    minify: true,
+    format: 'esm',
+    write: false,
+    treeShaking: true,
+  });
+  return gzipSync(result.outputFiles[0].contents).length;
 }
 
 function collect(distDir) {
@@ -36,18 +87,29 @@ function collect(distDir) {
     const stat = statSync(path);
     if (!stat.isFile()) continue;
     const content = readFileSync(path);
-    const gz = gzipSync(content);
-    entries.push({
-      file: basename(file),
-      raw: content.length,
-      gzipped: gz.length,
-    });
+    entries.push({ file: basename(file), raw: content.length, gzipped: gzipSync(content).length });
   }
   return entries.sort((a, b) => a.file.localeCompare(b.file));
 }
 
-let hasError = false;
 console.log('\nBundle sizes:\n');
+
+// 1. Headline tree-shaken base chart (needs built dist + esbuild).
+const coreIndex = resolve(ROOT, 'packages/core/dist/index.js');
+try {
+  statSync(coreIndex);
+  const gzip = await measureTreeShaken(`export { OHLCVChart } from ${JSON.stringify(coreIndex)};`);
+  console.log(
+    `  tree-shaken base chart (OHLCVChart)   gzip ${formatKB(gzip).padStart(10)}${gateNote('tree-shaken:OHLCVChart', gzip)}`,
+  );
+} catch (err) {
+  const why = err.code === 'ENOENT' ? 'run build first' : err.message;
+  console.log(`  tree-shaken base chart: (skipped — ${why})`);
+}
+console.log('');
+
+// 2. Per-package raw dist entries.
+let buildMissing = false;
 for (const pkg of PACKAGES) {
   const dist = join(pkg, 'dist');
   let entries;
@@ -55,7 +117,7 @@ for (const pkg of PACKAGES) {
     entries = collect(dist);
   } catch (err) {
     console.error(`  ⚠ ${pkg}: ${err.message}`);
-    hasError = true;
+    buildMissing = true;
     continue;
   }
   if (entries.length === 0) {
@@ -65,9 +127,16 @@ for (const pkg of PACKAGES) {
   console.log(`  ${pkg}:`);
   for (const e of entries) {
     console.log(
-      `    ${e.file.padEnd(20)}  raw ${formatKB(e.raw).padStart(10)}   gzip ${formatKB(e.gzipped).padStart(10)}`,
+      `    ${e.file.padEnd(20)}  raw ${formatKB(e.raw).padStart(10)}   gzip ${formatKB(e.gzipped).padStart(10)}${gateNote(`${pkg}:${e.file}`, e.gzipped)}`,
     );
   }
 }
 console.log('');
-process.exit(hasError ? 1 : 0);
+
+if (failures.length > 0) {
+  console.error('Bundle budget exceeded:');
+  for (const f of failures) console.error(`  ✗ ${f}`);
+  console.error('');
+  process.exit(1);
+}
+process.exit(buildMissing ? 1 : 0);

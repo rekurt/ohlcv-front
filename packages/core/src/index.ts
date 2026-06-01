@@ -16,7 +16,9 @@ export type {
   ChartError,
   ChartErrorWhere,
   ChartType,
+  CrosshairMode,
   HoverInfo,
+  HoveredObject,
 } from './types';
 
 // Error reporting
@@ -38,6 +40,13 @@ export type { CandleGap } from './data/gaps';
 // Rendering
 export { ChartEngine } from './rendering/ChartEngine';
 export { GoToLiveRenderer } from './rendering/GoToLiveRenderer';
+
+// Vector SVG export (C7). Kept in a standalone module that ChartEngine /
+// OHLCVChart never import, so it tree-shakes to zero in the base chart — a
+// host pays for it only by importing `chartEngineToSVG` / `SVGRenderingContext`
+// (or the `*` barrel). See export/toSVG.ts for the design rationale.
+export { chartEngineToSVG } from './export/toSVG';
+export { SVGRenderingContext } from './export/svgContext';
 export type { GoToLiveBounds } from './rendering/GoToLiveRenderer';
 export { Pane, PaneLayout } from './rendering/Pane';
 export type { PaneKind, YScale } from './rendering/Pane';
@@ -89,7 +98,9 @@ export { ZigZag } from './indicators/ZigZag';
 
 // Primary-series renderers (also reused by the built-in series definitions).
 export { LineRenderer } from './rendering/LineRenderer';
-export { AreaRenderer } from './rendering/AreaRenderer';
+export { AreaRenderer, withAlpha } from './rendering/AreaRenderer';
+export { BaselineRenderer } from './rendering/BaselineRenderer';
+export type { BaselineRenderOptions } from './rendering/BaselineRenderer';
 export { OHLCBarRenderer } from './rendering/OHLCBarRenderer';
 export { HeikinAshiRenderer, buildHeikinAshiView, HEIKIN_ASHI_WARMUP } from './rendering/HeikinAshiRenderer';
 
@@ -102,6 +113,8 @@ export {
   areaSeries,
   ohlcSeries,
   heikinAshiSeries,
+  baselineSeries,
+  createBaselineSeries,
 } from './series/builtins';
 
 // Drawing tools
@@ -116,6 +129,12 @@ export { FibRetracement } from './drawings/FibRetracement';
 export { FibExtension } from './drawings/FibExtension';
 export { Channel } from './drawings/Channel';
 export { Arrow } from './drawings/Arrow';
+export { ParallelChannel } from './drawings/ParallelChannel';
+export { RegressionChannel } from './drawings/RegressionChannel';
+export type { CloseSampler } from './drawings/RegressionChannel';
+export { Pitchfork } from './drawings/Pitchfork';
+export { FibFan } from './drawings/FibFan';
+export { Measure } from './drawings/Measure';
 export { DrawingLayer } from './drawings/DrawingLayer';
 
 // Markers (candle-anchored point annotations)
@@ -123,13 +142,53 @@ export { markerY } from './markers/Marker';
 export type { Marker, MarkerPosition, MarkerShape } from './markers/Marker';
 export { MarkerRenderer } from './markers/MarkerRenderer';
 
+// Price alerts (C3)
+export { AlertManager } from './alerts/AlertManager';
+export type { Alert, AlertCondition, AlertInit } from './alerts/Alert';
+
 // Primitives (programmatic z-ordered overlays)
-export { clipToChart } from './primitives/Primitive';
+export { clipToChart, clipToPane, paneBounds } from './primitives/Primitive';
 export type { Primitive, PrimitiveZOrder } from './primitives/Primitive';
 export { WatermarkPrimitive } from './primitives/WatermarkPrimitive';
 export type { WatermarkOptions, WatermarkPosition } from './primitives/WatermarkPrimitive';
 export { PriceLinePrimitive } from './primitives/PriceLinePrimitive';
 export type { PriceLineOptions, PriceLineHandle } from './primitives/PriceLinePrimitive';
+
+// Compare mode (C2) — overlay normalized foreign symbols. Optional and
+// standalone: `OHLCVChart` / `ChartEngine` never import this module, so it
+// tree-shakes to zero in the base bundle. A host opts in by constructing
+// `CompareController` explicitly (see compare/CompareController.ts).
+export { CompareController } from './compare/CompareController';
+export type { CompareHost } from './compare/CompareController';
+export { ComparePrimitive, CompareScale, normalize as normalizeCompareValue } from './compare/ComparePrimitive';
+export type { CompareSeries, CompareNormalization } from './compare/CompareSeries';
+
+// Volume Profile (C4) — horizontal volume-by-price histogram of the visible
+// window. Optional and standalone: `OHLCVChart` / `ChartEngine` never import
+// this module, so it tree-shakes to zero in the base bundle. A host opts in by
+// constructing `VolumeProfileController` explicitly (see
+// profile/VolumeProfileController.ts).
+export { computeVolumeProfile } from './profile/computeVolumeProfile';
+export type { VolumeBin, VolumeProfile } from './profile/computeVolumeProfile';
+export { VolumeProfilePrimitive } from './profile/VolumeProfilePrimitive';
+export type {
+  VolumeProfileOptions,
+  VolumeProfileColors,
+  VolumeProfileSide,
+} from './profile/VolumeProfilePrimitive';
+export { VolumeProfileController } from './profile/VolumeProfileController';
+export type { VolumeProfileHost } from './profile/VolumeProfileController';
+
+// WebGL candle backend (D2, stretch) — OPTIONAL GPU-instanced renderer for the
+// candle hot path only (axes/legend/crosshair stay Canvas2D). Standalone:
+// `OHLCVChart` / `ChartEngine` never import this module, so it tree-shakes to
+// zero in the base bundle. A host opts in by constructing
+// `WebGLCandleRenderer` over its own canvas (see webgl/WebGLCandleRenderer.ts).
+// The geometry step `buildCandleVertices` is a pure, GL-free function reusable
+// for custom GPU pipelines.
+export { WebGLCandleRenderer } from './webgl/WebGLCandleRenderer';
+export { buildCandleVertices } from './webgl/candleGeometry';
+export type { CandleVertexData } from './webgl/candleGeometry';
 
 // Data transforms (Heikin Ashi, Renko)
 export { toHeikinAshi, advanceHeikinAshi } from './transforms/heikinAshi';
@@ -148,13 +207,27 @@ export {
 
 // Interaction
 export { Viewport } from './interaction/Viewport';
-export type { GridTick } from './interaction/Viewport';
+export type { GridTick, PriceScaleSide } from './interaction/Viewport';
 export { priceToTransformed, transformedToPrice, LOG_MIN_POSITIVE } from './interaction/priceScale';
 export type { PriceScaleMode } from './interaction/priceScale';
 export { PanZoomController } from './interaction/PanZoomController';
 export { CrosshairController } from './interaction/CrosshairController';
 export { KeyboardController } from './interaction/KeyboardController';
 export type { KeyboardCallbacks } from './interaction/KeyboardController';
+export { ReplayController, DEFAULT_BARS_PER_SECOND } from './interaction/ReplayController';
+export type { ReplayOptions } from './interaction/ReplayController';
+
+// i18n (C6 — locale-aware formatting + translatable strings)
+export { createI18n, DEFAULT_MESSAGES } from './i18n/messages';
+export type { Messages, I18n } from './i18n/messages';
+export {
+  createPriceFormatter,
+  createVolumeFormatter,
+  createDateFormatter,
+  formatPercentLocale,
+  resolutionToDateResolution,
+} from './i18n/format';
+export type { NumberFormatFn, DateFormatFn, DateResolution } from './i18n/format';
 
 // Constants & Utilities
 export { DARK_THEME, LIGHT_THEME } from './constants';

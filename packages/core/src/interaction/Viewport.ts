@@ -39,6 +39,15 @@ export interface RangeSource {
   rangeOf(start: number, end: number): { minLow: number; maxHigh: number; maxVol: number };
 }
 
+/**
+ * Which price scale a value projects through. `'right'` is the default
+ * (primary) scale used by the price series and every existing caller;
+ * `'left'` is the optional secondary scale (B2), driven by indicators
+ * bound to it. Passing nothing always means `'right'`, so the default
+ * render path is unchanged bit-for-bit.
+ */
+export type PriceScaleSide = 'right' | 'left';
+
 export class Viewport {
   startIndex = 0;
   visibleCount = 0;
@@ -94,6 +103,18 @@ export class Viewport {
    */
   private _coord01: ((index: number) => number) | null = null;
 
+  /**
+   * Optional time → (possibly fractional) buffer-index resolver, installed by
+   * the engine each frame from the main buffer's timestamps. Lets a primitive
+   * that owns its own time-keyed data (e.g. the C2 compare overlay) map a
+   * timestamp onto the same X axis as the price series via {@link timeToX} —
+   * without the primitive ever touching the buffer. Null (the default) when no
+   * buffer is bound; {@link timeToX} then returns NaN so callers can skip
+   * painting rather than crash. Bound only on demand, so the default render
+   * path neither allocates nor calls it.
+   */
+  private _timeToIndex: ((t: number) => number) | null = null;
+
   // --- transformed-extrema cache -------------------------------------
   // priceToY/yToPrice are called thousands of times per frame; cache the
   // transformed min/max and recompute only when an input changed. The
@@ -105,6 +126,34 @@ export class Viewport {
   private _txBase = 0;
   private _tMin = 0;
   private _tMax = 0;
+
+  // --- secondary (left) price scale (B2) ------------------------------
+  // Independent extrema for the optional left axis. They stay at the
+  // default 0..1 until something is bound to 'left' and the engine calls
+  // setLeftRange(...). The right scale's fields/logic above are untouched,
+  // so the default (right-only) render path is bit-for-bit unchanged.
+  private _leftPriceMin = 0;
+  private _leftPriceMax = 1;
+  /**
+   * Transform for the left axis. Linear-only for now (B2 scope); the
+   * field exists so a future log/percentage left axis is additive.
+   */
+  private _leftScaleMode: PriceScaleMode = 'linear';
+
+  /** Lower bound of the secondary (left) price scale. */
+  get leftPriceMin(): number {
+    return this._leftPriceMin;
+  }
+
+  /** Upper bound of the secondary (left) price scale. */
+  get leftPriceMax(): number {
+    return this._leftPriceMax;
+  }
+
+  /** Transform mode of the secondary (left) price scale. */
+  get leftScaleMode(): PriceScaleMode {
+    return this._leftScaleMode;
+  }
 
   setLayout(layout: ChartLayout): void {
     this.layout = layout;
@@ -141,6 +190,33 @@ export class Viewport {
     this._coord01 = fn;
   }
 
+  /**
+   * Install a time → (fractional) buffer-index resolver, or pass null to clear
+   * it. The engine sets this every frame from the main buffer so overlays that
+   * own their own time-keyed series ({@link timeToX}) align to the price axis.
+   * The default is null, so a chart with no buffer (or no overlay consumer)
+   * pays nothing and {@link timeToX} returns NaN.
+   */
+  setTimeToIndexResolver(fn: ((t: number) => number) | null): void {
+    this._timeToIndex = fn;
+  }
+
+  /**
+   * Project a timestamp onto the chart's X axis, aligned with the main price
+   * series. Resolves the timestamp to a (possibly fractional) buffer index via
+   * the engine-installed resolver, then through the same {@link indexToX} the
+   * candles use — so a value-based horizontal scale, zoom, and pan all carry
+   * over for free. Returns NaN when no resolver is installed (no buffer) or the
+   * resolver itself can't place the time, letting a caller skip that point
+   * instead of drawing at a bogus X.
+   */
+  timeToX(t: number): number {
+    if (!this._timeToIndex) return NaN;
+    const index = this._timeToIndex(t);
+    if (!Number.isFinite(index)) return NaN;
+    return this.indexToX(index);
+  }
+
   /** Inverse of the non-uniform mapping: nearest index for a pixel X. */
   private _coord01ToIndex(x: number): number {
     const fn = this._coord01!;
@@ -165,8 +241,17 @@ export class Viewport {
     return lo;
   }
 
-  /** Convert price to Y pixel coordinate */
-  priceToY(price: number): number {
+  /**
+   * Convert price to Y pixel coordinate.
+   *
+   * `side` selects the price scale: `'right'` (default) is the primary
+   * scale and runs the original arithmetic untouched — every existing
+   * caller omits the argument, so the default path is bit-for-bit
+   * unchanged. `'left'` projects through the independent secondary scale
+   * (see {@link setLeftRange}).
+   */
+  priceToY(price: number, side: PriceScaleSide = 'right'): number {
+    if (side === 'left') return this._priceToYLeft(price);
     // Linear fast-path: identical arithmetic to the pre-F1 implementation
     // so the default render path stays bit-for-bit unchanged.
     if (this.scaleMode === 'linear') {
@@ -181,8 +266,12 @@ export class Viewport {
     return this.layout.chartTop + (1 - (t - this._tMin) / tRange) * (this.layout.chartBottom - this.layout.chartTop);
   }
 
-  /** Convert Y pixel to price */
-  yToPrice(y: number): number {
+  /**
+   * Convert Y pixel to price. `side` selects the scale; `'right'` (default)
+   * is the primary scale and is unchanged for every existing caller.
+   */
+  yToPrice(y: number, side: PriceScaleSide = 'right'): number {
+    if (side === 'left') return this._yToPriceLeft(y);
     const chartHeight = this.layout.chartBottom - this.layout.chartTop;
     if (chartHeight === 0) return this.priceMin;
     if (this.scaleMode === 'linear') {
@@ -191,6 +280,58 @@ export class Viewport {
     this._ensureTransform();
     const t = this._tMax - ((y - this.layout.chartTop) / chartHeight) * (this._tMax - this._tMin);
     return transformedToPrice(t, this.scaleMode, this._priceBase);
+  }
+
+  /**
+   * Project a price through the secondary (left) scale. Linear-only for
+   * now (B2); mirrors the right-axis linear arithmetic but against the
+   * independent left extrema so left-bound indicators get their own range.
+   */
+  private _priceToYLeft(price: number): number {
+    const range = this._leftPriceMax - this._leftPriceMin;
+    if (range === 0) return (this.layout.chartTop + this.layout.chartBottom) / 2;
+    return (
+      this.layout.chartTop +
+      (1 - (price - this._leftPriceMin) / range) * (this.layout.chartBottom - this.layout.chartTop)
+    );
+  }
+
+  /** Inverse of {@link _priceToYLeft}. */
+  private _yToPriceLeft(y: number): number {
+    const chartHeight = this.layout.chartBottom - this.layout.chartTop;
+    if (chartHeight === 0) return this._leftPriceMin;
+    return (
+      this._leftPriceMax -
+      ((y - this.layout.chartTop) / chartHeight) * (this._leftPriceMax - this._leftPriceMin)
+    );
+  }
+
+  /**
+   * Set the secondary (left) price scale's raw extrema, applying the same
+   * flat-range protection + linear padding as the right axis's
+   * {@link _applyPriceRange}. Called by the engine after collecting the
+   * min/max of every indicator bound to `'left'`. No-op-safe: a degenerate
+   * or non-finite pair leaves the previous range intact.
+   */
+  setLeftRange(min: number, max: number): void {
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return;
+    let minPrice = min;
+    let maxPrice = max;
+    if (minPrice > maxPrice) {
+      const tmp = minPrice;
+      minPrice = maxPrice;
+      maxPrice = tmp;
+    }
+    let range = maxPrice - minPrice;
+    if (range === 0) {
+      const padding = Math.abs(maxPrice) * 0.01 || 1;
+      minPrice -= padding;
+      maxPrice += padding;
+      range = maxPrice - minPrice;
+    }
+    const pad = range * PRICE_PADDING_RATIO;
+    this._leftPriceMin = minPrice - pad;
+    this._leftPriceMax = maxPrice + pad;
   }
 
   /**
@@ -336,12 +477,19 @@ export class Viewport {
    * per-frame O(window) scan into ≈ O(window / block). Omit it and the
    * original linear scan runs, preserving all four guards (manual-mode
    * volume rescan, empty window, NaN-skip, flat-range).
+   *
+   * `maxLength` (optional) caps the upper index the scan/clamp may reach.
+   * Defaults to `buffer.length`, so omitting it is bit-for-bit identical to
+   * the pre-replay behavior. Replay mode (C1) passes the effective (capped)
+   * length so autoscale never peeks at not-yet-revealed candles even if the
+   * viewport's visible window nominally extends past the cap.
    */
-  autoScale(buffer: CandleBuffer, accel?: RangeSource): void {
+  autoScale(buffer: CandleBuffer, accel?: RangeSource, maxLength?: number): void {
     this._bufferLength = buffer.length;
+    const cap = maxLength === undefined ? buffer.length : Math.min(buffer.length, maxLength);
 
     const start = Math.max(0, Math.floor(this.startIndex));
-    const end = Math.min(buffer.length, Math.ceil(this.startIndex + this.visibleCount));
+    const end = Math.min(cap, Math.ceil(this.startIndex + this.visibleCount));
     const windowSize = end - start;
     // Log mode's ≤0 skip needs per-candle filtering the coarse index can't
     // do, so log always uses the linear scan.

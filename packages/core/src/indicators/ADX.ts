@@ -47,20 +47,23 @@ export class ADX extends Indicator {
       ];
     }
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+
     // Step 1: per-bar +DM, -DM, TR. Index 0 is undefined; start at 1.
     const pdm = new Float64Array(n);
     const mdm = new Float64Array(n);
     const tr = new Float64Array(n);
     for (let i = 1; i < n; i++) {
-      const cur = buffer.candleAt(i)!;
-      const prev = buffer.candleAt(i - 1)!;
-      const upMove = cur.h - prev.h;
-      const downMove = prev.l - cur.l;
+      const upMove = high[i]! - high[i - 1]!;
+      const downMove = low[i - 1]! - low[i]!;
       pdm[i] = upMove > downMove && upMove > 0 ? upMove : 0;
       mdm[i] = downMove > upMove && downMove > 0 ? downMove : 0;
-      const r1 = cur.h - cur.l;
-      const r2 = Math.abs(cur.h - prev.c);
-      const r3 = Math.abs(prev.c - cur.l);
+      const r1 = high[i]! - low[i]!;
+      const r2 = Math.abs(high[i]! - close[i - 1]!);
+      const r3 = Math.abs(close[i - 1]! - low[i]!);
       tr[i] = Math.max(r1, r2, r3);
     }
 

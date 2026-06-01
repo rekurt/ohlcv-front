@@ -171,15 +171,22 @@ export function formatTime(timestamp: number, resolution: string): string {
  * px vertically. We cap the total reserved height so the main area
  * never shrinks below `MIN_MAIN_AREA_HEIGHT` — if the user asks for
  * more panes than fit, panes are simply rendered shorter.
+ *
+ * `hasLeftAxis` (B2) reserves a `PRICE_AXIS_WIDTH` strip on the LEFT for
+ * the optional secondary price axis and shifts `chartLeft` right by that
+ * much. It defaults to `false`, so the common single-axis layout is
+ * byte-for-byte identical (`leftAxisWidth: 0`, `chartLeft: 0`).
  */
 export function computeLayout(
   width: number,
   height: number,
   paneCount = 0,
+  hasLeftAxis = false,
 ): ChartLayout {
   const priceAxisWidth = PRICE_AXIS_WIDTH;
   const timeAxisHeight = TIME_AXIS_HEIGHT;
-  const chartLeft = 0;
+  const leftAxisWidth = hasLeftAxis ? PRICE_AXIS_WIDTH : 0;
+  const chartLeft = leftAxisWidth;
   const chartRight = width - priceAxisWidth;
   const chartTop = 0;
   const paneAreaBottom = height - timeAxisHeight;
@@ -206,6 +213,7 @@ export function computeLayout(
     volumeTop,
     volumeBottom,
     priceAxisWidth,
+    leftAxisWidth,
     timeAxisHeight,
     paneAreaTop,
     paneAreaBottom,

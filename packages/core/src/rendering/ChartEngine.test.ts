@@ -221,3 +221,116 @@ describe('ChartEngine sub-panes', () => {
     expect(errors[0]!.where).toBe('indicator');
   });
 });
+
+/**
+ * A left-bound overlay indicator emitting a constant value, distinct from
+ * the candle price range (~100), so the secondary scale's independence is
+ * observable.
+ */
+class LeftConst extends Indicator {
+  readonly placement: IndicatorPlacement = 'overlay';
+  override readonly priceScaleId = 'left' as const;
+  constructor(private readonly value: number) {
+    super();
+  }
+  get id(): string {
+    return `leftConst(${this.value})`;
+  }
+  compute(buffer: { length: number }): IndicatorSeries[] {
+    const out = new Float64Array(buffer.length);
+    out.fill(this.value);
+    return [{ name: 'leftConst', values: out }];
+  }
+}
+
+describe('ChartEngine secondary (left) price scale (B2)', () => {
+  let container: HTMLDivElement;
+  let engine: ChartEngine;
+  let buffer: CandleBuffer;
+
+  beforeAll(() => {
+    installCanvasStub();
+  });
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    container.getBoundingClientRect = () =>
+      ({ width: 1000, height: 500, x: 0, y: 0, top: 0, left: 0, right: 1000, bottom: 500, toJSON() {} }) as DOMRect;
+    document.body.appendChild(container);
+    engine = new ChartEngine(container, DARK_THEME);
+    buffer = new CandleBuffer();
+    for (let i = 0; i < 60; i++) buffer.append(makeCandle(i));
+    engine.setBuffer(buffer);
+    engine.viewport.scrollToEnd(buffer.length);
+  });
+
+  afterEach(() => {
+    engine.destroy();
+    container.remove();
+  });
+
+  it('reserves no left axis strip by default (leftAxisWidth === 0, chartLeft === 0)', () => {
+    expect(engine.layout.leftAxisWidth).toBe(0);
+    expect(engine.layout.chartLeft).toBe(0);
+  });
+
+  it('a right-scale (default) overlay indicator never reserves the left strip', () => {
+    engine.setIndicators([new SMA(20)]);
+    expect(engine.layout.leftAxisWidth).toBe(0);
+    expect(engine.layout.chartLeft).toBe(0);
+  });
+
+  it('an indicator bound to "left" reserves the left axis strip and shifts chartLeft', () => {
+    engine.setIndicators([new LeftConst(5000)]);
+    expect(engine.layout.leftAxisWidth).toBeGreaterThan(0);
+    expect(engine.layout.chartLeft).toBe(engine.layout.leftAxisWidth);
+  });
+
+  it('removing the left binding releases the strip again (chartLeft back to 0)', () => {
+    engine.setIndicators([new LeftConst(5000)]);
+    expect(engine.layout.leftAxisWidth).toBeGreaterThan(0);
+    engine.setIndicators([new SMA(20)]);
+    expect(engine.layout.leftAxisWidth).toBe(0);
+    expect(engine.layout.chartLeft).toBe(0);
+  });
+
+  it('left binding does not disturb the right price range (candles ~100)', () => {
+    engine.setIndicators([]);
+    forceRender(engine);
+    const rMin = engine.viewport.priceMin;
+    const rMax = engine.viewport.priceMax;
+
+    // A constant of 5000 is far outside the candle range; if it leaked into
+    // the right scale it would blow priceMax past 5000.
+    engine.setIndicators([new LeftConst(5000)]);
+    forceRender(engine);
+    expect(engine.viewport.priceMax).toBeLessThan(200);
+    expect(engine.viewport.priceMin).toBeCloseTo(rMin, 5);
+    expect(engine.viewport.priceMax).toBeCloseTo(rMax, 5);
+  });
+
+  it('left binding drives the independent left range to the indicator values', () => {
+    engine.setIndicators([new LeftConst(5000)]);
+    forceRender(engine);
+    // The left extrema bracket 5000 (flat value → symmetric pad around it).
+    expect(engine.viewport.leftPriceMin).toBeLessThan(5000);
+    expect(engine.viewport.leftPriceMax).toBeGreaterThan(5000);
+    // And a left projection of 5000 lands inside the chart area.
+    const y = engine.viewport.priceToY(5000, 'left');
+    expect(y).toBeGreaterThanOrEqual(engine.layout.chartTop);
+    expect(y).toBeLessThanOrEqual(engine.layout.chartBottom);
+  });
+
+  it('renders with a left-bound indicator without throwing', () => {
+    engine.setIndicators([new SMA(20), new LeftConst(5000)]);
+    expect(() => forceRender(engine)).not.toThrow();
+  });
+
+  it('resize preserves the reserved left strip', () => {
+    engine.setIndicators([new LeftConst(5000)]);
+    expect(engine.layout.leftAxisWidth).toBeGreaterThan(0);
+    engine.resize(1200, 600);
+    expect(engine.layout.leftAxisWidth).toBeGreaterThan(0);
+    expect(engine.layout.chartLeft).toBe(engine.layout.leftAxisWidth);
+  });
+});

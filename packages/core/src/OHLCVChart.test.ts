@@ -380,4 +380,228 @@ describe('OHLCVChart facade', () => {
       chart.destroy();
     });
   });
+
+  describe('replay mode (C1)', () => {
+    it('is not replaying by default', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 20 }, (_, i) => makeCandle(i)));
+      expect(chart.isReplaying()).toBe(false);
+      chart.destroy();
+    });
+
+    it('startReplay engages replay and stepReplay advances; onReplayChange fires', () => {
+      const onReplayChange = vi.fn();
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        onReplayChange,
+      });
+      chart.setData(Array.from({ length: 20 }, (_, i) => makeCandle(i)));
+      chart.startReplay(0);
+      expect(chart.isReplaying()).toBe(true);
+      expect(onReplayChange).toHaveBeenLastCalledWith(0, false);
+      chart.stepReplay();
+      expect(onReplayChange).toHaveBeenLastCalledWith(1, false);
+      chart.seekReplay(5);
+      expect(onReplayChange).toHaveBeenLastCalledWith(5, false);
+      chart.stopReplay();
+      expect(chart.isReplaying()).toBe(false);
+      chart.destroy();
+    });
+
+    it('playReplay advances under fake timers and pauseReplay stops it', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const onReplayChange = vi.fn();
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        onReplayChange,
+      });
+      chart.setData(Array.from({ length: 20 }, (_, i) => makeCandle(i)));
+      chart.startReplay(0);
+      chart.setReplaySpeed(10); // 100ms/bar
+      chart.playReplay();
+      vi.advanceTimersByTime(300); // 3 ticks
+      // Last call reflects index 3 (latest reveal).
+      const lastCall = (calls: unknown[][]): unknown[] => calls[calls.length - 1]!;
+      expect(lastCall(onReplayChange.mock.calls)[0]).toBe(3);
+      chart.pauseReplay();
+      const last = lastCall(onReplayChange.mock.calls)[0];
+      vi.advanceTimersByTime(1000);
+      expect(lastCall(onReplayChange.mock.calls)[0]).toBe(last); // no further advance
+      chart.destroy();
+      vi.useRealTimers();
+    });
+
+    it('destroy halts a running replay timer (no late ticks)', () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const onReplayChange = vi.fn();
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        onReplayChange,
+      });
+      chart.setData(Array.from({ length: 20 }, (_, i) => makeCandle(i)));
+      chart.startReplay(0);
+      chart.setReplaySpeed(10);
+      chart.playReplay();
+      vi.advanceTimersByTime(100);
+      const callsBefore = onReplayChange.mock.calls.length;
+      chart.destroy();
+      vi.advanceTimersByTime(1000);
+      expect(onReplayChange.mock.calls.length).toBe(callsBefore);
+      vi.useRealTimers();
+    });
+  });
+
+  describe('alerts (C3)', () => {
+    /** Resolve after one animation frame (merger coalesces onUpdate via RAF). */
+    const nextFrame = (): Promise<void> =>
+      new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+    /** A candle whose close is exactly `c` at sequential time `i`. */
+    function candleAt(i: number, c: number): Candle {
+      return { o: c, h: c + 1, l: c - 1, c, v: 10, t: 1_700_000_000 + i * 60 };
+    }
+
+    it('addAlert returns the alert, defaults condition, and attaches a dashed line', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      const alert = chart.addAlert({ price: 150 });
+      expect(alert.id).toBe('a_0');
+      expect(alert.condition).toBe('crossing');
+      expect(alert.active).toBe(true);
+      // A price line primitive with id alert:<id> is attached.
+      expect(chart.getPrimitives().some((p) => p.id === 'alert:a_0')).toBe(true);
+      chart.destroy();
+    });
+
+    it('getAlerts / removeAlert / clearAlerts manage the collection and lines', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      const a = chart.addAlert({ price: 150 });
+      const b = chart.addAlert({ price: 160 });
+      expect(chart.getAlerts().map((x) => x.id)).toEqual([a.id, b.id]);
+
+      expect(chart.removeAlert(a.id)).toBe(true);
+      expect(chart.removeAlert(a.id)).toBe(false);
+      expect(chart.getPrimitives().some((p) => p.id === 'alert:' + a.id)).toBe(false);
+      expect(chart.getAlerts().map((x) => x.id)).toEqual([b.id]);
+
+      chart.clearAlerts();
+      expect(chart.getAlerts()).toHaveLength(0);
+      expect(chart.getPrimitives().some((p) => p.id.startsWith('alert:'))).toBe(false);
+      chart.destroy();
+    });
+
+    it('fires onAlert with the triggering alert on a realtime close-price cross', async () => {
+      const fired: Array<{ id: string; price: number }> = [];
+      const chart = new OHLCVChart({
+        container,
+        symbol: 'BTC/USDT',
+        resolution: '1H',
+        onAlert: (a) => fired.push({ id: a.id, price: a.price }),
+      });
+      // Seed data so the alert baseline (prev close) is below the level.
+      chart.setData([candleAt(0, 100)]);
+      await nextFrame(); // establishes prev close = 100, no fire (first frame)
+
+      const alert = chart.addAlert({ price: 105, condition: 'crossing' });
+
+      // New candle whose close (110) crosses 105 upward.
+      chart.updateLastCandle(candleAt(1, 110));
+      await nextFrame();
+
+      expect(fired).toEqual([{ id: alert.id, price: 105 }]);
+      // One-shot: the alert is now inactive and its line removed.
+      expect(chart.getAlerts()[0]!.active).toBe(false);
+      expect(chart.getPrimitives().some((p) => p.id === 'alert:' + alert.id)).toBe(false);
+      chart.destroy();
+    });
+
+    it('does not fire on the first tick (no previous close yet)', async () => {
+      const onAlert = vi.fn();
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', onAlert,
+      });
+      // Alert added before ANY data; the first frame only sets the baseline.
+      chart.addAlert({ price: 105, condition: 'crossing' });
+      chart.setData([candleAt(0, 110)]); // close already past the level
+      await nextFrame();
+      // No prev close existed on this first frame → must not fire.
+      expect(onAlert).not.toHaveBeenCalled();
+      chart.destroy();
+    });
+
+    it('does not re-fire a one-shot alert on subsequent ticks', async () => {
+      const onAlert = vi.fn();
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', onAlert,
+      });
+      chart.setData([candleAt(0, 100)]);
+      await nextFrame();
+      chart.addAlert({ price: 105, condition: 'above' });
+
+      chart.updateLastCandle(candleAt(1, 110)); // upward break → fires
+      await nextFrame();
+      chart.updateLastCandle(candleAt(2, 120)); // still above → must NOT re-fire
+      await nextFrame();
+      expect(onAlert).toHaveBeenCalledTimes(1);
+      chart.destroy();
+    });
+
+    it('saveLayoutState includes alerts; loadState restores them and redraws lines', () => {
+      const c1 = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      c1.addAlert({ price: 150, condition: 'above', message: 'TP' });
+      c1.addAlert({ id: 'a_keep', price: 90, condition: 'below' });
+      const snapshot = c1.saveLayoutState();
+      expect(snapshot.alerts).toEqual([
+        { id: 'a_0', price: 150, condition: 'above', active: true, message: 'TP' },
+        { id: 'a_keep', price: 90, condition: 'below', active: true },
+      ]);
+      c1.destroy();
+
+      const container2 = createContainer();
+      const c2 = new OHLCVChart({ container: container2, symbol: 'X', resolution: '1m' });
+      c2.loadState(snapshot);
+      expect(c2.getAlerts()).toEqual([
+        { id: 'a_0', price: 150, condition: 'above', active: true, message: 'TP' },
+        { id: 'a_keep', price: 90, condition: 'below', active: true },
+      ]);
+      // Lines redrawn for active alerts.
+      expect(c2.getPrimitives().some((p) => p.id === 'alert:a_0')).toBe(true);
+      expect(c2.getPrimitives().some((p) => p.id === 'alert:a_keep')).toBe(true);
+      c2.destroy();
+      container2.remove();
+    });
+
+    it('restores a fired (inactive) alert disarmed and without a line', () => {
+      const c1 = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      c1.addAlert({ price: 150, condition: 'crossing' });
+      // Simulate a prior fire by reaching into the manager via save/edit.
+      const snapshot = c1.saveLayoutState();
+      snapshot.alerts![0]!.active = false;
+      c1.destroy();
+
+      const container2 = createContainer();
+      const c2 = new OHLCVChart({ container: container2, symbol: 'X', resolution: '1m' });
+      c2.loadState(snapshot);
+      expect(c2.getAlerts()[0]!.active).toBe(false);
+      expect(c2.getPrimitives().some((p) => p.id === 'alert:a_0')).toBe(false);
+      c2.destroy();
+      container2.remove();
+    });
+
+    it('loadState with a pre-C3 state (no alerts field) clears alerts without throwing', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.addAlert({ price: 150 });
+      // Build a legacy layout snapshot lacking the alerts field.
+      const legacy = chart.saveLayoutState();
+      delete legacy.alerts;
+      expect(() => chart.loadState(legacy)).not.toThrow();
+      expect(chart.getAlerts()).toHaveLength(0);
+      chart.destroy();
+    });
+  });
 });

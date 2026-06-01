@@ -11,6 +11,11 @@ import { FibRetracement } from './FibRetracement';
 import { FibExtension } from './FibExtension';
 import { Channel } from './Channel';
 import { Arrow } from './Arrow';
+import { ParallelChannel } from './ParallelChannel';
+import { RegressionChannel } from './RegressionChannel';
+import { Pitchfork } from './Pitchfork';
+import { FibFan } from './FibFan';
+import { Measure } from './Measure';
 
 /**
  * Factory that resurrects a Drawing from its serialized snapshot.
@@ -25,6 +30,7 @@ function hydrate<T extends Drawing>(ctor: new (id?: string) => T): DrawingFactor
     const d = new ctor(snap.id);
     for (const p of snap.points) d.addPoint({ ...p });
     if (snap.color !== undefined) d.color = snap.color;
+    if (snap.data !== undefined) d.restoreData(snap.data.slice());
     return d;
   };
 }
@@ -38,6 +44,11 @@ FACTORIES.set(FibRetracement.KIND, hydrate(FibRetracement));
 FACTORIES.set(FibExtension.KIND, hydrate(FibExtension));
 FACTORIES.set(Channel.KIND, hydrate(Channel));
 FACTORIES.set(Arrow.KIND, hydrate(Arrow));
+FACTORIES.set(ParallelChannel.KIND, hydrate(ParallelChannel));
+FACTORIES.set(RegressionChannel.KIND, hydrate(RegressionChannel));
+FACTORIES.set(Pitchfork.KIND, hydrate(Pitchfork));
+FACTORIES.set(FibFan.KIND, hydrate(FibFan));
+FACTORIES.set(Measure.KIND, hydrate(Measure));
 
 /**
  * Ordered collection of drawings with a single "active" slot for

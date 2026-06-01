@@ -27,11 +27,11 @@ function forceRender(engine: ChartEngine): void {
 }
 
 describe('series registry', () => {
-  it('registers all five built-in types', () => {
-    for (const t of ['candles', 'line', 'area', 'ohlc', 'heikinashi']) {
+  it('registers all six built-in types', () => {
+    for (const t of ['candles', 'line', 'area', 'ohlc', 'heikinashi', 'baseline']) {
       expect(getSeriesType(t)?.type).toBe(t);
     }
-    expect(listSeriesTypes()).toEqual(expect.arrayContaining(['candles', 'heikinashi']));
+    expect(listSeriesTypes()).toEqual(expect.arrayContaining(['candles', 'heikinashi', 'baseline']));
   });
 
   it('returns undefined for an unregistered type', () => {

@@ -17,6 +17,7 @@ import {
   type LayoutState,
   type ThemeMode,
   type ThemeColors,
+  type Messages,
 } from '@rekurt/ohlcv-core';
 
 /**
@@ -47,6 +48,7 @@ export const OHLCVChart = defineComponent({
     theme: { type: [String, Object] as PropType<ThemeMode | ThemeColors>, default: 'dark' },
     chartType: { type: String as PropType<ChartType>, default: undefined },
     locale: { type: String, default: undefined },
+    messages: { type: Object as PropType<Partial<Messages>>, default: undefined },
     priceFormat: { type: Function as PropType<(price: number) => string>, default: undefined },
     volumeFormat: { type: Function as PropType<(volume: number) => string>, default: undefined },
     idleCursor: { type: String as PropType<string | null>, default: undefined },
@@ -82,6 +84,7 @@ export const OHLCVChart = defineComponent({
         theme: props.theme,
         chartType: props.chartType,
         locale: props.locale,
+        messages: props.messages,
         priceFormat: props.priceFormat,
         volumeFormat: props.volumeFormat,
         onCandleClick: (candle, index) => emit('candle-click', candle, index),

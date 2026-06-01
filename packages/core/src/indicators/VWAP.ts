@@ -50,6 +50,13 @@ export class VWAP extends Indicator {
     const vwap = nanArray(n);
     if (n === 0) return [{ name: 'vwap', values: vwap }];
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+    const volume = view.volume;
+    const time = view.time;
+
     const SESSION = 86_400;
     let currentDay = -1;
     let sumPV = 0;
@@ -59,9 +66,8 @@ export class VWAP extends Indicator {
     let anchorReached = anchoredT === -Infinity;
 
     for (let i = 0; i < n; i++) {
-      const candle = buffer.candleAt(i)!;
       if (this.anchor === 'session') {
-        const day = Math.floor(candle.t / SESSION);
+        const day = Math.floor(time[i]! / SESSION);
         if (day !== currentDay) {
           currentDay = day;
           sumPV = 0;
@@ -69,7 +75,7 @@ export class VWAP extends Indicator {
         }
       } else if (typeof this.anchor === 'object') {
         if (!anchorReached) {
-          if (candle.t >= anchoredT) {
+          if (time[i]! >= anchoredT) {
             anchorReached = true;
             sumPV = 0;
             sumV = 0;
@@ -79,9 +85,9 @@ export class VWAP extends Indicator {
           }
         }
       }
-      const typical = (candle.h + candle.l + candle.c) / 3;
-      sumPV += typical * candle.v;
-      sumV += candle.v;
+      const typical = (high[i]! + low[i]! + close[i]!) / 3;
+      sumPV += typical * volume[i]!;
+      sumV += volume[i]!;
       vwap[i] = sumV > 0 ? sumPV / sumV : NaN;
     }
 

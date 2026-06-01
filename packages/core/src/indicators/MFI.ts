@@ -36,16 +36,20 @@ export class MFI extends Indicator {
     if (n === 0 || n < this.period + 1) return [{ name: 'mfi', values: out }];
 
     const p = this.period;
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+    const volume = view.volume;
     const typical = new Float64Array(n);
     const pflow = new Float64Array(n);
     const nflow = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      typical[i] = (c.h + c.l + c.c) / 3;
+      typical[i] = (high[i]! + low[i]! + close[i]!) / 3;
       if (i === 0) continue;
       const tp = typical[i]!;
       const prev = typical[i - 1]!;
-      const rmf = tp * c.v;
+      const rmf = tp * volume[i]!;
       if (tp > prev) pflow[i] = rmf;
       else if (tp < prev) nflow[i] = rmf;
       // Equal typical → contributes to neither side (Wilder convention).

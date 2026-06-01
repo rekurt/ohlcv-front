@@ -2,6 +2,7 @@ import type { Candle, ChartType, ThemeMode, ThemeColors } from '../types';
 import type { PriceScaleMode } from '../interaction/priceScale';
 import type { IndicatorConfig } from '../indicators/registry';
 import type { DrawingSnapshot } from '../drawings/Drawing';
+import type { Alert } from '../alerts/Alert';
 
 /**
  * Serialized chart state without the data window. This is the "share via
@@ -35,6 +36,14 @@ export interface LayoutState {
   };
   indicators: IndicatorConfig[];
   drawings: DrawingSnapshot[];
+  /**
+   * Price alerts (C3). Optional + additive: `Alert` is already a flat,
+   * JSON-safe shape so it persists as-is. States written before C3 omit the
+   * field and load back with no alerts — no schema bump or migration needed.
+   * A fired one-shot alert serializes with `active: false`, so it restores
+   * disarmed (it won't immediately re-fire on the next tick).
+   */
+  alerts?: Alert[];
 }
 
 /**

@@ -16,6 +16,7 @@ import { GoToLiveRenderer } from './GoToLiveRenderer';
 import { OverlaySeriesRenderer } from './OverlaySeriesRenderer';
 import { IndicatorPaneRenderer } from './IndicatorPaneRenderer';
 import { getSeriesType, DEFAULT_SERIES } from '../series/registry';
+import type { SeriesDefinition } from '../series/Series';
 import { TimeScaleBehavior } from '../horzscale/TimeScaleBehavior';
 import type { HorzScaleBehavior } from '../horzscale/HorzScaleBehavior';
 import { MarkerRenderer } from '../markers/MarkerRenderer';
@@ -23,6 +24,7 @@ import type { Marker } from '../markers/Marker';
 import type { Indicator, IndicatorSeries } from '../indicators/Indicator';
 import type { DrawingLayer } from '../drawings/DrawingLayer';
 import type { Primitive, PrimitiveZOrder } from '../primitives/Primitive';
+import { createI18n, type I18n } from '../i18n/messages';
 
 /**
  * Interpolated domain value at a (possibly fractional) logical index — used
@@ -92,11 +94,29 @@ export class ChartEngine {
   private _buffer: CandleBuffer | null = null;
   /** Coarse range index over the buffer; accelerates autoScale on huge windows. */
   private _rangePyramid: RangePyramid | null = null;
+  /**
+   * Replay-mode virtual end of buffer (C1). When non-null the renderer
+   * behaves as if the buffer were only `_replayCap` candles long — the visible
+   * window, autoscale, last candle (legend/price line) all stop at the cap so
+   * bar-by-bar playback reveals history progressively. `null` (the default)
+   * means "no cap": {@link _effectiveLength} returns the real buffer length and
+   * every render path is bit-for-bit identical to the pre-replay engine.
+   */
+  private _replayCap: number | null = null;
   private _symbol = '';
   private _resolution = '';
   private _priceFormat?: (price: number) => string;
   private _volumeFormat?: (volume: number) => string;
   private _chartType: string = 'candles';
+
+  /**
+   * Localization bundle (C6): translated strings + locale-aware number/date
+   * formatters. Defaults to a no-locale {@link createI18n}, whose formatters
+   * are the exact locale-agnostic `utils` defaults and whose strings are the
+   * legacy English ones — so a chart that never calls {@link setI18n} renders
+   * byte-for-byte as before.
+   */
+  private _i18n: I18n = createI18n();
 
   /** Horizontal-domain behavior (axis labels). Defaults to time. */
   private _timeScale = new TimeScaleBehavior();
@@ -176,12 +196,11 @@ export class ChartEngine {
     this._crosshairCanvas.setAttribute('data-ohlcv-focusable', 'true');
     // Accessibility: label the interactive canvas as an application image
     // and describe its purpose. Screen readers that don't speak canvas
-    // pixel content will at least announce "OHLCV price chart" on focus.
+    // pixel content will at least announce the chart label on focus. The
+    // label text is i18n-driven (C6) — _applyAriaLabel writes the current
+    // localized string; here it's the English default.
     this._crosshairCanvas.setAttribute('role', 'img');
-    this._crosshairCanvas.setAttribute(
-      'aria-label',
-      'OHLCV price chart. Use arrow keys to pan, plus and minus to zoom, Home and End to jump.',
-    );
+    this._applyAriaLabel();
 
     // Live region for screen-reader-friendly crosshair announcements.
     // Positioned off-screen; updated imperatively from setCrosshair.
@@ -232,9 +251,98 @@ export class ChartEngine {
     return this._layout;
   }
 
+  /**
+   * The active theme's background color. Exposed so the off-screen SVG export
+   * ({@link chartEngineToSVG}) can paint a guaranteed full-bleed backdrop
+   * matching the on-screen chart. Read-only — set the theme via {@link setTheme}.
+   */
+  get themeBackground(): string {
+    return this._theme.background;
+  }
+
   setBuffer(buffer: CandleBuffer): void {
     this._buffer = buffer;
     this._rangePyramid = new RangePyramid(buffer);
+  }
+
+  /**
+   * Set the replay-mode virtual buffer end (C1), or `null` to disable replay
+   * and render the full buffer again. A non-null `cap` is clamped into
+   * `[1, buffer.length]` so the renderer always has at least one — and never
+   * more than the real number of — candles to show. Passing `null` is the
+   * default-equivalent state; the next render is bit-for-bit identical to a
+   * chart that never entered replay.
+   *
+   * Does not itself request a render — the caller (ReplayController) decides
+   * when to repaint so a seek+render is a single frame.
+   */
+  setReplayCap(cap: number | null): void {
+    if (cap == null) {
+      this._replayCap = null;
+      return;
+    }
+    const len = this._buffer ? this._buffer.length : 0;
+    // Nothing to cap against (empty buffer): treat as "no replay".
+    if (len <= 0) {
+      this._replayCap = null;
+      return;
+    }
+    // Clamp into [1, len]; floor so a fractional cap can't reveal half a bar.
+    this._replayCap = Math.max(1, Math.min(len, Math.floor(cap)));
+  }
+
+  /** The current replay cap (virtual buffer end), or `null` when not replaying. */
+  getReplayCap(): number | null {
+    return this._replayCap;
+  }
+
+  /**
+   * Effective number of candles the renderer should treat as "present".
+   * Equal to the real buffer length unless a replay cap is active, in which
+   * case it is `min(buffer.length, cap)`. When `_replayCap == null` this
+   * returns exactly `buffer.length`, so every `_render` path that swaps a
+   * `buffer.length` for this stays bit-for-bit unchanged in the default case.
+   */
+  private _effectiveLength(): number {
+    const len = this._buffer ? this._buffer.length : 0;
+    return this._replayCap == null ? len : Math.min(len, this._replayCap);
+  }
+
+  /**
+   * Resolve a timestamp to a (fractional) buffer index against the live buffer,
+   * the seam behind {@link Viewport.timeToX} for time-keyed overlay primitives
+   * (C2 compare). Returns NaN when no buffer is set so the overlay skips
+   * painting. Kept tiny + buffer-delegating so it adds nothing to the base
+   * bundle beyond the closure installed in {@link _computeRenderGeometry}.
+   */
+  private _timeToFractionalIndex(t: number): number {
+    return this._buffer ? this._buffer.fractionalIndexOfTime(t) : NaN;
+  }
+
+  /**
+   * Zero-copy slice of the candles currently inside the visible window
+   * `[startIndex, startIndex + visibleCount)`, clamped to the effective
+   * (replay-capped) buffer end and EXCLUDING the +1 render-only bar — so it
+   * matches the bars the user actually sees. Returns `null` when no buffer is
+   * set or the window is empty.
+   *
+   * This is the seam an optional, attach-only overlay (C4 Volume Profile) reads
+   * its source data through without ever importing the buffer: the controller
+   * holds a `() => engine.visibleCandleView()` closure and the primitive folds
+   * the returned typed arrays into price bins. Tiny + buffer-delegating, so it
+   * adds nothing meaningful to the base bundle (the profile module itself is
+   * never statically imported here, so it tree-shakes out).
+   */
+  visibleCandleView(): CandleView | null {
+    if (!this._buffer) return null;
+    const effLen = this._effectiveLength();
+    const start = Math.max(0, Math.floor(this.viewport.startIndex));
+    const end = Math.min(
+      effLen,
+      Math.ceil(this.viewport.startIndex + this.viewport.visibleCount),
+    );
+    if (end <= start) return null;
+    return this._buffer.sliceView(start, end);
   }
 
   /**
@@ -268,6 +376,12 @@ export class ChartEngine {
   setHorzScale(behavior: HorzScaleBehavior): void {
     if (behavior instanceof TimeScaleBehavior) {
       behavior.setResolution(this._resolution);
+      // Carry the active locale's date formatter onto a host-supplied time
+      // scale so its axis labels localize too (no-op / cleared when no locale).
+      const i18n = this._i18n;
+      behavior.setDateFormatter(
+        i18n.locale === undefined ? null : (t: number, res: string) => i18n.date(t, res),
+      );
     }
     this._horzScale = behavior;
     this.requestRender();
@@ -284,6 +398,64 @@ export class ChartEngine {
 
   setVolumeFormat(fn?: (price: number) => string): void {
     this._volumeFormat = fn;
+  }
+
+  /**
+   * Install the localization bundle (C6). Updates the canvas `aria-label`
+   * immediately and requests a render so legend labels / the go-to-live pill
+   * pick up the new strings. Passing the result of a no-locale `createI18n()`
+   * restores the default English, locale-agnostic behavior.
+   *
+   * Host-supplied `priceFormat` / `volumeFormat` still take priority over the
+   * bundle's locale-aware number formatters (see `_legendPriceFormat` etc.) —
+   * i18n only fills in where the host hasn't overridden formatting.
+   */
+  setI18n(i18n: I18n): void {
+    this._i18n = i18n;
+    this._applyAriaLabel();
+    // Localize time-axis labels (and, transitively, the crosshair time label /
+    // a11y announcement, which flow from horzScale.formatValue) when a locale
+    // is set. With no locale, clear the override so labels stay byte-for-byte
+    // the legacy formatTime output. Only TimeScaleBehavior-based scales carry
+    // a date formatter; a custom (price/yield) scale is left untouched.
+    const dateFmt = i18n.locale === undefined ? null : (t: number, res: string) => i18n.date(t, res);
+    this._timeScale.setDateFormatter(dateFmt);
+    if (this._horzScale instanceof TimeScaleBehavior && this._horzScale !== this._timeScale) {
+      this._horzScale.setDateFormatter(dateFmt);
+    }
+    this.requestRender();
+  }
+
+  /** The active localization bundle. */
+  get i18n(): I18n {
+    return this._i18n;
+  }
+
+  /** Write the current localized `aria-label` (`label` + `hint`) to the canvas. */
+  private _applyAriaLabel(): void {
+    const label = this._i18n.t('a11yChartLabel');
+    const hint = this._i18n.t('a11yChartHint');
+    // Join with a space, tolerating an empty hint (host may clear it).
+    const text = hint ? `${label} ${hint}` : label;
+    this._crosshairCanvas.setAttribute('aria-label', text);
+  }
+
+  /**
+   * Effective price formatter for chrome (legend / a11y announcement):
+   * host-supplied `priceFormat` wins, else the i18n bundle's locale-aware
+   * price formatter (which, with no locale, IS the default `formatPrice`).
+   */
+  private _effPriceFormat(): (price: number) => string {
+    return this._priceFormat ?? this._i18n.price;
+  }
+
+  /**
+   * Effective volume formatter for the legend: host-supplied `volumeFormat`
+   * wins, else the i18n bundle's locale-aware volume formatter (default
+   * `formatVolume` when no locale).
+   */
+  private _effVolumeFormat(): (volume: number) => string {
+    return this._volumeFormat ?? this._i18n.volume;
   }
 
   setTheme(theme: ThemeColors): void {
@@ -348,12 +520,20 @@ export class ChartEngine {
    */
   setIndicators(indicators: Indicator[]): void {
     const prevPaneCount = this._paneIndicatorCount();
+    const prevHasLeft = this._hasLeftScaleIndicator();
     this._indicators = indicators;
-    // If the number of sub-pane indicators changed, recompute the
-    // layout (panes consume vertical space from the main candle area).
+    // Recompute the layout if either the sub-pane count (panes consume
+    // vertical space) or the presence of a left-scale binding (B2: the left
+    // axis strip consumes horizontal space) changed.
     const nextPaneCount = this._paneIndicatorCount();
-    if (nextPaneCount !== prevPaneCount && this._layout) {
-      this._layout = computeLayout(this._layout.width, this._layout.height, nextPaneCount);
+    const nextHasLeft = this._hasLeftScaleIndicator();
+    if ((nextPaneCount !== prevPaneCount || nextHasLeft !== prevHasLeft) && this._layout) {
+      this._layout = computeLayout(
+        this._layout.width,
+        this._layout.height,
+        nextPaneCount,
+        nextHasLeft,
+      );
       this.viewport.setLayout(this._layout);
     }
     this.requestRender();
@@ -363,6 +543,18 @@ export class ChartEngine {
     let n = 0;
     for (const ind of this._indicators) if (ind.placement === 'pane') n++;
     return n;
+  }
+
+  /**
+   * True when at least one OVERLAY indicator is bound to the secondary
+   * (left) price scale (B2). Drives whether the layout reserves a left
+   * axis strip; pane indicators own their own axis and never count.
+   */
+  private _hasLeftScaleIndicator(): boolean {
+    for (const ind of this._indicators) {
+      if (ind.placement === 'overlay' && ind.priceScaleId === 'left') return true;
+    }
+    return false;
   }
 
   /** The currently-configured indicators, in render order. */
@@ -477,8 +669,12 @@ export class ChartEngine {
   }
 
   private _formatA11yAnnouncement(candle: Candle, timeLabel: string): string {
-    const fmt = this._priceFormat ?? ((p: number) => p.toFixed(2));
-    return `${this._symbol} ${timeLabel}: open ${fmt(candle.o)}, high ${fmt(candle.h)}, low ${fmt(candle.l)}, close ${fmt(candle.c)}`;
+    // Host price formatter wins; otherwise the i18n bundle's price formatter
+    // (default `formatPrice` when no locale is set). The open/high/low/close
+    // words come from the message bundle so the announcement is translatable.
+    const fmt = this._effPriceFormat();
+    const t = this._i18n;
+    return `${this._symbol} ${timeLabel}: ${t.t('a11yOpen')} ${fmt(candle.o)}, ${t.t('a11yHigh')} ${fmt(candle.h)}, ${t.t('a11yLow')} ${fmt(candle.l)}, ${t.t('a11yClose')} ${fmt(candle.c)}`;
   }
 
   /** Hide crosshair and show last candle in legend */
@@ -503,7 +699,12 @@ export class ChartEngine {
       return;
     }
 
-    this._layout = computeLayout(width, height, this._paneIndicatorCount());
+    this._layout = computeLayout(
+      width,
+      height,
+      this._paneIndicatorCount(),
+      this._hasLeftScaleIndicator(),
+    );
     this.viewport.setLayout(this._layout);
 
     // resizeHiDPICanvas resets canvas.width/height (which clears the transform)
@@ -564,29 +765,150 @@ export class ChartEngine {
     return snapshot.toDataURL('image/png');
   }
 
-  private _scheduleRaf(): void {
-    if (this._rafId) return;
-    this._rafId = requestAnimationFrame(() => {
-      this._rafId = 0;
-      this._render();
+  /**
+   * Paint the full chart layer (grid → volume → primary series → overlay
+   * indicators → markers → drawings → primitives → axes → time axis) into an
+   * arbitrary 2D-context-like target.
+   *
+   * Extracted verbatim from `_render`'s `_chartDirty` block so the on-screen
+   * path and the off-screen/SVG path share one source of truth. `_render`
+   * still calls it with the live `_chartCtx`; {@link renderToContext} calls it
+   * with an export sink (e.g. an SVG-recording shim). The target only needs
+   * the subset of {@link CanvasRenderingContext2D} the renderers actually use.
+   */
+  private _paintChartLayer(
+    ctx: CanvasRenderingContext2D,
+    series: SeriesDefinition,
+    drawView: CandleView,
+  ): void {
+    if (!this._buffer) return;
+    const { width, height } = this._layout;
+    ctx.clearRect(0, 0, width, height);
+
+    // Background
+    ctx.fillStyle = this._theme.background;
+    ctx.fillRect(0, 0, width, height);
+
+    // 'bottom' primitives sit behind the grid + series (e.g. watermark).
+    this._drawPrimitives(ctx, 'bottom');
+
+    // Grid → Volume → primary series (by chart type) → overlay indicators
+    // → drawings → Axes. Drawings sit above indicators so a trend line
+    // is visible on top of SMA/EMA/BB clutter.
+    this._gridRenderer.render(ctx, this._layout, this.viewport, this._theme);
+    this._volumeRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
+
+    // Primary price series via the registry (candles/line/area/ohlc/
+    // heikinashi or a host-registered custom type).
+    series.draw({
+      ctx,
+      layout: this._layout,
+      viewport: this.viewport,
+      view: drawView,
+      theme: this._theme,
     });
+
+    // Overlay indicators (drawn on the main price area).
+    let colorIdx = 0;
+    const paneIndicators: { indicator: Indicator; series: IndicatorSeries[] }[] = [];
+    for (const indicator of this._indicators) {
+      let series: IndicatorSeries[];
+      try {
+        // computeCached memoizes on the buffer revision, so indicators
+        // recompute only when data changes — not on every render frame.
+        series = indicator.computeCached(this._buffer);
+      } catch (err) {
+        // Indicator compute errors are non-fatal; report and skip this one.
+        this._reporter?.report('indicator', err, false);
+        continue;
+      }
+      if (indicator.placement === 'overlay') {
+        // Project through the left scale when the indicator is bound to it
+        // (B2); everything else uses the primary right scale as before.
+        const side = indicator.priceScaleId === 'left' ? 'left' : 'right';
+        for (const s of series) {
+          const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
+          colorIdx++;
+          this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme, side);
+        }
+      } else {
+        paneIndicators.push({ indicator, series });
+      }
+    }
+
+    // Markers sit above indicators; drawings sit above markers.
+    this._markerRenderer.render(
+      ctx, this._layout, this.viewport, this._buffer, this._markers, this._theme,
+    );
+
+    // Drawing layer on top of indicators + markers.
+    if (this._drawingLayer) {
+      this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
+    }
+
+    // 'normal' primitives sit with the drawing layer, above the series.
+    this._drawPrimitives(ctx, 'normal');
+
+    this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._effPriceFormat());
+
+    // Secondary (left) price axis — drawn only while the strip is
+    // reserved (an overlay indicator is bound to 'left'). B2.
+    if (this._layout.leftAxisWidth > 0) {
+      this._priceAxisRenderer.render(
+        ctx, this._layout, this.viewport, this._theme, this._effPriceFormat(), 'left',
+      );
+    }
+
+    // Sub-pane indicators. Each gets one band of equal height in
+    // [paneAreaTop, paneAreaBottom]. Color cursor continues from
+    // overlay indicators so legends are easier to map mentally.
+    if (paneIndicators.length > 0 && this._layout.paneAreaBottom > this._layout.paneAreaTop) {
+      const bandH =
+        (this._layout.paneAreaBottom - this._layout.paneAreaTop) / paneIndicators.length;
+      for (let i = 0; i < paneIndicators.length; i++) {
+        const entry = paneIndicators[i]!;
+        const top = this._layout.paneAreaTop + i * bandH;
+        const bottom = top + bandH;
+        const drawn = this._paneRenderer.render(
+          ctx,
+          this._layout,
+          this.viewport,
+          entry.series,
+          top,
+          bottom,
+          entry.indicator.id,
+          this._theme,
+          colorIdx,
+        );
+        colorIdx += drawn;
+      }
+    }
+
+    this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._horzScale, this._theme);
   }
 
-  private _render(): void {
-    if (!this._buffer) return;
-
-    // Resolve the active primary series (registry; unknown → candles).
-    const series = getSeriesType(this._chartType) ?? DEFAULT_SERIES;
+  /**
+   * Resolve the per-frame draw geometry for `series`: visible window slice,
+   * non-uniform horizontal coordinate mapping (value scales), price autoscale,
+   * secondary (left) scale extent, and conflation. Returns the `drawView` the
+   * chart layer paints from. Pure side-effect-wise w.r.t. the viewport (it
+   * configures mapping + ranges exactly as the inline `_render` code did), so
+   * calling it from `_render` (live) or {@link renderToContext} (export) yields
+   * identical geometry. Extracted verbatim from `_render` — no behavior change.
+   */
+  private _computeRenderGeometry(series: SeriesDefinition): CandleView {
+    const buffer = this._buffer!;
+    const effLen = this._effectiveLength();
 
     const start = Math.max(0, Math.floor(this.viewport.startIndex));
-    const end = Math.min(this._buffer.length, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
+    const end = Math.min(effLen, Math.ceil(this.viewport.startIndex + this.viewport.visibleCount) + 1);
     // Visible end WITHOUT the +1 render-only bar — used for autoscale and the
     // non-uniform domain edge so an off-screen bar can't skew either.
     const visibleEnd = Math.min(
-      this._buffer.length,
+      effLen,
       Math.ceil(this.viewport.startIndex + this.viewport.visibleCount),
     );
-    const rawView = this._buffer.sliceView(start, end);
+    const rawView = buffer.sliceView(start, end);
 
     // Non-uniform horizontal geometry (value-based scales, e.g. yield curve):
     // install a per-index 0..1 mapping so bars sit at value-proportional X.
@@ -594,7 +916,6 @@ export class ChartEngine {
     // bit-for-bit unchanged.
     const hs = this._horzScale;
     if (!hs.uniform && hs.domainToCoord01) {
-      const buffer = this._buffer;
       // Bind to preserve `this`: a custom behavior's domainToCoord01 may read
       // instance options (spacing params, etc.); detaching it would lose them.
       const toCoord = hs.domainToCoord01.bind(hs);
@@ -603,8 +924,10 @@ export class ChartEngine {
       // interpolates between candles), so drag/wheel panning moves the curve
       // smoothly instead of snapping to whole candles. The right edge is the
       // visible extent (the fractional position, not the integer `end - 1`
-      // that carries the +1 render-only bar). Both anchors clamp into buffer.
-      const maxIdx = Math.max(0, buffer.length - 1);
+      // that carries the +1 render-only bar). Both anchors clamp into the
+      // effective (replay-capped) buffer so a value-based axis stops at the
+      // replayed bar rather than reaching into not-yet-revealed history.
+      const maxIdx = Math.max(0, effLen - 1);
       const leftIdx = Math.max(0, Math.min(maxIdx, this.viewport.startIndex));
       const rightIdx = Math.max(
         0,
@@ -623,122 +946,128 @@ export class ChartEngine {
       this.viewport.setCoordinateMapping(null);
     }
 
+    // Time → fractional-index resolver for time-keyed overlay primitives (C2
+    // compare). Installed every frame against the live buffer so a primitive
+    // can map its own timestamps onto the price axis via viewport.timeToX
+    // without ever importing the buffer. Bound once here (cheap closure); the
+    // default render path never calls it, so this is zero-cost unless a
+    // consumer (the compare overlay) actually reads timeToX.
+    this.viewport.setTimeToIndexResolver((t) => this._timeToFractionalIndex(t));
+
     // Series transform (e.g. Heikin-Ashi) → autoscale → conflate → draw.
     // A series with a transformView or custom priceRange auto-scales from
     // its (transformed) view; everything else uses the raw, pyramid-
     // accelerated path. Either way priceMin/priceMax are set every frame.
     const baseView = series.transformView
-      ? series.transformView(this._buffer, start, end)
+      ? series.transformView(buffer, start, end)
       : rawView;
     if (series.transformView || series.priceRange) {
       // Scale from the VISIBLE bars only (exclude the +1 render bar), matching
       // the default path; the +1 bar stays in baseView for drawing.
       const scaleView = capView(baseView, visibleEnd - start);
-      this.viewport.autoScaleFromView(this._buffer, scaleView, series.priceRange);
+      this.viewport.autoScaleFromView(buffer, scaleView, series.priceRange);
     } else {
-      this.viewport.autoScale(this._buffer, this._rangePyramid ?? undefined);
+      // Pass the effective length so autoscale never scans past the replay cap
+      // (C1). With no cap effLen === buffer.length, so this is the exact
+      // pre-replay call (the param defaults to buffer.length when undefined).
+      this.viewport.autoScale(buffer, this._rangePyramid ?? undefined, effLen);
+    }
+
+    // Secondary (left) price scale (B2): if any overlay indicator is bound
+    // to 'left', collect the min/max across their values over the VISIBLE
+    // window and feed the independent left range. Skipped entirely (no
+    // alloc, no scan) when nothing is bound to 'left', so the default path
+    // is untouched. Errors here are non-fatal and reported like the overlay
+    // compute path below.
+    if (this._hasLeftScaleIndicator()) {
+      let leftMin = Infinity;
+      let leftMax = -Infinity;
+      const lo = Math.max(0, Math.floor(this.viewport.startIndex));
+      const hi = visibleEnd;
+      for (const indicator of this._indicators) {
+        if (indicator.placement !== 'overlay' || indicator.priceScaleId !== 'left') continue;
+        let computed: IndicatorSeries[];
+        try {
+          computed = indicator.computeCached(buffer);
+        } catch (err) {
+          this._reporter?.report('indicator', err, false);
+          continue;
+        }
+        for (const s of computed) {
+          const values = s.values;
+          const e = Math.min(hi, values.length);
+          for (let i = lo; i < e; i++) {
+            const v = values[i]!;
+            if (!Number.isFinite(v)) continue;
+            if (v < leftMin) leftMin = v;
+            if (v > leftMax) leftMax = v;
+          }
+        }
+      }
+      // Only commit a real range; an all-NaN/empty window keeps the
+      // previous left extrema (setLeftRange itself rejects non-finite).
+      if (Number.isFinite(leftMin) && Number.isFinite(leftMax)) {
+        this.viewport.setLeftRange(leftMin, leftMax);
+      }
     }
 
     // Downsample to ~1 bar per pixel column when candles are sub-pixel
     // dense (true fit-all over millions of bars). A no-op at normal zoom:
     // returns `baseView` unchanged so the standard render path is untouched.
-    const drawView = conflate(baseView, this.viewport, this._layout);
+    return conflate(baseView, this.viewport, this._layout);
+  }
+
+  /**
+   * Render the chart layer into a caller-supplied 2D-context-like sink — the
+   * seam the vector SVG export ({@link chartEngineToSVG}) renders through.
+   *
+   * Runs the exact same per-frame geometry pipeline as a real render (visible
+   * window, non-uniform coordinate mapping, autoscale, left-scale extent,
+   * conflation) and then paints the chart layer via {@link _paintChartLayer},
+   * so the SVG matches what's on screen. It does NOT touch the live canvases,
+   * dirty flags, or the UI/crosshair layers — it's a pure read of current
+   * state into the passed `ctx`.
+   *
+   * Kept dependency-free (no SVG-shim import here) so it adds nothing to the
+   * base bundle; the shim lives in the separately-imported export module.
+   * No-ops when no buffer is set.
+   */
+  renderToContext(ctx: CanvasRenderingContext2D): void {
+    if (!this._buffer) return;
+    const series = getSeriesType(this._chartType) ?? DEFAULT_SERIES;
+    const drawView = this._computeRenderGeometry(series);
+    this._paintChartLayer(ctx, series, drawView);
+  }
+
+  private _scheduleRaf(): void {
+    if (this._rafId) return;
+    this._rafId = requestAnimationFrame(() => {
+      this._rafId = 0;
+      this._render();
+    });
+  }
+
+  private _render(): void {
+    if (!this._buffer) return;
+
+    // Resolve the active primary series (registry; unknown → candles).
+    const series = getSeriesType(this._chartType) ?? DEFAULT_SERIES;
+
+    // Replay-aware "present" length. Equals buffer.length unless a replay cap
+    // is active (C1); everything that determines the visible window, autoscale
+    // extent, and the last/latest candle reads this instead of buffer.length so
+    // playback reveals history bar-by-bar. With no cap it === buffer.length, so
+    // the default render path is bit-for-bit unchanged.
+    const effLen = this._effectiveLength();
+
+    // Per-frame geometry pipeline (visible window, non-uniform coordinate
+    // mapping, autoscale, left-scale extent, conflation). Extracted so the
+    // off-screen SVG path ({@link renderToContext}) reproduces it identically.
+    const drawView = this._computeRenderGeometry(series);
 
     if (this._chartDirty) {
       this._chartDirty = false;
-      const ctx = this._chartCtx;
-      const { width, height } = this._layout;
-      ctx.clearRect(0, 0, width, height);
-
-      // Background
-      ctx.fillStyle = this._theme.background;
-      ctx.fillRect(0, 0, width, height);
-
-      // 'bottom' primitives sit behind the grid + series (e.g. watermark).
-      this._drawPrimitives(ctx, 'bottom');
-
-      // Grid → Volume → primary series (by chart type) → overlay indicators
-      // → drawings → Axes. Drawings sit above indicators so a trend line
-      // is visible on top of SMA/EMA/BB clutter.
-      this._gridRenderer.render(ctx, this._layout, this.viewport, this._theme);
-      this._volumeRenderer.render(ctx, this._layout, this.viewport, drawView, this._theme);
-
-      // Primary price series via the registry (candles/line/area/ohlc/
-      // heikinashi or a host-registered custom type).
-      series.draw({
-        ctx,
-        layout: this._layout,
-        viewport: this.viewport,
-        view: drawView,
-        theme: this._theme,
-      });
-
-      // Overlay indicators (drawn on the main price area).
-      let colorIdx = 0;
-      const paneIndicators: { indicator: Indicator; series: IndicatorSeries[] }[] = [];
-      for (const indicator of this._indicators) {
-        let series: IndicatorSeries[];
-        try {
-          // computeCached memoizes on the buffer revision, so indicators
-          // recompute only when data changes — not on every render frame.
-          series = indicator.computeCached(this._buffer);
-        } catch (err) {
-          // Indicator compute errors are non-fatal; report and skip this one.
-          this._reporter?.report('indicator', err, false);
-          continue;
-        }
-        if (indicator.placement === 'overlay') {
-          for (const s of series) {
-            const color = INDICATOR_COLORS[colorIdx % INDICATOR_COLORS.length]!;
-            colorIdx++;
-            this._overlayRenderer.render(ctx, this._layout, this.viewport, s, color, this._theme);
-          }
-        } else {
-          paneIndicators.push({ indicator, series });
-        }
-      }
-
-      // Markers sit above indicators; drawings sit above markers.
-      this._markerRenderer.render(
-        ctx, this._layout, this.viewport, this._buffer, this._markers, this._theme,
-      );
-
-      // Drawing layer on top of indicators + markers.
-      if (this._drawingLayer) {
-        this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
-      }
-
-      // 'normal' primitives sit with the drawing layer, above the series.
-      this._drawPrimitives(ctx, 'normal');
-
-      this._priceAxisRenderer.render(ctx, this._layout, this.viewport, this._theme, this._priceFormat);
-
-      // Sub-pane indicators. Each gets one band of equal height in
-      // [paneAreaTop, paneAreaBottom]. Color cursor continues from
-      // overlay indicators so legends are easier to map mentally.
-      if (paneIndicators.length > 0 && this._layout.paneAreaBottom > this._layout.paneAreaTop) {
-        const bandH =
-          (this._layout.paneAreaBottom - this._layout.paneAreaTop) / paneIndicators.length;
-        for (let i = 0; i < paneIndicators.length; i++) {
-          const entry = paneIndicators[i]!;
-          const top = this._layout.paneAreaTop + i * bandH;
-          const bottom = top + bandH;
-          const drawn = this._paneRenderer.render(
-            ctx,
-            this._layout,
-            this.viewport,
-            entry.series,
-            top,
-            bottom,
-            entry.indicator.id,
-            this._theme,
-            colorIdx,
-          );
-          colorIdx += drawn;
-        }
-      }
-
-      this._timeAxisRenderer.render(ctx, this._layout, this.viewport, this._buffer, this._horzScale, this._theme);
+      this._paintChartLayer(this._chartCtx, series, drawView);
     }
 
     if (this._uiDirty) {
@@ -746,32 +1075,38 @@ export class ChartEngine {
       const ctx = this._uiCtx;
       ctx.clearRect(0, 0, this._layout.width, this._layout.height);
 
-      // Current price line + label
-      if (this._buffer.length > 0) {
-        const lastClose = this._buffer.lastClose();
-        const lastCandle = this._buffer.candleAt(this._buffer.length - 1);
+      // Current price line + label. In replay the "current" candle is the last
+      // REVEALED bar (effLen - 1), not the buffer's true last candle — so the
+      // price line and its pill track playback. With no cap effLen ===
+      // buffer.length and `candleAt(effLen - 1)` is the buffer's last candle,
+      // so the close + bull/bear are identical to the pre-replay path.
+      if (effLen > 0) {
+        const lastCandle = this._buffer.candleAt(effLen - 1);
+        const lastClose = lastCandle ? lastCandle.c : this._buffer.lastClose();
         const isBull = lastCandle ? lastCandle.c >= lastCandle.o : true;
         this._priceLineRenderer.render(ctx, this._layout, this.viewport, lastClose, this._theme);
-        this._priceAxisRenderer.drawCurrentPrice(ctx, this._layout, this.viewport, lastClose, isBull, this._theme, this._priceFormat);
+        this._priceAxisRenderer.drawCurrentPrice(ctx, this._layout, this.viewport, lastClose, isBull, this._theme, this._effPriceFormat());
       }
 
       // Legend. Read the hovered candle fresh from the buffer (not a stale
       // snapshot) so a realtime tick updating the forming candle the user
-      // is hovering refreshes its OHLC. Falls back to the latest candle.
+      // is hovering refreshes its OHLC. Falls back to the latest REVEALED
+      // candle (effLen - 1), so during replay the resting legend shows the
+      // replayed bar rather than a not-yet-revealed future candle.
       const hoveredIndex = this._crosshairState.visible ? this._lastLegendIndex : -1;
       const legendCandle =
-        hoveredIndex >= 0 && hoveredIndex < this._buffer.length
+        hoveredIndex >= 0 && hoveredIndex < effLen
           ? this._buffer.candleAt(hoveredIndex)
-          : this._buffer.length > 0
-            ? this._buffer.candleAt(this._buffer.length - 1)
+          : effLen > 0
+            ? this._buffer.candleAt(effLen - 1)
             : null;
       this._legendRenderer.render(
-        ctx, this._layout, legendCandle, this._symbol, this._resolution, this._theme, this._priceFormat, this._volumeFormat,
+        ctx, this._layout, legendCandle, this._symbol, this._resolution, this._theme, this._priceFormat, this._volumeFormat, this._i18n.messages,
       );
 
       // Floating "Go to live" pill when the user has scrolled away from the live edge.
-      if (!this.viewport.autoFollow && this._buffer.length > 0) {
-        this.goToLiveRenderer.render(ctx, this._layout, this._theme);
+      if (!this.viewport.autoFollow && effLen > 0) {
+        this.goToLiveRenderer.render(ctx, this._layout, this._theme, this._i18n.t('goToLive'));
       } else {
         this.goToLiveRenderer.hide();
       }
@@ -785,7 +1120,7 @@ export class ChartEngine {
       this._crosshairDirty = false;
       const ctx = this._crosshairCtx;
       ctx.clearRect(0, 0, this._layout.width, this._layout.height);
-      this._crosshairRenderer.render(ctx, this._layout, this.viewport, this._crosshairState, this._theme, this._priceFormat);
+      this._crosshairRenderer.render(ctx, this._layout, this.viewport, this._crosshairState, this._theme, this._effPriceFormat());
     }
   }
 

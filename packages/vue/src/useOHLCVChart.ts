@@ -23,6 +23,7 @@ import {
   type LayoutState,
   type ThemeMode,
   type ThemeColors,
+  type Messages,
 } from '@rekurt/ohlcv-core';
 
 export interface UseOHLCVChartOptions {
@@ -32,6 +33,8 @@ export interface UseOHLCVChartOptions {
   theme?: MaybeRefOrGetter<ThemeMode | ThemeColors | undefined>;
   chartType?: MaybeRefOrGetter<ChartType | undefined>;
   locale?: MaybeRefOrGetter<string | undefined>;
+  /** Translatable UI string overrides (C6). Falls back to English defaults. */
+  messages?: MaybeRefOrGetter<Partial<Messages> | undefined>;
   idleCursor?: MaybeRefOrGetter<string | null | undefined>;
   indicators?: MaybeRefOrGetter<IndicatorConfig[] | undefined>;
   priceFormat?: (price: number) => string;
@@ -90,6 +93,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
       theme: toValue(options.theme),
       chartType: toValue(options.chartType),
       locale: toValue(options.locale),
+      messages: toValue(options.messages),
       priceFormat: options.priceFormat,
       volumeFormat: options.volumeFormat,
       // Delegate to options.onX live — `options` is stable for the

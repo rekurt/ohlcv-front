@@ -10,6 +10,13 @@ import type { HorzScaleBehavior } from './HorzScaleBehavior';
 export class TimeScaleBehavior implements HorzScaleBehavior<number> {
   readonly uniform = true;
   private _resolution: string;
+  /**
+   * Optional locale-aware label formatter (C6). When set, `formatValue`
+   * delegates to it instead of the locale-agnostic {@link formatTime}; the
+   * formatter receives the Unix-seconds time and the current resolution.
+   * `null` (the default) keeps the exact pre-i18n axis labels.
+   */
+  private _dateFormatter: ((time: number, resolution: string) => string) | null = null;
 
   constructor(resolution = '') {
     this._resolution = resolution;
@@ -24,6 +31,16 @@ export class TimeScaleBehavior implements HorzScaleBehavior<number> {
     return this._resolution;
   }
 
+  /**
+   * Install (or clear with `null`) a locale-aware date formatter so axis
+   * labels localize. The chart wires this from its i18n bundle when a
+   * `locale` is configured; with no locale it stays `null` and labels are
+   * byte-for-byte the legacy {@link formatTime} output.
+   */
+  setDateFormatter(fn: ((time: number, resolution: string) => string) | null): void {
+    this._dateFormatter = fn;
+  }
+
   toLogical(time: number, buffer: CandleBuffer): number {
     return buffer.findIndexByTime(time);
   }
@@ -34,6 +51,7 @@ export class TimeScaleBehavior implements HorzScaleBehavior<number> {
   }
 
   formatValue(time: number): string {
+    if (this._dateFormatter) return this._dateFormatter(time, this._resolution);
     return formatTime(time, this._resolution);
   }
 }

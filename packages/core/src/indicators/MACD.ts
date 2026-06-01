@@ -56,8 +56,10 @@ export class MACD extends Indicator {
     }
 
     // Compute close array once — EMAs iterate over it several times.
+    const view = buffer.sliceView(0, n);
+    const close = view.close;
     const closes = new Float64Array(n);
-    for (let i = 0; i < n; i++) closes[i] = buffer.candleAt(i)!.c;
+    for (let i = 0; i < n; i++) closes[i] = close[i]!;
 
     const fast = ema(closes, this.fastPeriod);
     const slow = ema(closes, this.slowPeriod);

@@ -1,4 +1,5 @@
 import type { CandleBuffer } from '../data/CandleBuffer';
+import type { PriceScaleSide } from '../interaction/Viewport';
 
 /**
  * Where an indicator is rendered:
@@ -41,6 +42,19 @@ export abstract class Indicator {
   abstract get id(): string;
 
   /**
+   * Which price scale an `overlay`-placement indicator projects through
+   * (B2). `'right'` (the default when undefined) is the primary scale
+   * shared with the price series; `'left'` binds the indicator to the
+   * independent secondary scale, which the chart enables — reserving the
+   * left axis strip — only while at least one indicator requests it.
+   *
+   * Ignored for `pane`-placement indicators (they own their sub-pane axis).
+   * Subclasses opt in by overriding this getter (or declaring a matching
+   * readonly field).
+   */
+  readonly priceScaleId?: PriceScaleSide;
+
+  /**
    * Read the buffer and return one or more aligned series. Every returned
    * Float64Array MUST have the same length as `buffer.length` so the
    * renderer can align values with candles index-for-index.
@@ -51,8 +65,43 @@ export abstract class Indicator {
     buffer: CandleBuffer;
     version: number;
     length: number;
+    firstTime: number;
     series: IndicatorSeries[];
   } | null = null;
+
+  /**
+   * Optional incremental-update hook. When implemented, `computeCached`
+   * calls it instead of the full `compute` for the two cheap realtime
+   * mutations — an in-place `updateLast` (length unchanged) or a single
+   * `append` (length grew by one) — provided the buffer head has not
+   * moved (same `firstTime`).
+   *
+   * `kind` is `'updateLast'` when only the final candle changed, or
+   * `'append'` when exactly one candle was added.
+   *
+   * Contract:
+   * - The implementation MUST return BRAND-NEW `Float64Array`s. Copy
+   *   `prev[k].values` into a fresh array of the correct length and
+   *   recompute only the affected tail. NEVER mutate the arrays inside
+   *   `prev`: a caller may still hold a reference to the previously
+   *   returned series (e.g. a renderer captured it last frame), and
+   *   mutating it in place would corrupt that snapshot.
+   * - Return `null` to fall back to a full `compute` (e.g. when the
+   *   affected index falls inside the warmup/seed region where the
+   *   incremental recurrence is not valid).
+   *
+   * Only implement this for indicators whose tail value is a pure
+   * function of the input candles plus PREVIOUS OUTPUT values already
+   * present in `prev` — i.e. no hidden recursive state (Wilder
+   * smoothing, running trend flips, etc.) that an incremental step
+   * cannot reconstruct. Indicators without this hook always take the
+   * full-recompute path and stay correct automatically.
+   */
+  protected updateTail?(
+    buffer: CandleBuffer,
+    prev: IndicatorSeries[],
+    kind: 'append' | 'updateLast',
+  ): IndicatorSeries[] | null;
 
   /**
    * Memoized wrapper around `compute`. Returns the same cached array
@@ -61,18 +110,40 @@ export abstract class Indicator {
    * instance across two buffers (or swapping a chart's buffer) never
    * returns another buffer's stale series — important right after init when
    * distinct buffers can share `version: 0` and the same length.
+   *
+   * When the data did change but only via a single realtime tick — an
+   * `updateLast` (same length) or one `append` (length + 1) on the SAME
+   * buffer with an unmoved head (`firstTime` unchanged) — and the
+   * subclass provides an `updateTail` hook, the tail is patched in O(tail)
+   * instead of recomputing the whole series in O(n). `firstTime` is part
+   * of the key precisely so a `prepend`/`evictHead` (which shifts the head
+   * and renumbers every index) can never be mistaken for an append/update
+   * and forces a full recompute.
+   *
    * Use this on render paths; use `compute` directly to force a fresh
    * computation.
    */
   computeCached(buffer: CandleBuffer): IndicatorSeries[] {
     const version = buffer.version;
     const length = buffer.length;
-    const cache = this._cache;
-    if (cache && cache.buffer === buffer && cache.version === version && cache.length === length) {
-      return cache.series;
+    const firstTime = buffer.firstTime();
+    const c = this._cache;
+    if (c && c.buffer === buffer && c.version === version && c.length === length) {
+      return c.series;
+    }
+    if (c && c.buffer === buffer && c.firstTime === firstTime && this.updateTail) {
+      const kind =
+        length === c.length ? 'updateLast' : length === c.length + 1 ? 'append' : null;
+      if (kind) {
+        const updated = this.updateTail(buffer, c.series, kind);
+        if (updated) {
+          this._cache = { buffer, version, length, firstTime, series: updated };
+          return updated;
+        }
+      }
     }
     const series = this.compute(buffer);
-    this._cache = { buffer, version, length, series };
+    this._cache = { buffer, version, length, firstTime, series };
     return series;
   }
 }

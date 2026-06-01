@@ -3,7 +3,7 @@ import { ChartEngine } from '../rendering/ChartEngine';
 import { CandleBuffer } from '../data/CandleBuffer';
 import { DARK_THEME } from '../constants';
 import { installCanvasStub } from '../test-utils/canvasStub';
-import { clipToChart, type Primitive, type PrimitiveZOrder } from './Primitive';
+import { clipToChart, clipToPane, paneBounds, type Primitive, type PrimitiveZOrder } from './Primitive';
 import type { Candle } from '../types';
 
 function makeCandle(i: number): Candle {
@@ -26,6 +26,71 @@ describe('clipToChart', () => {
     const layout = { chartLeft: 0, chartTop: 0, chartRight: 920, chartBottom: 400 } as never;
     clipToChart(ctx, layout);
     expect(calls).toEqual(['beginPath', 'rect(0,0,920,400)', 'clip']);
+  });
+});
+
+describe('clipToPane', () => {
+  const layout = {
+    chartLeft: 0,
+    chartTop: 0,
+    chartRight: 920,
+    chartBottom: 400,
+    paneAreaTop: 400,
+    paneAreaBottom: 500,
+    paneCount: 2,
+  };
+  function recorder() {
+    const calls: string[] = [];
+    const ctx = {
+      beginPath: () => calls.push('beginPath'),
+      rect: (x: number, y: number, w: number, h: number) => calls.push(`rect(${x},${y},${w},${h})`),
+      clip: () => calls.push('clip'),
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, calls };
+  }
+
+  it('clips to the Nth sub-pane band (1-based, top→bottom)', () => {
+    const a = recorder();
+    clipToPane(a.ctx, layout as never, 1);
+    expect(a.calls).toEqual(['beginPath', 'rect(0,400,920,50)', 'clip']);
+    const b = recorder();
+    clipToPane(b.ctx, layout as never, 2);
+    expect(b.calls).toContain('rect(0,450,920,50)');
+  });
+
+  it('clamps an out-of-range pane index to the last band', () => {
+    const { ctx, calls } = recorder();
+    clipToPane(ctx, layout as never, 99);
+    expect(calls).toContain('rect(0,450,920,50)');
+  });
+
+  it('falls back to the main price area for pane 0 or no sub-panes', () => {
+    const a = recorder();
+    clipToPane(a.ctx, layout as never, 0);
+    expect(a.calls).toContain('rect(0,0,920,400)');
+    const b = recorder();
+    clipToPane(b.ctx, { ...layout, paneCount: 0 } as never, 1);
+    expect(b.calls).toContain('rect(0,0,920,400)');
+  });
+});
+
+describe('paneBounds', () => {
+  const layout = {
+    chartTop: 0,
+    chartBottom: 400,
+    paneAreaTop: 400,
+    paneAreaBottom: 520,
+    paneCount: 3,
+  };
+
+  it('returns the band bounds for a sub-pane index', () => {
+    expect(paneBounds(layout as never, 1)).toEqual({ top: 400, bottom: 440 });
+    expect(paneBounds(layout as never, 3)).toEqual({ top: 480, bottom: 520 });
+  });
+
+  it('returns the main price area for pane 0 / no sub-panes', () => {
+    expect(paneBounds(layout as never, 0)).toEqual({ top: 0, bottom: 400 });
+    expect(paneBounds({ ...layout, paneCount: 0 } as never, 2)).toEqual({ top: 0, bottom: 400 });
   });
 });
 

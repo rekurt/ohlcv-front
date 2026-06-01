@@ -28,11 +28,47 @@ export class ROC extends Indicator {
     const out = nanArray(n);
     if (n <= this.period) return [{ name: 'roc', values: out }];
 
+    const view = buffer.sliceView(0, n);
+    const close = view.close;
+
     for (let i = this.period; i < n; i++) {
-      const cur = buffer.candleAt(i)!.c;
-      const past = buffer.candleAt(i - this.period)!.c;
+      const cur = close[i]!;
+      const past = close[i - this.period]!;
       out[i] = past === 0 ? 0 : ((cur - past) / past) * 100;
     }
+
+    return [{ name: 'roc', values: out }];
+  }
+
+  /**
+   * Incremental tail patch. ROC at index `i` depends only on `close[i]`
+   * and `close[i-period]`, both still in the buffer — no prior output.
+   * Recompute the single touched index. Warmup region is `i < period`
+   * (the full compute starts the loop at `i === period`), where the value
+   * stays NaN.
+   */
+  protected override updateTail(
+    buffer: CandleBuffer,
+    prev: IndicatorSeries[],
+    kind: 'append' | 'updateLast',
+  ): IndicatorSeries[] | null {
+    const n = buffer.length;
+    const i = n - 1;
+    const p = this.period;
+
+    const prevValues = prev[0]!.values;
+    const out = new Float64Array(n);
+    out.set(kind === 'append' ? prevValues : prevValues.subarray(0, i));
+
+    if (i < p) {
+      out[i] = NaN;
+      return [{ name: 'roc', values: out }];
+    }
+
+    const close = buffer.sliceView(0, n).close;
+    const cur = close[i]!;
+    const past = close[i - p]!;
+    out[i] = past === 0 ? 0 : ((cur - past) / past) * 100;
 
     return [{ name: 'roc', values: out }];
   }
