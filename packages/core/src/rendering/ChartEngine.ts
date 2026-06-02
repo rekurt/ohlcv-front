@@ -952,7 +952,15 @@ export class ChartEngine {
     // without ever importing the buffer. Bound once here (cheap closure); the
     // default render path never calls it, so this is zero-cost unless a
     // consumer (the compare overlay) actually reads timeToX.
-    this.viewport.setTimeToIndexResolver((t) => this._timeToFractionalIndex(t));
+    this.viewport.setTimeToIndexResolver((t) => {
+      const idx = this._timeToFractionalIndex(t);
+      // Replay (C1): a compare point (C2) whose timestamp maps past the
+      // revealed prefix must stay hidden — return NaN so `viewport.timeToX` is
+      // NaN and the compare overlay skips it. With no cap active the index is
+      // returned unchanged, so points extrapolated past the last real bar draw
+      // exactly as before.
+      return this._replayCap !== null && idx > effLen - 1 ? NaN : idx;
+    });
 
     // Series transform (e.g. Heikin-Ashi) → autoscale → conflate → draw.
     // A series with a transformView or custom priceRange auto-scales from

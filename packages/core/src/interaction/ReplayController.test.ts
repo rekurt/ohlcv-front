@@ -64,6 +64,20 @@ describe('ChartEngine.setReplayCap / _effectiveLength', () => {
     expect(engine.getReplayCap()).toBe(1);
   });
 
+  it('caps the compare time resolver — future-bar timestamps map to NaN (C1+C2)', () => {
+    const buf = fillEngine(engine, 50);
+    engine.setReplayCap(10); // only bars 0..9 are revealed
+    forceRender(engine); // installs the time→index resolver for this frame
+    const revealedT = buf.candleAt(5)!.t;
+    const futureT = buf.candleAt(40)!.t; // past the cap
+    expect(Number.isFinite(engine.viewport.timeToX(revealedT))).toBe(true);
+    expect(Number.isNaN(engine.viewport.timeToX(futureT))).toBe(true);
+    // With the cap cleared, the future timestamp resolves to a finite X again.
+    engine.setReplayCap(null);
+    forceRender(engine);
+    expect(Number.isFinite(engine.viewport.timeToX(futureT))).toBe(true);
+  });
+
   it('null clears the cap', () => {
     fillEngine(engine, 50);
     engine.setReplayCap(10);

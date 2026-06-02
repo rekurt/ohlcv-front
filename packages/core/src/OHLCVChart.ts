@@ -454,8 +454,12 @@ export class OHLCVChart {
    */
   setLocale(locale?: string, messages?: Partial<Messages>): void {
     this._config.locale = locale;
-    if (messages !== undefined) this._config.messages = messages;
-    this._engine.setI18n(createI18n(locale, messages ?? this._config.messages));
+    // Sync overrides to the argument: passing none CLEARS any prior custom
+    // messages so a no-arg call truly resets to the locale-agnostic English
+    // baseline (the documented behavior) instead of silently retaining the
+    // previous overrides.
+    this._config.messages = messages;
+    this._engine.setI18n(createI18n(locale, messages));
   }
 
   /** Get the underlying buffer */

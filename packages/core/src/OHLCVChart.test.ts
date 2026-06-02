@@ -53,6 +53,21 @@ describe('OHLCVChart facade', () => {
     container.remove();
   });
 
+  describe('setLocale (C6)', () => {
+    it('no-arg call resets prior custom messages to the baseline', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      const t = (k: string) =>
+        (chart as unknown as { _engine: { i18n: { t(key: string): string } } })._engine.i18n.t(k);
+      const baseline = t('a11yChartLabel');
+      chart.setLocale('de-DE', { a11yChartLabel: 'CUSTOM-LABEL' });
+      expect(t('a11yChartLabel')).toBe('CUSTOM-LABEL');
+      chart.setLocale(); // reset → baseline, NOT the stale custom override
+      expect(t('a11yChartLabel')).toBe(baseline);
+      expect(baseline).not.toBe('CUSTOM-LABEL');
+      chart.destroy();
+    });
+  });
+
   describe('construction', () => {
     it('creates a chart without a transport', () => {
       const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
