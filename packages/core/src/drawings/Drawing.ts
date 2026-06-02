@@ -64,6 +64,19 @@ export abstract class Drawing {
   /** How many clicks are needed before the drawing is "complete". */
   abstract get requiredPoints(): number;
 
+  /**
+   * True when the drawing's rendered geometry does NOT depend on its anchor
+   * index/time — e.g. a full-width horizontal price level. Such drawings stay
+   * visible (and selectable) under a replay cap even when their stored anchor
+   * index sits past the revealed prefix, because the index is cosmetic for
+   * them. Index/time-dependent drawings (the default) are hidden once every
+   * anchor is past the cap, so a not-yet-revealed shape never leaks. Subclasses
+   * whose render ignores the index override this to `true`.
+   */
+  get isReplayCapExempt(): boolean {
+    return false;
+  }
+
   /** Render the drawing into the canvas. */
   abstract render(
     ctx: CanvasRenderingContext2D,

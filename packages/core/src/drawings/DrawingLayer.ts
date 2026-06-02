@@ -18,13 +18,19 @@ import { FibFan } from './FibFan';
 import { Measure } from './Measure';
 
 /**
- * Whether a drawing has at least one anchor at/under `maxIndex` (the replay
- * cap). A drawing with no anchors, or any anchor in the revealed range, is
- * shown; one whose every anchor sits in the not-yet-revealed future zone is
- * hidden during replay — symmetric with `MarkerRenderer`.
+ * Whether a drawing should be shown under a replay cap of `maxIndex`. Shown
+ * when it is cap-exempt (its geometry ignores the anchor index — e.g. a
+ * full-width `HorizontalLine` price level), has no anchors, or has at least one
+ * anchor at/under the cap. Hidden only when every anchor sits in the
+ * not-yet-revealed future zone AND the geometry is index-dependent — symmetric
+ * with `MarkerRenderer`.
  */
 function anchorRevealed(d: Drawing, maxIndex: number): boolean {
-  return d.points.length === 0 || d.points.some((p) => p.index <= maxIndex);
+  return (
+    d.isReplayCapExempt ||
+    d.points.length === 0 ||
+    d.points.some((p) => p.index <= maxIndex)
+  );
 }
 
 /**

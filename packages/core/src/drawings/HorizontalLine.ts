@@ -22,6 +22,12 @@ export class HorizontalLine extends Drawing {
   get requiredPoints(): number {
     return 1;
   }
+  // Renders a full-width level from `price` alone — the anchor index is cosmetic
+  // — so the replay cap must not hide it when its stored index is past the
+  // revealed prefix (a saved support/resistance level stays visible).
+  override get isReplayCapExempt(): boolean {
+    return true;
+  }
 
   override render(
     ctx: CanvasRenderingContext2D,

@@ -358,4 +358,42 @@ describe('DrawingLayer replay clamp (Н2)', () => {
     expect(layer.selectAt(500, 250, LAYOUT, vp)?.id).toBe('future');
     expect(layer.selected?.id).toBe('future');
   });
+
+  it('keeps a price-only HorizontalLine visible + selectable under the cap with a future anchor (Н8)', () => {
+    // The real HorizontalLine opts into the cap exemption (its render ignores the
+    // index); an index-dependent drawing does not.
+    expect(new HorizontalLine().isReplayCapExempt).toBe(true);
+    expect(new TrendLine().isReplayCapExempt).toBe(false);
+
+    const layer = new DrawingLayer();
+    // Single anchor index 500 sits far past the cap (19); the full-width level
+    // must still draw because the index is cosmetic for it.
+    const hline = new HorizontalLine('hl');
+    hline.addPoint({ index: 500, price: 150 });
+    layer.add(hline);
+    const vp = buildViewport();
+
+    // Recording ctx: the level must still stroke under the cap.
+    const calls: string[] = [];
+    const recCtx = new Proxy({} as Record<string, unknown>, {
+      get: (t, p: string) =>
+        p === 'measureText'
+          ? (s: string) => ({ width: s.length * 6 })
+          : p in t
+            ? t[p]
+            : () => {
+                calls.push(p);
+              },
+      set: (t, p: string, v: unknown) => {
+        t[p] = v;
+        return true;
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    layer.render(recCtx, LAYOUT, vp, DARK_THEME, 19);
+    expect(calls).toContain('stroke'); // drawn despite the future anchor
+
+    // And it stays selectable under the cap (click anywhere on the level's price).
+    const y = vp.priceToY(150);
+    expect(layer.selectAt(500, y, LAYOUT, vp, undefined, 19)?.id).toBe('hl');
+  });
 });
