@@ -1,6 +1,6 @@
 import type { ThemeColors, ChartLayout } from '../types';
-import { formatPrice } from '../utils';
-import type { Viewport } from '../interaction/Viewport';
+import { formatPrice, niceGridValues } from '../utils';
+import type { Viewport, PriceScaleSide } from '../interaction/Viewport';
 import {
   AXIS_FONT,
   AXIS_LABEL_HEIGHT,
@@ -15,7 +15,12 @@ export class PriceAxisRenderer {
     viewport: Viewport,
     theme: ThemeColors,
     customFormat?: (price: number) => string,
+    side: PriceScaleSide = 'right',
   ): void {
+    if (side === 'left') {
+      this._renderLeft(ctx, layout, viewport, theme, customFormat);
+      return;
+    }
     const fmt = customFormat || formatPrice;
     const axisX = layout.chartRight;
 
@@ -44,6 +49,45 @@ export class PriceAxisRenderer {
         ctx.fillText(tick.label ?? fmt(tick.price), axisX + AXIS_LABEL_TEXT_PAD, Math.round(tick.y));
       }
     }
+  }
+
+  /**
+   * Render the optional secondary (left) price axis (B2). Linear-only:
+   * ticks come from `niceGridValues` over the left extrema and project
+   * through the viewport's left scale. The axis line sits at `chartLeft`
+   * (the right edge of the reserved left strip) and labels are
+   * right-aligned just inside it, mirroring the right axis.
+   */
+  private _renderLeft(
+    ctx: CanvasRenderingContext2D,
+    layout: ChartLayout,
+    viewport: Viewport,
+    theme: ThemeColors,
+    customFormat?: (price: number) => string,
+  ): void {
+    const fmt = customFormat || formatPrice;
+    // Axis line at the inner edge of the left strip (== chartLeft).
+    const axisX = layout.chartLeft;
+    ctx.strokeStyle = theme.axis;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(axisX - 0.5, layout.chartTop);
+    ctx.lineTo(axisX - 0.5, layout.chartBottom);
+    ctx.stroke();
+
+    ctx.fillStyle = theme.text;
+    ctx.font = AXIS_FONT;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+
+    for (const price of niceGridValues(viewport.leftPriceMin, viewport.leftPriceMax, 6)) {
+      const y = viewport.priceToY(price, 'left');
+      if (y >= layout.chartTop && y <= layout.chartBottom) {
+        ctx.fillText(fmt(price), axisX - AXIS_LABEL_TEXT_PAD, Math.round(y));
+      }
+    }
+    // Restore default alignment for any subsequent text draws on this ctx.
+    ctx.textAlign = 'left';
   }
 
   /** Draw highlighted current price label */

@@ -48,15 +48,18 @@ export class Supertrend extends Indicator {
       ];
     }
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+
     // True range + Wilder ATR.
     const tr = new Float64Array(n);
     for (let i = 1; i < n; i++) {
-      const cur = buffer.candleAt(i)!;
-      const prev = buffer.candleAt(i - 1)!;
       tr[i] = Math.max(
-        cur.h - cur.l,
-        Math.abs(cur.h - prev.c),
-        Math.abs(cur.l - prev.c),
+        high[i]! - low[i]!,
+        Math.abs(high[i]! - close[i - 1]!),
+        Math.abs(low[i]! - close[i - 1]!),
       );
     }
     const atr = new Float64Array(n);
@@ -74,8 +77,8 @@ export class Supertrend extends Indicator {
     let prevClose = NaN;
 
     for (let i = p; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      const hl2 = (c.h + c.l) / 2;
+      const cc = close[i]!;
+      const hl2 = (high[i]! + low[i]!) / 2;
       const a = atr[i]!;
       const basicUpper = hl2 + this.mult * a;
       const basicLower = hl2 - this.mult * a;
@@ -83,7 +86,7 @@ export class Supertrend extends Indicator {
       if (i === p) {
         finalUpper = basicUpper;
         finalLower = basicLower;
-        dir = c.c <= basicUpper ? -1 : 1;
+        dir = cc <= basicUpper ? -1 : 1;
       } else {
         // Carry-forward rules from Seban's definition.
         finalUpper =
@@ -92,13 +95,13 @@ export class Supertrend extends Indicator {
           basicLower > finalLower || prevClose < finalLower ? basicLower : finalLower;
 
         // Flip direction on band breaks.
-        if (dir === -1 && c.c > finalUpper) dir = 1;
-        else if (dir === 1 && c.c < finalLower) dir = -1;
+        if (dir === -1 && cc > finalUpper) dir = 1;
+        else if (dir === 1 && cc < finalLower) dir = -1;
       }
 
       line[i] = dir === 1 ? finalLower : finalUpper;
       direction[i] = dir;
-      prevClose = c.c;
+      prevClose = cc;
     }
 
     return [

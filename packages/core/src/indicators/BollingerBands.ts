@@ -53,11 +53,14 @@ export class BollingerBands extends Indicator {
     const p = this.period;
     const invP = 1 / p;
 
+    const view = buffer.sliceView(0, n);
+    const close = view.close;
+
     // Prime the window with the first `period` closes.
     let sum = 0;
     let sqSum = 0;
     for (let i = 0; i < p; i++) {
-      const c = buffer.candleAt(i)!.c;
+      const c = close[i]!;
       sum += c;
       sqSum += c * c;
     }
@@ -74,8 +77,8 @@ export class BollingerBands extends Indicator {
 
     // Slide the window forward — drop the oldest close, add the newest.
     for (let i = p; i < n; i++) {
-      const out = buffer.candleAt(i - p)!.c;
-      const inc = buffer.candleAt(i)!.c;
+      const out = close[i - p]!;
+      const inc = close[i]!;
       sum += inc - out;
       sqSum += inc * inc - out * out;
 
@@ -86,6 +89,72 @@ export class BollingerBands extends Indicator {
       upper[i] = mean + this.stdDev * sigma;
       lower[i] = mean - this.stdDev * sigma;
     }
+
+    return [
+      { name: 'upper', values: upper },
+      { name: 'middle', values: middle },
+      { name: 'lower', values: lower },
+    ];
+  }
+
+  /**
+   * Incremental tail patch. Each band at index `i` is a pure function of
+   * the close window `[i-period+1, i]` (mean ± stdDev·σ), all input closes
+   * still in the buffer — no prior-output dependence. Recompute sum and
+   * sum-of-squares over that single window for the touched index. Warmup
+   * (`i < period-1`) leaves all three series NaN at `i`.
+   */
+  protected override updateTail(
+    buffer: CandleBuffer,
+    prev: IndicatorSeries[],
+    kind: 'append' | 'updateLast',
+  ): IndicatorSeries[] | null {
+    const n = buffer.length;
+    const i = n - 1;
+    const p = this.period;
+
+    const prevUpper = prev[0]!.values;
+    const prevMiddle = prev[1]!.values;
+    const prevLower = prev[2]!.values;
+    const upper = new Float64Array(n);
+    const middle = new Float64Array(n);
+    const lower = new Float64Array(n);
+    if (kind === 'append') {
+      upper.set(prevUpper);
+      middle.set(prevMiddle);
+      lower.set(prevLower);
+    } else {
+      upper.set(prevUpper.subarray(0, i));
+      middle.set(prevMiddle.subarray(0, i));
+      lower.set(prevLower.subarray(0, i));
+    }
+
+    if (i < p - 1) {
+      upper[i] = NaN;
+      middle[i] = NaN;
+      lower[i] = NaN;
+      return [
+        { name: 'upper', values: upper },
+        { name: 'middle', values: middle },
+        { name: 'lower', values: lower },
+      ];
+    }
+
+    const close = buffer.sliceView(0, n).close;
+    const invP = 1 / p;
+    let sum = 0;
+    let sqSum = 0;
+    for (let j = i - p + 1; j <= i; j++) {
+      const cVal = close[j]!;
+      sum += cVal;
+      sqSum += cVal * cVal;
+    }
+    const mean = sum * invP;
+    const variance = Math.max(0, sqSum * invP - mean * mean);
+    const sigma = Math.sqrt(variance);
+    middle[i] = mean;
+    upper[i] = mean + this.stdDev * sigma;
+    lower[i] = mean - this.stdDev * sigma;
 
     return [
       { name: 'upper', values: upper },

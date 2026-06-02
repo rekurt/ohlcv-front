@@ -38,10 +38,13 @@ export class CCI extends Indicator {
     if (n === 0 || n < this.period) return [{ name: 'cci', values: out }];
 
     const p = this.period;
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
     const tp = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      tp[i] = (c.h + c.l + c.c) / 3;
+      tp[i] = (high[i]! + low[i]! + close[i]!) / 3;
     }
 
     let sum = 0;

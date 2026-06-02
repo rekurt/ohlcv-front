@@ -32,8 +32,10 @@ export class HMA extends Indicator {
     const p = this.period;
     if (n === 0 || n < p) return [{ name: 'hma', values: out }];
 
+    const view = buffer.sliceView(0, n);
+    const close = view.close;
     const closes = new Float64Array(n);
-    for (let i = 0; i < n; i++) closes[i] = buffer.candleAt(i)!.c;
+    for (let i = 0; i < n; i++) closes[i] = close[i]!;
 
     const half = Math.max(1, Math.floor(p / 2));
     const sqrtP = Math.max(1, Math.round(Math.sqrt(p)));

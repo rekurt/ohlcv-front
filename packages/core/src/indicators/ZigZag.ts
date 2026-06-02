@@ -35,64 +35,69 @@ export class ZigZag extends Indicator {
   compute(buffer: CandleBuffer): IndicatorSeries[] {
     const n = buffer.length;
     const out = nanArray(n);
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
     if (n < 2) {
-      if (n === 1) out[0] = buffer.candleAt(0)!.c;
+      if (n === 1) out[0] = close[0]!;
       return [{ name: 'zigzag', values: out }];
     }
 
     const threshold = this.deviation / 100;
 
     // First pivot anchored at index 0 (its close).
-    out[0] = buffer.candleAt(0)!.c;
+    out[0] = close[0]!;
 
     // Single-direction state machine. `dir` is 0 (undecided), +1
     // (in an up-leg, tracking a high) or −1 (down-leg, tracking a low).
     // `extreme*` is the running candidate pivot for the current leg.
     let dir = 0;
     let extremeIdx = 0;
-    let extremePrice = buffer.candleAt(0)!.c;
+    let extremePrice = close[0]!;
 
     const commit = (idx: number, price: number) => {
       out[idx] = price;
     };
 
     for (let i = 1; i < n; i++) {
-      const c = buffer.candleAt(i)!;
+      const ch = high[i]!;
+      const cl = low[i]!;
 
       if (dir === 0) {
         // Undecided: wait for the first qualifying move from the anchor.
-        if (c.h >= extremePrice * (1 + threshold)) {
+        if (ch >= extremePrice * (1 + threshold)) {
           dir = 1;
           extremeIdx = i;
-          extremePrice = c.h;
-        } else if (c.l <= extremePrice * (1 - threshold)) {
+          extremePrice = ch;
+        } else if (cl <= extremePrice * (1 - threshold)) {
           dir = -1;
           extremeIdx = i;
-          extremePrice = c.l;
+          extremePrice = cl;
         }
         continue;
       }
 
       if (dir === 1) {
         // Up-leg: extend the high; reverse on a >= deviation% drop.
-        if (c.h >= extremePrice) {
-          extremePrice = c.h;
+        if (ch >= extremePrice) {
+          extremePrice = ch;
           extremeIdx = i;
-        } else if (c.l <= extremePrice * (1 - threshold)) {
+        } else if (cl <= extremePrice * (1 - threshold)) {
           commit(extremeIdx, extremePrice); // lock in the swing high
           dir = -1;
-          extremePrice = c.l;
+          extremePrice = cl;
           extremeIdx = i;
         }
       } else {
         // Down-leg: extend the low; reverse on a >= deviation% rise.
-        if (c.l <= extremePrice) {
-          extremePrice = c.l;
+        if (cl <= extremePrice) {
+          extremePrice = cl;
           extremeIdx = i;
-        } else if (c.h >= extremePrice * (1 + threshold)) {
+        } else if (ch >= extremePrice * (1 + threshold)) {
           commit(extremeIdx, extremePrice); // lock in the swing low
           dir = 1;
-          extremePrice = c.h;
+          extremePrice = ch;
           extremeIdx = i;
         }
       }

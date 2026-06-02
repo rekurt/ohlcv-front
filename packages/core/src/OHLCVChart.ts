@@ -1,4 +1,4 @@
-import type { Candle, ChartConfig, ChartType, ThemeColors, ThemeMode, HoverInfo } from './types';
+import type { Candle, CandleView, ChartConfig, ChartType, CrosshairMode, ThemeColors, ThemeMode, HoverInfo } from './types';
 import type { PriceScaleMode } from './interaction/priceScale';
 import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 import { resolveTheme } from './utils';
@@ -8,10 +8,12 @@ import { CandleMerger } from './data/CandleMerger';
 import { DataFeed } from './data/DataFeed';
 import { ValidationError, validateCandles } from './data/validation';
 import { ChartEngine } from './rendering/ChartEngine';
+import { createI18n, type Messages } from './i18n/messages';
 import { Viewport } from './interaction/Viewport';
 import { PanZoomController } from './interaction/PanZoomController';
 import { CrosshairController } from './interaction/CrosshairController';
 import { KeyboardController } from './interaction/KeyboardController';
+import { ReplayController } from './interaction/ReplayController';
 import type { Indicator } from './indicators/Indicator';
 import { createIndicator, type IndicatorConfig } from './indicators/registry';
 import { DrawingLayer } from './drawings/DrawingLayer';
@@ -24,6 +26,11 @@ import { FibRetracement } from './drawings/FibRetracement';
 import { FibExtension } from './drawings/FibExtension';
 import { Channel } from './drawings/Channel';
 import { Arrow } from './drawings/Arrow';
+import { ParallelChannel } from './drawings/ParallelChannel';
+import { RegressionChannel } from './drawings/RegressionChannel';
+import { Pitchfork } from './drawings/Pitchfork';
+import { FibFan } from './drawings/FibFan';
+import { Measure } from './drawings/Measure';
 import type { DrawingSnapshot } from './drawings/Drawing';
 import type { Marker } from './markers/Marker';
 import type { SeriesDefinition } from './series/Series';
@@ -35,10 +42,17 @@ import {
   type PriceLineOptions,
   type PriceLineHandle,
 } from './primitives/PriceLinePrimitive';
+import { AlertManager } from './alerts/AlertManager';
+import type { Alert, AlertInit } from './alerts/Alert';
 import type { LayoutState, FullState, ChartState } from './state/ChartState';
 
 /** Stable primitive id for the single host-managed watermark. */
 const WATERMARK_ID = 'ohlcv:watermark';
+
+/** Primitive-id prefix for the price line that visualizes an active alert. */
+const ALERT_LINE_PREFIX = 'alert:';
+/** Dashed line color for alert price lines (amber — distinct from price lines). */
+const ALERT_LINE_COLOR = '#f5a623';
 import { isFullState } from './state/ChartState';
 import { migrateState } from './state/migrations';
 
@@ -79,7 +93,12 @@ export type DrawingTool =
   | 'fib'
   | 'fibext'
   | 'channel'
-  | 'arrow';
+  | 'arrow'
+  | 'parallelchannel'
+  | 'regression'
+  | 'pitchfork'
+  | 'fibfan'
+  | 'measure';
 
 export class OHLCVChart {
   private _buffer: CandleBuffer;
@@ -89,6 +108,12 @@ export class OHLCVChart {
   private _panZoom: PanZoomController;
   private _crosshair: CrosshairController;
   private _keyboard: KeyboardController;
+  /**
+   * Bar-by-bar replay driver (C1). Created lazily on the first `startReplay`
+   * (or any other replay method) so a chart that never uses replay pays
+   * nothing. Cleared by `destroy`.
+   */
+  private _replay: ReplayController | null = null;
   private _reporter: ErrorReporter;
   private _config: ChartConfig;
   private _clickHandler: ((e: MouseEvent) => void) | null = null;
@@ -112,6 +137,19 @@ export class OHLCVChart {
   private _priceLineSeq = 0;
   /** Set after a price-line drag so the trailing click doesn't fire onCandleClick. */
   private _suppressNextClick = false;
+  /**
+   * Price-alert collection (C3). Evaluated on each realtime close-price step
+   * in the merger callback; active alerts are mirrored to dashed price lines
+   * (primitive id `alert:<id>`).
+   */
+  private _alerts = new AlertManager();
+  /**
+   * Last close price seen by the alert evaluator, or null before the first
+   * realtime tick. Used as `prevPrice` for `AlertManager.check`; the very
+   * first tick has no previous close so the check is skipped (no spurious
+   * fire on initial data arrival).
+   */
+  private _lastAlertClose: number | null = null;
 
   constructor(config: ChartConfig) {
     // The chart manipulates the DOM and canvas directly, so it can only be
@@ -146,6 +184,14 @@ export class OHLCVChart {
     this._engine.setBuffer(this._buffer);
     this._engine.setSymbol(config.symbol);
     this._engine.setResolution(config.resolution);
+    // i18n (C6): build the localization bundle only when the host opts in
+    // (a `locale` or `messages` override). Without either, the engine keeps
+    // its default no-locale bundle, so the render path stays byte-for-byte
+    // identical to pre-C6. Installed after setResolution so localized
+    // time-axis labels use the right resolution bucket.
+    if (config.locale !== undefined || config.messages !== undefined) {
+      this._engine.setI18n(createI18n(config.locale, config.messages));
+    }
     if (config.priceFormat) this._engine.setPriceFormat(config.priceFormat);
     if (config.volumeFormat) this._engine.setVolumeFormat(config.volumeFormat);
     if (config.chartType) this._engine.setChartType(config.chartType);
@@ -171,6 +217,10 @@ export class OHLCVChart {
       if (vp.autoFollow || this._buffer.length <= vp.visibleCount) {
         vp.scrollToEnd(this._buffer.length);
       }
+      // Price alerts (C3): evaluate the close-price step on realtime frames.
+      // A history-load frame (realtime=false) only refreshes the baseline so
+      // the next live tick has a correct `prev`, but never fires an alert.
+      this._evaluateAlerts(info.realtime);
       this._engine.requestRender();
     });
 
@@ -238,6 +288,12 @@ export class OHLCVChart {
     if (config.onHover) {
       this._onHover = config.onHover;
       this._crosshair.setOnHover(config.onHover);
+    }
+    if (config.onDblClick) {
+      this._crosshair.setOnDblClick(config.onDblClick);
+    }
+    if (config.crosshairMode) {
+      this._crosshair.setMode(config.crosshairMode);
     }
 
     // Keyboard shortcuts
@@ -330,6 +386,11 @@ export class OHLCVChart {
     const previousAutoFollow = vp.autoFollow;
 
     this._buffer.clear();
+    // Full data replacement: drop the alert baseline so the next realtime tick
+    // re-seeds it (C3). Otherwise a new-dataset close could be checked against
+    // the previous dataset's stale close — e.g. a synchronous updateLastCandle
+    // in the same frame, before the non-realtime RAF seeds the baseline.
+    this._lastAlertClose = null;
     this._merger.loadHistory(candles);
     this._enforceMaxCandles();
 
@@ -380,6 +441,11 @@ export class OHLCVChart {
     this._config.resolution = resolution;
     this._engine.setSymbol(symbol);
     this._engine.setResolution(resolution);
+    // New symbol = new dataset: reset the alert baseline synchronously before
+    // connect()'s loadHistory + (possibly synchronous) realtime subscribe, so
+    // the first tick of the new symbol isn't checked against the old symbol's
+    // close (C3).
+    this._lastAlertClose = null;
     await this._dataFeed.connect({ symbol, resolution });
   }
 
@@ -387,6 +453,23 @@ export class OHLCVChart {
   setTheme(theme: ThemeMode | ThemeColors): void {
     const resolved = resolveTheme(theme);
     this._engine.setTheme(resolved);
+  }
+
+  /**
+   * Switch localization at runtime (C6): rebuilds the i18n bundle from the
+   * given BCP-47 `locale` (or `undefined` for the locale-agnostic defaults)
+   * and optional `messages` overrides, updating the `aria-label`, axis
+   * number/date formatting, legend, and pills, then repaints. Pass no args to
+   * reset to the English, locale-agnostic baseline.
+   */
+  setLocale(locale?: string, messages?: Partial<Messages>): void {
+    this._config.locale = locale;
+    // Sync overrides to the argument: passing none CLEARS any prior custom
+    // messages so a no-arg call truly resets to the locale-agnostic English
+    // baseline (the documented behavior) instead of silently retaining the
+    // previous overrides.
+    this._config.messages = messages;
+    this._engine.setI18n(createI18n(locale, messages));
   }
 
   /** Get the underlying buffer */
@@ -397,6 +480,17 @@ export class OHLCVChart {
   /** Get the viewport */
   getViewport(): Viewport {
     return this._engine.viewport;
+  }
+
+  /**
+   * Zero-copy view over the candles currently in the visible window
+   * (excludes the +1 render-only bar). Returns `null` when there is no data
+   * or the window is empty. Primarily the data seam an optional, attach-only
+   * overlay (C4 Volume Profile via `VolumeProfileController`) reads through —
+   * delegates to {@link ChartEngine.visibleCandleView}.
+   */
+  visibleCandleView(): CandleView | null {
+    return this._engine.visibleCandleView();
   }
 
   /** Force a render */
@@ -420,6 +514,71 @@ export class OHLCVChart {
   fitAll(): void {
     this._engine.viewport.fitAll(this._buffer.length);
     this._engine.requestRender();
+  }
+
+  /**
+   * Lazily create (once) and return the replay controller. Wires the
+   * `onReplayChange` config callback through on first use.
+   */
+  private _ensureReplay(): ReplayController {
+    if (!this._replay) {
+      this._replay = new ReplayController(this._engine, this._buffer, {
+        onChange: this._config.onReplayChange,
+      });
+    }
+    return this._replay;
+  }
+
+  /**
+   * Enter bar-by-bar replay mode (C1), revealing history up to `fromIndex`
+   * (default 0 — start from the first bar). The chart then shows only the
+   * revealed prefix; advance with {@link playReplay}/{@link stepReplay} or
+   * jump with {@link seekReplay}. Leave replay with {@link stopReplay}.
+   */
+  startReplay(fromIndex?: number): void {
+    this._ensureReplay().start(fromIndex);
+  }
+
+  /** Begin/resume automatic replay playback. No-op until {@link startReplay}. */
+  playReplay(): void {
+    this._ensureReplay().play();
+  }
+
+  /** Pause automatic replay playback. */
+  pauseReplay(): void {
+    this._ensureReplay().pause();
+  }
+
+  /** Reveal/hide one replay bar (`forward` default true). */
+  stepReplay(forward?: boolean): void {
+    this._ensureReplay().step(forward);
+  }
+
+  /** Jump replay to a specific bar index (clamped into range). */
+  seekReplay(index: number): void {
+    this._ensureReplay().seek(index);
+  }
+
+  /** Set replay playback speed in bars per second. */
+  setReplaySpeed(bps: number): void {
+    this._ensureReplay().setSpeed(bps);
+  }
+
+  /**
+   * Leave replay mode: clears the virtual buffer cap so the full buffer
+   * renders again, stops playback, and repaints. Safe to call when not in
+   * replay (no-ops the cap clear).
+   */
+  stopReplay(): void {
+    // Only create the controller if one exists or replay was used; if it was
+    // never started, there's nothing to stop — but routing through the lazy
+    // getter keeps the cap-clear + render idempotent and cheap.
+    this._ensureReplay().stop();
+  }
+
+  /** True while replay mode is engaged (a virtual buffer cap is active). */
+  isReplaying(): boolean {
+    return this._replay?.active ?? false;
   }
 
   /** Switch the primary price-series rendering style (built-in or custom). */
@@ -535,6 +694,14 @@ export class OHLCVChart {
    *  - `rectangle` (2 points — diagonal corners)
    *  - `ray` (2 points — semi-infinite line)
    *  - `fib` (2 points — Fibonacci retracement levels)
+   *  - `fibext` (3 points — Fibonacci extension targets)
+   *  - `channel` (3 points — equidistant channel)
+   *  - `arrow` (2 points — arrow segment)
+   *  - `parallelchannel` (3 points — bounded parallel channel)
+   *  - `regression` (2 points — least-squares channel ±2σ over the span)
+   *  - `pitchfork` (3 points — Andrews' pitchfork)
+   *  - `fibfan` (2 points — Fibonacci fan rays)
+   *  - `measure` (2 points — price/percent/bar ruler)
    */
   startDrawing(tool: DrawingTool): void {
     switch (tool) {
@@ -565,7 +732,49 @@ export class OHLCVChart {
       case 'arrow':
         this._ownDrawingLayer.startDrawing(new Arrow());
         return;
+      case 'parallelchannel':
+        this._ownDrawingLayer.startDrawing(new ParallelChannel());
+        return;
+      case 'regression': {
+        const channel = new RegressionChannel();
+        // The regression fit needs the `close` series of its index span,
+        // which the render path can't reach (Drawing.render has no buffer
+        // by design). Hand the drawing a sampler bound to this chart's
+        // buffer; it pulls the closes once on first complete render and
+        // caches them (and they then persist in the snapshot's `data`).
+        channel.setSampler((start, end) => this._sampleCloses(start, end));
+        this._ownDrawingLayer.startDrawing(channel);
+        return;
+      }
+      case 'pitchfork':
+        this._ownDrawingLayer.startDrawing(new Pitchfork());
+        return;
+      case 'fibfan':
+        this._ownDrawingLayer.startDrawing(new FibFan());
+        return;
+      case 'measure':
+        this._ownDrawingLayer.startDrawing(new Measure());
+        return;
     }
+  }
+
+  /**
+   * Read the `close` series for the inclusive buffer-index span
+   * `[start, end]`, clamped to the loaded buffer. Returned array is
+   * ordered oldest→newest with `result[0]` at buffer index `start`
+   * (positions outside the loaded range are skipped, so a partially
+   * loaded span still yields a usable fit). Backs the regression
+   * channel's {@link CloseSampler}.
+   */
+  private _sampleCloses(start: number, end: number): number[] {
+    const lo = Math.round(Math.min(start, end));
+    const hi = Math.round(Math.max(start, end));
+    const out: number[] = [];
+    for (let i = lo; i <= hi; i++) {
+      const candle = this._buffer.candleAt(i);
+      if (candle) out.push(candle.c);
+    }
+    return out;
   }
 
   /** Serialize the auto-managed drawing layer to a snapshot array. */
@@ -746,6 +955,87 @@ export class OHLCVChart {
     };
   }
 
+  /**
+   * Add a price alert (C3). Returns the created {@link Alert} (with its
+   * generated `a_<n>` id and resolved `condition`). An active alert is drawn
+   * as a dashed amber price line; it fires once on the realtime close-price
+   * tick that satisfies its condition, invoking `ChartConfig.onAlert` and
+   * removing its line (one-shot — see {@link removeAlert} / re-add to re-arm).
+   * Alerts are included in `saveLayoutState`.
+   */
+  addAlert(init: AlertInit): Alert {
+    const alert = this._alerts.add(init);
+    if (alert.active) this._attachAlertLine(alert);
+    return alert;
+  }
+
+  /** Remove an alert by id (and its price line). Returns true if removed. */
+  removeAlert(id: string): boolean {
+    const removed = this._alerts.remove(id);
+    if (removed) {
+      this._engine.detachPrimitive(ALERT_LINE_PREFIX + id);
+      this._engine.requestRender();
+    }
+    return removed;
+  }
+
+  /** All alerts in insertion order (fired one-shot alerts read `active: false`). */
+  getAlerts(): Alert[] {
+    return this._alerts.list();
+  }
+
+  /** Remove every alert and its price line. */
+  clearAlerts(): void {
+    for (const alert of this._alerts.list()) {
+      this._engine.detachPrimitive(ALERT_LINE_PREFIX + alert.id);
+    }
+    this._alerts.clear();
+    this._engine.requestRender();
+  }
+
+  /**
+   * Attach (or refresh) the dashed price line that visualizes an active
+   * alert. The line's pill shows the alert message when set, else the
+   * formatted price (via the primitive's default label path).
+   */
+  private _attachAlertLine(alert: Alert): void {
+    const id = ALERT_LINE_PREFIX + alert.id;
+    // Replace any prior line for this id so a re-add/restore can't double up.
+    this._engine.detachPrimitive(id);
+    this._engine.attachPrimitive(
+      new PriceLinePrimitive(id, {
+        price: alert.price,
+        color: ALERT_LINE_COLOR,
+        lineStyle: 'dashed',
+        ...(alert.message !== undefined ? { title: alert.message } : {}),
+      }),
+    );
+  }
+
+  /**
+   * C3 realtime alert evaluation. Reads the current close, and on a realtime
+   * frame with a known previous close runs every active alert through
+   * `AlertManager.check`. Fired (one-shot) alerts dispatch `onAlert` and have
+   * their price line removed. Always updates the baseline close for the next
+   * tick. No-op on an empty buffer.
+   */
+  private _evaluateAlerts(realtime: boolean): void {
+    if (this._buffer.length === 0) return;
+    const close = this._buffer.lastClose();
+    const prev = this._lastAlertClose;
+    this._lastAlertClose = close;
+    if (!realtime || prev === null) return;
+
+    const fired = this._alerts.check(prev, close);
+    if (fired.length === 0) return;
+    for (const alert of fired) {
+      // A fired one-shot alert removes its line (it's no longer armed). Hosts
+      // that want a lingering "triggered" marker can re-read getAlerts().
+      this._engine.detachPrimitive(ALERT_LINE_PREFIX + alert.id);
+      this._config.onAlert?.(alert);
+    }
+  }
+
   /** Redo the last undone drawing mutation. Returns true if applied. */
   redoDrawing(): boolean {
     const applied = this._ownDrawingLayer.redo();
@@ -795,6 +1085,23 @@ export class OHLCVChart {
     this._crosshair.setOnHover(handler);
   }
 
+  /**
+   * Install a double-click callback that fires with the `HoverInfo` for the
+   * cursor position (or `null` outside the plot). Additive — the chart's
+   * built-in double-click reset (fit-visible / reset price scale) still runs.
+   */
+  setOnDblClick(handler: ((info: HoverInfo | null) => void) | null): void {
+    this._crosshair.setOnDblClick(handler);
+  }
+
+  /**
+   * Switch crosshair mode at runtime: `'normal'` (free Y) or `'magnet'`
+   * (snap Y to the nearest OHLC level of the candle under the cursor).
+   */
+  setCrosshairMode(mode: CrosshairMode): void {
+    this._crosshair.setMode(mode);
+  }
+
   private _onHover: ((info: HoverInfo | null) => void) | null = null;
 
   /**
@@ -824,6 +1131,9 @@ export class OHLCVChart {
       },
       indicators: this._indicatorConfigs.slice(),
       drawings: this.getDrawings(),
+      // Alerts (C3) — `Alert` is already JSON-safe; deep-copy so callers can't
+      // mutate the live collection through the snapshot.
+      alerts: this._alerts.list().map((a) => ({ ...a })),
     };
   }
 
@@ -878,6 +1188,11 @@ export class OHLCVChart {
     if (!Array.isArray(state.drawings)) {
       throw new ValidationError('loadState', state, 'drawings must be an array');
     }
+    // Alerts are optional + additive (C3). Pre-C3 states omit the field; when
+    // present it must be an array (each entry is re-validated on re-add).
+    if (state.alerts !== undefined && !Array.isArray(state.alerts)) {
+      throw new ValidationError('loadState', state, 'alerts must be an array');
+    }
     if (
       typeof state.viewport !== 'object' ||
       state.viewport === null ||
@@ -925,7 +1240,40 @@ export class OHLCVChart {
     // Optional + additive: pre-F1 states omit priceScaleMode → 'linear'.
     vp.setScaleMode(state.viewport.priceScaleMode ?? 'linear');
 
+    // 6. Alerts (C3) — optional + additive. Re-add into the manager (which
+    //    re-derives id collisions) and redraw lines for the active ones.
+    this._restoreAlerts(state.alerts);
+
     this._engine.requestRender();
+  }
+
+  /**
+   * Replace the alert collection from a persisted snapshot. Clears existing
+   * alerts + their lines first, then re-adds each, preserving `id`,
+   * `condition`, `message`, and the one-shot `active` flag (a fired alert
+   * restores disarmed and without a line). `undefined` (pre-C3 state) just
+   * clears, matching the "no alerts" baseline.
+   */
+  private _restoreAlerts(alerts: Alert[] | undefined): void {
+    this.clearAlerts();
+    if (!alerts) return;
+    for (const a of alerts) {
+      // Re-add through the manager so ids/seq stay consistent; `add` always
+      // starts active, so a persisted disarmed alert is flipped back after.
+      this.addAlert({
+        id: a.id,
+        price: a.price,
+        condition: a.condition,
+        ...(a.message !== undefined ? { message: a.message } : {}),
+      });
+      if (a.active === false) {
+        this._alerts.setActive(a.id, false);
+        this._engine.detachPrimitive(ALERT_LINE_PREFIX + a.id);
+      }
+    }
+    // Reset the alert baseline so the next realtime tick re-derives `prev`
+    // from current data rather than firing against a stale pre-load close.
+    this._lastAlertClose = null;
   }
 
   /**
@@ -958,6 +1306,10 @@ export class OHLCVChart {
     this._keyboard.destroy();
     this._crosshair.destroy();
     this._panZoom.destroy();
+    // Stop any running replay timer before tearing down the engine so a late
+    // tick can't request a render against disposed canvases.
+    this._replay?.destroy();
+    this._replay = null;
     this._dataFeed.destroy();
     // Cancel any pending merger RAF before tearing down the engine so
     // a late frame cannot paint into a disposed canvas.

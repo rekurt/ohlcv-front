@@ -14,6 +14,7 @@ import {
   type LayoutState,
   type ThemeMode,
   type ThemeColors,
+  type Messages,
 } from '@rekurt/ohlcv-core';
 
 export interface UseOHLCVChartOptions {
@@ -23,6 +24,8 @@ export interface UseOHLCVChartOptions {
   theme?: ThemeMode | ThemeColors;
   chartType?: ChartType;
   locale?: string;
+  /** Translatable UI string overrides (C6). Falls back to English defaults. */
+  messages?: Partial<Messages>;
   priceFormat?: (price: number) => string;
   volumeFormat?: (volume: number) => string;
   onCandleClick?: (candle: Candle, index: number) => void;
@@ -79,6 +82,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
       theme: options.theme,
       chartType: options.chartType,
       locale: options.locale,
+      messages: options.messages,
       priceFormat: options.priceFormat,
       volumeFormat: options.volumeFormat,
       onCandleClick: (candle, index) => onCandleClickRef.current?.(candle, index),
@@ -140,6 +144,13 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     chartRef.current?.setChartType(options.chartType);
   }, [options.chartType]);
 
+  // Locale / messages — apply translation + Intl-formatting changes reactively
+  // (like theme/chartType), instead of only at construction (C6). Without this
+  // a consumer changing `locale`/`messages` without remounting kept stale text.
+  useEffect(() => {
+    chartRef.current?.setLocale(options.locale, options.messages);
+  }, [options.locale, options.messages]);
+
   // Stable callbacks — the chart instance may come and go across
   // transport changes, but external consumers keep the same refs.
   const setData = useCallback((candles: Candle[], opts?: { preserveView?: boolean }) => {
@@ -156,6 +167,10 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
 
   const setChartType = useCallback((type: ChartType) => {
     chartRef.current?.setChartType(type);
+  }, []);
+
+  const setLocale = useCallback((locale?: string, messages?: Partial<Messages>) => {
+    chartRef.current?.setLocale(locale, messages);
   }, []);
 
   const setIndicatorConfigs = useCallback((configs: IndicatorConfig[]) => {
@@ -213,6 +228,7 @@ export function useOHLCVChart(options: UseOHLCVChartOptions) {
     // Display
     setTheme,
     setChartType,
+    setLocale,
     setIndicatorConfigs,
     setIdleCursor,
     // Identity

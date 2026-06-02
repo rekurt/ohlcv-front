@@ -28,6 +28,15 @@ export interface DrawingSnapshot {
   kind: string;
   points: AnchorPoint[];
   color?: string;
+  /**
+   * Optional opaque numeric payload for drawings that derive geometry
+   * from sampled data rather than purely from anchors — currently the
+   * regression channel, which stores the `close` series of its index
+   * span so the least-squares fit round-trips exactly without needing
+   * the candle buffer at render time. Subclasses that don't use it
+   * leave it `undefined`, so existing snapshots stay byte-compatible.
+   */
+  data?: number[];
 }
 
 /**
@@ -113,12 +122,33 @@ export abstract class Drawing {
     this.points[this.points.length - 1] = point;
   }
 
+  /**
+   * Optional numeric payload persisted alongside the anchors. The base
+   * class emits nothing; subclasses that derive geometry from sampled
+   * data (regression channel) override this so the snapshot round-trips
+   * exactly. Mirrors {@link restoreData}.
+   */
+  protected snapshotData(): number[] | undefined {
+    return undefined;
+  }
+
+  /**
+   * Restore the numeric payload produced by {@link snapshotData}. Called
+   * by the snapshot factory after the anchors are populated. No-op in the
+   * base class.
+   */
+  restoreData(_data: number[] | undefined): void {
+    /* no-op by default */
+  }
+
   toSnapshot(): DrawingSnapshot {
+    const data = this.snapshotData();
     return {
       id: this.id,
       kind: this.kind,
       points: this.points.map((p) => ({ ...p })),
       color: this.color ?? undefined,
+      ...(data !== undefined ? { data: data.slice() } : {}),
     };
   }
 }

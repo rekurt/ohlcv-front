@@ -29,15 +29,18 @@ export class ATR extends Indicator {
     const atr = nanArray(n);
     if (n <= this.period) return [{ name: 'atr', values: atr }];
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+
     // Build TR first. TR[0] is undefined (no previous close).
     const tr = new Float64Array(n);
     tr[0] = NaN;
     for (let i = 1; i < n; i++) {
-      const cur = buffer.candleAt(i)!;
-      const prev = buffer.candleAt(i - 1)!;
-      const range = cur.h - cur.l;
-      const hc = Math.abs(cur.h - prev.c);
-      const lc = Math.abs(cur.l - prev.c);
+      const range = high[i]! - low[i]!;
+      const hc = Math.abs(high[i]! - close[i - 1]!);
+      const lc = Math.abs(low[i]! - close[i - 1]!);
       tr[i] = Math.max(range, hc, lc);
     }
 

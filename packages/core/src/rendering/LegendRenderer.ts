@@ -1,5 +1,7 @@
 import type { Candle, ThemeColors, ChartLayout } from '../types';
 import { formatPrice, formatVolume } from '../utils';
+import type { Messages } from '../i18n/messages';
+import { DEFAULT_MESSAGES } from '../i18n/messages';
 import { LEGEND_FONT, LEGEND_MARGIN_LEFT, LEGEND_MARGIN_TOP } from '../constants';
 
 export class LegendRenderer {
@@ -12,6 +14,9 @@ export class LegendRenderer {
     theme: ThemeColors,
     customPriceFormat?: (price: number) => string,
     customVolumeFormat?: (volume: number) => string,
+    // C6: localized single-letter OHLCV labels. Defaults to the English
+    // O/H/L/C/V so callers that don't pass messages render as before.
+    messages: Messages = DEFAULT_MESSAGES,
   ): void {
     if (!candle) return;
 
@@ -37,11 +42,11 @@ export class LegendRenderer {
     ctx.fillStyle = color;
 
     const parts = [
-      `O ${pFmt(candle.o)}`,
-      `H ${pFmt(candle.h)}`,
-      `L ${pFmt(candle.l)}`,
-      `C ${pFmt(candle.c)}`,
-      `V ${vFmt(candle.v)}`,
+      `${messages.legendOpen} ${pFmt(candle.o)}`,
+      `${messages.legendHigh} ${pFmt(candle.h)}`,
+      `${messages.legendLow} ${pFmt(candle.l)}`,
+      `${messages.legendClose} ${pFmt(candle.c)}`,
+      `${messages.legendVolume} ${vFmt(candle.v)}`,
     ];
 
     for (const part of parts) {

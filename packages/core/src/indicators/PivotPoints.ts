@@ -48,6 +48,12 @@ export class PivotPoints extends Indicator {
       ];
     }
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+    const time = view.time;
+
     // Walk forward, tracking the high/low/close of the current period.
     // When the period bucket changes, snapshot the previous bucket's
     // HLC, compute pivots, and use them until the next bucket flip.
@@ -62,8 +68,10 @@ export class PivotPoints extends Indicator {
     let pivS2 = NaN;
 
     for (let i = 0; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      const b = Math.floor(c.t / this.period);
+      const ch = high[i]!;
+      const cl = low[i]!;
+      const cc = close[i]!;
+      const b = Math.floor(time[i]! / this.period);
       if (b !== bucket) {
         // Bucket flipped — finalize the prior bucket's pivots (if any).
         if (bucket !== -1 && Number.isFinite(bucketHigh) && Number.isFinite(bucketLow)) {
@@ -74,13 +82,13 @@ export class PivotPoints extends Indicator {
           pivS2 = pivPivot - (bucketHigh - bucketLow);
         }
         bucket = b;
-        bucketHigh = c.h;
-        bucketLow = c.l;
-        bucketClose = c.c;
+        bucketHigh = ch;
+        bucketLow = cl;
+        bucketClose = cc;
       } else {
-        if (c.h > bucketHigh) bucketHigh = c.h;
-        if (c.l < bucketLow) bucketLow = c.l;
-        bucketClose = c.c;
+        if (ch > bucketHigh) bucketHigh = ch;
+        if (cl < bucketLow) bucketLow = cl;
+        bucketClose = cc;
       }
       // Write current bucket's pivots (derived from the PREVIOUS bucket).
       pivot[i] = pivPivot;

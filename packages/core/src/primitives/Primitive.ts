@@ -69,3 +69,48 @@ export function clipToChart(ctx: CanvasRenderingContext2D, layout: ChartLayout):
   );
   ctx.clip();
 }
+
+/**
+ * Clip the context to an indicator sub-pane band — the building block for a
+ * "pane primitive" (an overlay scoped to one sub-pane, e.g. a custom band on
+ * the RSI pane). `paneIndex` is `1..paneCount` (top→bottom); `0`, an absent
+ * pane, or a chart with no sub-panes clips to the main price area instead, so
+ * a primitive that asks for a pane that isn't there degrades to the main pane
+ * rather than vanishing. Call inside a `ctx.save()` / `ctx.restore()` pair.
+ *
+ * A primitive paints in a pane by self-clipping here in its `draw` and
+ * positioning with `viewport.indexToX` for X and the band's own
+ * `[top, bottom]` for Y (sub-panes have independent Y scales, so use the band
+ * bounds — not `viewport.priceToY`, which maps the main price axis).
+ */
+export function clipToPane(ctx: CanvasRenderingContext2D, layout: ChartLayout, paneIndex: number): void {
+  if (paneIndex <= 0 || layout.paneCount <= 0) {
+    clipToChart(ctx, layout);
+    return;
+  }
+  const band = (layout.paneAreaBottom - layout.paneAreaTop) / layout.paneCount;
+  const clamped = Math.min(paneIndex, layout.paneCount);
+  const top = layout.paneAreaTop + (clamped - 1) * band;
+  ctx.beginPath();
+  ctx.rect(layout.chartLeft, top, layout.chartRight - layout.chartLeft, band);
+  ctx.clip();
+}
+
+/**
+ * Pixel bounds `[top, bottom]` of an indicator sub-pane band (`paneIndex`
+ * `1..paneCount`, top→bottom). Returns the main price area for `0` / absent
+ * panes. Lets a pane primitive map its own values into the band without
+ * recomputing the layout math.
+ */
+export function paneBounds(
+  layout: ChartLayout,
+  paneIndex: number,
+): { top: number; bottom: number } {
+  if (paneIndex <= 0 || layout.paneCount <= 0) {
+    return { top: layout.chartTop, bottom: layout.chartBottom };
+  }
+  const band = (layout.paneAreaBottom - layout.paneAreaTop) / layout.paneCount;
+  const clamped = Math.min(paneIndex, layout.paneCount);
+  const top = layout.paneAreaTop + (clamped - 1) * band;
+  return { top, bottom: top + band };
+}

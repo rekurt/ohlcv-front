@@ -99,6 +99,33 @@ describe('React <OHLCVChart>', () => {
     expect(ref.current?.chart).toBeTruthy();
   });
 
+  it('applies locale/messages prop changes reactively after mount (C6)', () => {
+    const ref = createRef<OHLCVChartRef>();
+    const label = () =>
+      (
+        ref.current!.chart as unknown as { _engine: { i18n: { t(k: string): string } } }
+      )._engine.i18n.t('a11yChartLabel');
+    act(() => {
+      root.render(<OHLCVChart ref={ref} symbol="BTC/USDT" resolution="1H" />);
+    });
+    const baseline = label();
+
+    // Change messages WITHOUT changing transport — must update reactively, not
+    // stay stale until a remount.
+    act(() => {
+      root.render(
+        <OHLCVChart
+          ref={ref}
+          symbol="BTC/USDT"
+          resolution="1H"
+          messages={{ a11yChartLabel: 'X-LBL' }}
+        />,
+      );
+    });
+    expect(label()).toBe('X-LBL');
+    expect(baseline).not.toBe('X-LBL');
+  });
+
   it('exposes all imperative methods on the ref', () => {
     const ref = createRef<OHLCVChartRef>();
     act(() => {

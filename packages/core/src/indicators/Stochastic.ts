@@ -40,17 +40,20 @@ export class Stochastic extends Indicator {
     const d = nanArray(n);
     if (n < this.kPeriod) return [{ name: 'k', values: k }, { name: 'd', values: d }];
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+
     for (let i = this.kPeriod - 1; i < n; i++) {
       let hh = -Infinity;
       let ll = Infinity;
       for (let j = i - this.kPeriod + 1; j <= i; j++) {
-        const candle = buffer.candleAt(j)!;
-        if (candle.h > hh) hh = candle.h;
-        if (candle.l < ll) ll = candle.l;
+        if (high[j]! > hh) hh = high[j]!;
+        if (low[j]! < ll) ll = low[j]!;
       }
-      const close = buffer.candleAt(i)!.c;
       const range = hh - ll;
-      k[i] = range === 0 ? 100 : ((close - ll) / range) * 100;
+      k[i] = range === 0 ? 100 : ((close[i]! - ll) / range) * 100;
     }
 
     // %D is an SMA of %K.

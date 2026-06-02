@@ -12,6 +12,7 @@ const LAYOUT: ChartLayout = {
   chartTop: 0,
   chartBottom: 400,
   priceAxisWidth: 60,
+  leftAxisWidth: 0,
   timeAxisHeight: 24,
   width: 860,
   height: 424,

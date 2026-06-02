@@ -65,14 +65,14 @@ export class Ichimoku extends Indicator {
     }
 
     // Pre-pull h/l once into typed arrays for monotonic-deque math.
+    const view = buffer.sliceView(0, n);
     const high = new Float64Array(n);
     const low = new Float64Array(n);
     const close = new Float64Array(n);
     for (let i = 0; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      high[i] = c.h;
-      low[i] = c.l;
-      close[i] = c.c;
+      high[i] = view.high[i]!;
+      low[i] = view.low[i]!;
+      close[i] = view.close[i]!;
     }
 
     const midpoint = (

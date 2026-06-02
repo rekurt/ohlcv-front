@@ -28,8 +28,14 @@ export class GoToLiveRenderer {
     this._lastBounds = null;
   }
 
-  render(ctx: CanvasRenderingContext2D, layout: ChartLayout, theme: ThemeColors): void {
-    const label = 'Go to live ▶';
+  render(
+    ctx: CanvasRenderingContext2D,
+    layout: ChartLayout,
+    theme: ThemeColors,
+    // C6: localized pill text. Defaults to the English string so callers that
+    // don't pass a label render identically to before.
+    label = 'Go to live ▶',
+  ): void {
 
     ctx.save();
     ctx.font = PILL_FONT;

@@ -301,6 +301,43 @@ export class CandleBuffer {
     return -1;
   }
 
+  /**
+   * Map a timestamp to a (possibly fractional) logical index by linearly
+   * interpolating between the two bracketing candle times — the inverse of
+   * "index → time" for off-grid timestamps. Used to align a foreign,
+   * time-keyed overlay series (e.g. the C2 compare symbol, whose bars need not
+   * share the main series' timestamps) onto the same X axis.
+   *
+   * Behavior:
+   *  - exact match → its integer index;
+   *  - between candle `i` and `i+1` → `i + frac` (frac by time);
+   *  - before the first / after the last candle → extrapolates linearly using
+   *    the nearest interval's spacing, so a point just outside the data still
+   *    lands at a sensible (possibly negative or > length) index rather than
+   *    snapping to the edge;
+   *  - empty buffer, a single candle (no spacing to interpolate), a zero-width
+   *    interval, or a non-finite input → NaN, so the caller skips that point.
+   *
+   * Pure read; allocation-free; O(log n).
+   */
+  fractionalIndexOfTime(timestamp: number): number {
+    if (!Number.isFinite(timestamp) || this._length < 2) return NaN;
+    const head = this._head;
+    const end = head + this._length;
+    // First raw index whose time >= timestamp.
+    const rawIdx = lowerBound(this._time, timestamp, head, end);
+    if (rawIdx < end && this._time[rawIdx] === timestamp) return rawIdx - head;
+
+    // Pick the bracketing pair: the interval [lo, lo+1] whose span scales the
+    // fraction. Clamp `lo` into [0, length-2] so the before-first and
+    // after-last cases reuse the nearest real interval and extrapolate.
+    const lo = Math.min(this._length - 2, Math.max(0, rawIdx - head - 1));
+    const tLo = this._time[head + lo]!;
+    const span = this._time[head + lo + 1]! - tLo;
+    if (span <= 0) return NaN;
+    return lo + (timestamp - tLo) / span;
+  }
+
   /** Zero-copy slice view via subarray */
   sliceView(start: number, end: number): CandleView {
     const s = Math.max(0, start);

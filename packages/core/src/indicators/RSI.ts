@@ -35,11 +35,14 @@ export class RSI extends Indicator {
     const rsi = nanArray(n);
     if (n <= this.period) return [{ name: 'rsi', values: rsi }];
 
+    const view = buffer.sliceView(0, n);
+    const close = view.close;
+
     // Seed: SMA of gains/losses over the first `period` price changes.
     let sumGain = 0;
     let sumLoss = 0;
     for (let i = 1; i <= this.period; i++) {
-      const diff = buffer.candleAt(i)!.c - buffer.candleAt(i - 1)!.c;
+      const diff = close[i]! - close[i - 1]!;
       if (diff > 0) sumGain += diff;
       else sumLoss += -diff;
     }
@@ -49,7 +52,7 @@ export class RSI extends Indicator {
 
     // Wilder smoothing for the rest.
     for (let i = this.period + 1; i < n; i++) {
-      const diff = buffer.candleAt(i)!.c - buffer.candleAt(i - 1)!.c;
+      const diff = close[i]! - close[i - 1]!;
       const gain = diff > 0 ? diff : 0;
       const loss = diff < 0 ? -diff : 0;
       avgGain = (avgGain * (this.period - 1) + gain) / this.period;

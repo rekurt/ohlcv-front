@@ -33,18 +33,21 @@ export class WilliamsR extends Indicator {
     if (n === 0 || n < this.period) return [{ name: 'williamsr', values: out }];
 
     const p = this.period;
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
     // Monotonic deques of indices into the buffer. `highIdx[0]` is the
     // index of the current window maximum; `lowIdx[0]` the minimum.
     const highIdx: number[] = [];
     const lowIdx: number[] = [];
 
     for (let i = 0; i < n; i++) {
-      const c = buffer.candleAt(i)!;
-      while (highIdx.length > 0 && buffer.candleAt(highIdx[highIdx.length - 1]!)!.h <= c.h) {
+      while (highIdx.length > 0 && high[highIdx[highIdx.length - 1]!]! <= high[i]!) {
         highIdx.pop();
       }
       highIdx.push(i);
-      while (lowIdx.length > 0 && buffer.candleAt(lowIdx[lowIdx.length - 1]!)!.l >= c.l) {
+      while (lowIdx.length > 0 && low[lowIdx[lowIdx.length - 1]!]! >= low[i]!) {
         lowIdx.pop();
       }
       lowIdx.push(i);
@@ -54,13 +57,13 @@ export class WilliamsR extends Indicator {
       while (lowIdx.length > 0 && lowIdx[0]! <= i - p) lowIdx.shift();
 
       if (i >= p - 1) {
-        const hh = buffer.candleAt(highIdx[0]!)!.h;
-        const ll = buffer.candleAt(lowIdx[0]!)!.l;
+        const hh = high[highIdx[0]!]!;
+        const ll = low[lowIdx[0]!]!;
         const range = hh - ll;
         // If the window is flat (range == 0), Williams %R is undefined;
         // emit −50 (mid-range) rather than NaN so the line stays
         // continuous on the chart.
-        out[i] = range === 0 ? -50 : ((hh - c.c) / range) * -100;
+        out[i] = range === 0 ? -50 : ((hh - close[i]!) / range) * -100;
       }
     }
 

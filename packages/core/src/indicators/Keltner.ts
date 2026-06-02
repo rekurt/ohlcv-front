@@ -50,6 +50,11 @@ export class Keltner extends Indicator {
       ];
     }
 
+    const view = buffer.sliceView(0, n);
+    const high = view.high;
+    const low = view.low;
+    const close = view.close;
+
     // EMA(close, period).
     const k = 2 / (this.period + 1);
     let ema = NaN;
@@ -60,16 +65,18 @@ export class Keltner extends Indicator {
     let prevClose = NaN;
 
     for (let i = 0; i < n; i++) {
-      const c = buffer.candleAt(i)!;
+      const cc = close[i]!;
+      const ch = high[i]!;
+      const cl = low[i]!;
       // EMA seed = first close, then standard recurrence.
-      ema = i === 0 ? c.c : c.c * k + ema * (1 - k);
+      ema = i === 0 ? cc : cc * k + ema * (1 - k);
 
       // True range.
       const tr =
         i === 0
-          ? c.h - c.l
-          : Math.max(c.h - c.l, Math.abs(c.h - prevClose), Math.abs(prevClose - c.l));
-      prevClose = c.c;
+          ? ch - cl
+          : Math.max(ch - cl, Math.abs(ch - prevClose), Math.abs(prevClose - cl));
+      prevClose = cc;
 
       if (i < ap) {
         trSum += tr;
