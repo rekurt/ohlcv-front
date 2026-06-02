@@ -734,6 +734,27 @@ describe('OHLCVChart facade', () => {
       chart.destroy();
     });
 
+    it('preserveView setData keeps an active replay (a React re-render must not exit replay) (Н11)', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      const data = Array.from({ length: 50 }, (_, i) => makeCandle(i));
+      chart.setData(data);
+      chart.startReplay(20);
+      expect(chart.isReplaying()).toBe(true);
+      const capBefore = engineOf(chart).getReplayCap();
+
+      // The React/Vue wrappers re-dispatch the SAME data array with preserveView
+      // on a prop/render change — a no-op refresh must NOT tear the user out of
+      // replay (unlike a true swap above).
+      chart.setData(data, { preserveView: true });
+      expect(chart.isReplaying()).toBe(true);
+      expect(engineOf(chart).getReplayCap()).toBe(capBefore); // cap preserved
+
+      // Regression guard: a plain (non-preserveView) setData still ends replay (Г2a).
+      chart.setData(data);
+      expect(chart.isReplaying()).toBe(false);
+      chart.destroy();
+    });
+
     it('switchSymbol ends an active replay and clears the engine cap (Г2a)', async () => {
       const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
       chart.setData(Array.from({ length: 50 }, (_, i) => makeCandle(i)));

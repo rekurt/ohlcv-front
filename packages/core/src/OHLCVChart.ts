@@ -403,10 +403,14 @@ export class OHLCVChart {
    * not jump to the right edge every time React re-renders.
    */
   setData(candles: Candle[], opts?: { preserveView?: boolean }): void {
-    // Full data replacement ends any active replay: the cap is an absolute index
+    // A true dataset swap ends any active replay: the cap is an absolute index
     // into the OLD buffer, so against the new data it would point at the wrong
-    // bar (or past the end) — hiding bars and desyncing the replay viewport. Stop it.
-    this._replay?.stop();
+    // bar (or past the end) — hiding bars and desyncing the replay viewport.
+    // The preserveView path (React/Vue re-dispatching the SAME data array on a
+    // prop change) is NOT a swap, so it keeps replay — tearing it down on a
+    // no-op refresh would yank the user out of replay. Rendering stays safe if
+    // the length drifts because effectiveLength is min(newLength, cap).
+    if (!opts?.preserveView) this._replay?.stop();
     this._dataGeneration++;
     this._loadingMore = false;
     const vp = this._engine.viewport;
