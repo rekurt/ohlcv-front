@@ -338,4 +338,24 @@ describe('DrawingLayer replay clamp (Н2)', () => {
     layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME, 19);
     expect(straddle.rendered).toBe(1);
   });
+
+  it('selectAt cannot select a drawing whose anchors are all past the cap (Н6)', () => {
+    const layer = new DrawingLayer();
+    const future = new RecordingDrawing(
+      [{ index: 50, price: 150 }, { index: 60, price: 160 }],
+      'future',
+    );
+    layer.add(future);
+    const vp = buildViewport();
+
+    // Under the cap (19) the future-zone drawing is unselectable — otherwise its
+    // selection handles would redraw the hidden future anchors back onto the chart.
+    expect(layer.selectAt(500, 250, LAYOUT, vp, undefined, 19)).toBeNull();
+    expect(layer.selected).toBeNull();
+
+    // Anti-tautology: with no cap (default Infinity) the same click selects it,
+    // proving the suppression is the maxIndex gate and not a bad fixture.
+    expect(layer.selectAt(500, 250, LAYOUT, vp)?.id).toBe('future');
+    expect(layer.selected?.id).toBe('future');
+  });
 });

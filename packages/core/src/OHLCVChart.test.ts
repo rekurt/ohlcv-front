@@ -787,6 +787,28 @@ describe('OHLCVChart facade', () => {
       expect(engineOf(chart).getReplayCap()).toBe(capBefore); // cap bar unchanged
       chart.destroy();
     });
+
+    it('trims the over-grown buffer to maxCandles on stopReplay without a further tick (Н7)', async () => {
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      chart.startReplay(40);
+      // Realtime bars during replay grow the buffer past maxCandles (eviction
+      // frozen while the cap is active).
+      for (let i = 0; i < 10; i++) {
+        chart.updateLastCandle(makeCandle(100 + i));
+        await nextFrame();
+      }
+      expect(chart.getBuffer().length).toBe(110); // grew past the cap
+
+      // Leaving replay must trim eagerly — NOT wait for another realtime tick
+      // that may never come (otherwise the oversized buffer renders/saves forever).
+      chart.stopReplay();
+      expect(engineOf(chart).getReplayCap()).toBeNull();
+      expect(chart.getBuffer().length).toBe(100); // trimmed back to maxCandles
+      chart.destroy();
+    });
   });
 
   // Future-bar leak regressions (Г3). With a replay cap active the buffer

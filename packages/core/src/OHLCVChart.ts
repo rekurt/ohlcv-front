@@ -630,6 +630,12 @@ export class OHLCVChart {
     // never started, there's nothing to stop — but routing through the lazy
     // getter keeps the cap-clear + render idempotent and cheap.
     this._ensureReplay().stop();
+    // Eviction was suspended while the cap was active (see _enforceMaxCandles),
+    // so a long replay under a live feed may have let the buffer grow past
+    // maxCandles. Now that the cap is cleared, trim eagerly — otherwise a chart
+    // that gets no further realtime tick would render/save the oversized buffer
+    // forever. No-op when uncapped or already within budget.
+    this._enforceMaxCandles();
   }
 
   /** True while replay mode is engaged (a virtual buffer cap is active). */
@@ -870,6 +876,7 @@ export class OHLCVChart {
       this._engine.layout,
       this._engine.viewport,
       tolerance,
+      this._engine.maxVisibleIndex(),
     );
     this._engine.requestRender();
     return hit ? hit.id : null;

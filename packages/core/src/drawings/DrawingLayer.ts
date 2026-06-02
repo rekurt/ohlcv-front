@@ -198,8 +198,11 @@ export class DrawingLayer {
     layout: ChartLayout,
     viewport: Viewport,
     tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+    /** Highest revealed index (replay cap). A drawing fully past it can't be
+     *  selected — otherwise its handles would redraw the hidden future anchors. */
+    maxIndex = Infinity,
   ): Drawing | null {
-    const hit = this.hitTest(x, y, layout, viewport, tolerance);
+    const hit = this.hitTest(x, y, layout, viewport, tolerance, maxIndex);
     this._selectedId = hit ? hit.id : null;
     return hit;
   }
