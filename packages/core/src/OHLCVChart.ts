@@ -386,6 +386,11 @@ export class OHLCVChart {
     const previousAutoFollow = vp.autoFollow;
 
     this._buffer.clear();
+    // Full data replacement: drop the alert baseline so the next realtime tick
+    // re-seeds it (C3). Otherwise a new-dataset close could be checked against
+    // the previous dataset's stale close — e.g. a synchronous updateLastCandle
+    // in the same frame, before the non-realtime RAF seeds the baseline.
+    this._lastAlertClose = null;
     this._merger.loadHistory(candles);
     this._enforceMaxCandles();
 
@@ -436,6 +441,11 @@ export class OHLCVChart {
     this._config.resolution = resolution;
     this._engine.setSymbol(symbol);
     this._engine.setResolution(resolution);
+    // New symbol = new dataset: reset the alert baseline synchronously before
+    // connect()'s loadHistory + (possibly synchronous) realtime subscribe, so
+    // the first tick of the new symbol isn't checked against the old symbol's
+    // close (C3).
+    this._lastAlertClose = null;
     await this._dataFeed.connect({ symbol, resolution });
   }
 

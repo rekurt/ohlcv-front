@@ -17,6 +17,7 @@ import {
   type LayoutState,
   type ThemeMode,
   type ThemeColors,
+  type Messages,
 } from '@rekurt/ohlcv-core';
 
 export interface OHLCVChartProps {
@@ -32,6 +33,8 @@ export interface OHLCVChartProps {
   theme?: ThemeMode | ThemeColors;
   chartType?: ChartType;
   locale?: string;
+  /** Translatable UI string overrides (C6). Falls back to English defaults. */
+  messages?: Partial<Messages>;
   priceFormat?: (price: number) => string;
   volumeFormat?: (volume: number) => string;
   idleCursor?: string | null;
@@ -138,6 +141,7 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
       transport: props.transport,
       theme: props.theme,
       locale: props.locale,
+      messages: props.messages,
       priceFormat: props.priceFormat,
       volumeFormat: props.volumeFormat,
       chartType: props.chartType,
@@ -193,6 +197,13 @@ export const OHLCVChart = forwardRef<OHLCVChartRef, OHLCVChartProps>(function OH
     if (!chartRef.current || !props.chartType) return;
     chartRef.current.setChartType(props.chartType);
   }, [props.chartType]);
+
+  // Locale / messages updates (C6) — apply translation + Intl-formatting
+  // changes reactively (like theme/chartType), not only at construction.
+  useEffect(() => {
+    if (!chartRef.current) return;
+    chartRef.current.setLocale(props.locale, props.messages);
+  }, [props.locale, props.messages]);
 
   // Data updates — always use `preserveView: true` so re-renders caused
   // by unrelated state (hover, indicator toggle, theme swap) don't snap

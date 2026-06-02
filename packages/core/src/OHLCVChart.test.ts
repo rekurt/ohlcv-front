@@ -68,6 +68,31 @@ describe('OHLCVChart facade', () => {
     });
   });
 
+  describe('alerts (C3)', () => {
+    const lastAlertClose = (c: OHLCVChart) =>
+      (c as unknown as { _lastAlertClose: number | null })._lastAlertClose;
+    const setLastAlertClose = (c: OHLCVChart, v: number | null) => {
+      (c as unknown as { _lastAlertClose: number | null })._lastAlertClose = v;
+    };
+
+    it('setData clears the alert baseline so a stale close cannot fire', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData([{ ...makeCandle(0), c: 100 }]);
+      setLastAlertClose(chart, 100); // as the non-realtime RAF would seed it
+      chart.setData([{ ...makeCandle(0), c: 200 }]); // full replacement
+      expect(lastAlertClose(chart)).toBeNull(); // cleared synchronously
+      chart.destroy();
+    });
+
+    it('switchSymbol clears the alert baseline', async () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      setLastAlertClose(chart, 100);
+      await chart.switchSymbol('ETH/USDT', '1H');
+      expect(lastAlertClose(chart)).toBeNull();
+      chart.destroy();
+    });
+  });
+
   describe('construction', () => {
     it('creates a chart without a transport', () => {
       const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
