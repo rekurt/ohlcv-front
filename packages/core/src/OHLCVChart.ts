@@ -375,10 +375,10 @@ export class OHLCVChart {
         return;
       }
       if (x < layout.chartLeft || x > layout.chartRight) return;
-      // A host-supplied onDblClick owns the double-click in the chart area — do
-      // not also reset zoom/scroll out from under it (the price-axis reset above
-      // is a different zone and stays). Mirrors the click suppression pattern.
-      if (this._config.onDblClick) return;
+      // Built-in chart-area reset. Purely ADDITIVE with a host-supplied
+      // onDblClick — the CrosshairController dispatches that callback on the same
+      // gesture independently, so both run, exactly as ChartConfig.onDblClick and
+      // CrosshairController.setOnDblClick document.
       this.fitVisible();
     };
     this._engine.topCanvas.addEventListener('dblclick', this._dblClickHandler);

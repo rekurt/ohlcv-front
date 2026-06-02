@@ -904,31 +904,33 @@ describe('OHLCVChart facade', () => {
     });
   });
 
-  // Г5: a host-supplied onDblClick owns the double-click in the chart area, so
-  // the built-in fit-visible reset must NOT also fire and yank zoom/scroll.
-  describe('double-click reset vs host onDblClick (Г5)', () => {
+  // Г5: a host-supplied onDblClick is purely ADDITIVE — it fires on the same
+  // gesture as the built-in chart-area fit-visible, and BOTH run, exactly as
+  // ChartConfig.onDblClick / setOnDblClick document. (An earlier pass wrongly
+  // suppressed the built-in fit when onDblClick was set; restored to the
+  // documented additive contract.)
+  describe('double-click reset + host onDblClick are additive (Г5)', () => {
     function dblClickAt(chart: OHLCVChart, x: number, y: number): void {
       const canvas = engineOf(chart).topCanvas;
       canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: x, clientY: y, bubbles: true }));
     }
 
-    it('suppresses the built-in fitVisible when onDblClick is configured', () => {
+    it('runs the built-in fitVisible AND fires the host onDblClick (additive)', () => {
+      let hostCalls = 0;
       const chart = new OHLCVChart({
-        container, symbol: 'BTC/USDT', resolution: '1H', onDblClick: () => {},
+        container, symbol: 'BTC/USDT', resolution: '1H', onDblClick: () => { hostCalls++; },
       });
       chart.setData(Array.from({ length: 500 }, (_, i) => makeCandle(i)));
       const vp = chart.getViewport();
-      // Deep-zoom + pan away from the live edge so fitVisible WOULD be a visible
-      // change (it resets candleWidth to 8 and scrolls to the end).
+      // Deep-zoom + pan away from the live edge so the built-in fitVisible is a
+      // visible change (it resets candleWidth to 8 and scrolls to the end).
       vp.candleWidth = 25;
       vp.setLayout(vp.layout);
       vp.pan(-80);
-      const widthBefore = vp.candleWidth;
-      const startBefore = vp.startIndex;
 
       dblClickAt(chart, 400, 250); // inside the chart area
-      expect(vp.candleWidth).toBe(widthBefore); // fitVisible did NOT run
-      expect(vp.startIndex).toBe(startBefore);
+      expect(vp.candleWidth).toBe(8); // DEFAULT_CANDLE_WIDTH — built-in fitVisible ran
+      expect(hostCalls).toBe(1); // host callback ALSO fired on the same gesture
       chart.destroy();
     });
 
