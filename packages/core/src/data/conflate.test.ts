@@ -152,4 +152,38 @@ describe('conflate', () => {
       expect(Number.isFinite(out.volume[k]!)).toBe(true);
     }
   });
+
+  // Г7: a bucket's FIRST candle seeds high/low directly. If that seed is NaN
+  // (a gap bar), the merge of the remaining finite candles must still capture
+  // the column's real extrema — a NaN seed must not poison the whole bucket.
+  // At candleWidth 0.1 indices 0..7 share column 0, so candle 0 is the seed.
+  it('a NaN-first bar does not poison the bucket — real finite extrema win (Г7)', () => {
+    vp.candleWidth = 0.1; // sub-pixel → conflation; indices 0..7 → one bucket
+    vp.startIndex = 0;
+
+    const buf = new CandleBuffer();
+    // 8 candles fill bucket 0; the rest spill into later columns. Give bucket 0
+    // a known max-high (candle 3) and min-low (candle 5); candle 0 will be NaN.
+    for (let i = 0; i < 40; i++) {
+      const base = 100 + i;
+      const h = i === 3 ? 500 : base + 2;
+      const l = i === 5 ? 50 : base - 2;
+      buf.append({ o: base, h, l, c: base, v: 10, t: 1_700_000_000 + i * 60 });
+    }
+    // append() rejects non-finite, so poke the seed (candle 0) high/low to NaN.
+    const internals = buf as unknown as { _high: Float64Array; _low: Float64Array; _head: number };
+    internals._high[internals._head + 0] = NaN;
+    internals._low[internals._head + 0] = NaN;
+
+    const view = buf.sliceView(0, 40);
+    const out = conflate(view, vp, LAYOUT);
+
+    // Bucket 0 carries candle 0 (its repIndex). Its extrema must be the finite
+    // ones from candles 3 / 5, NOT the NaN seed.
+    expect(out.repIndex![0]).toBe(0);
+    expect(Number.isFinite(out.high[0]!)).toBe(true);
+    expect(Number.isFinite(out.low[0]!)).toBe(true);
+    expect(out.high[0]).toBe(500);
+    expect(out.low[0]).toBe(50);
+  });
 });

@@ -64,6 +64,7 @@ export abstract class Indicator {
   private _cache: {
     buffer: CandleBuffer;
     version: number;
+    generation: number;
     length: number;
     firstTime: number;
     series: IndicatorSeries[];
@@ -127,23 +128,42 @@ export abstract class Indicator {
     const version = buffer.version;
     const length = buffer.length;
     const firstTime = buffer.firstTime();
+    const generation = buffer.generation;
     const c = this._cache;
-    if (c && c.buffer === buffer && c.version === version && c.length === length) {
+    if (
+      c &&
+      c.buffer === buffer &&
+      c.generation === generation &&
+      c.version === version &&
+      c.length === length
+    ) {
       return c.series;
     }
-    if (c && c.buffer === buffer && c.firstTime === firstTime && this.updateTail) {
+    // Incremental tail patch — gated on `generation` (bumped only by `clear()`)
+    // in ADDITION to `firstTime`. A `clear()` + refill that re-establishes the
+    // SAME `firstTime` and length (e.g. `setData` re-loading the same window of
+    // a symbol) would otherwise pass the firstTime guard and let `updateTail`
+    // copy the PREVIOUS dataset's values. Mirrors the generation guard in
+    // `RangePyramid._ensureFresh`.
+    if (
+      c &&
+      c.buffer === buffer &&
+      c.generation === generation &&
+      c.firstTime === firstTime &&
+      this.updateTail
+    ) {
       const kind =
         length === c.length ? 'updateLast' : length === c.length + 1 ? 'append' : null;
       if (kind) {
         const updated = this.updateTail(buffer, c.series, kind);
         if (updated) {
-          this._cache = { buffer, version, length, firstTime, series: updated };
+          this._cache = { buffer, version, generation, length, firstTime, series: updated };
           return updated;
         }
       }
     }
     const series = this.compute(buffer);
-    this._cache = { buffer, version, length, firstTime, series };
+    this._cache = { buffer, version, generation, length, firstTime, series };
     return series;
   }
 }

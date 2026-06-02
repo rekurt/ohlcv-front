@@ -89,16 +89,28 @@ function makeMockGL(opts?: { failCompile?: boolean; failLink?: boolean }): MockG
     deleteBuffer: record('deleteBuffer'),
     deleteProgram: record('deleteProgram'),
     deleteShader: record('deleteShader'),
+    isContextLost: vi.fn(() => false),
   };
   return gl;
 }
 
 /** A canvas whose `getContext('webgl')` returns `gl` (or null). */
 function makeCanvas(gl: MockGL | null, width = 800, height = 600): HTMLCanvasElement {
+  const listeners: Record<string, ((e: Event) => void)[]> = {};
   return {
     width,
     height,
     getContext: (type: string) => (type === 'webgl' ? gl : null),
+    addEventListener: (type: string, fn: (e: Event) => void) => {
+      (listeners[type] ??= []).push(fn);
+    },
+    removeEventListener: (type: string, fn: (e: Event) => void) => {
+      listeners[type] = (listeners[type] ?? []).filter((f) => f !== fn);
+    },
+    dispatchEvent: (e: Event) => {
+      for (const fn of listeners[e.type] ?? []) fn(e);
+      return true;
+    },
   } as unknown as HTMLCanvasElement;
 }
 
@@ -269,5 +281,48 @@ describe('WebGLCandleRenderer', () => {
     // Idempotent: a second dispose does nothing more / does not throw.
     renderer.dispose();
     expect(gl.__calls.deleteBuffer?.length).toBe(2);
+  });
+
+  // --- context loss (review fix Г4) ---------------------------------------
+
+  it('render disables itself and skips the draw when the context is lost', () => {
+    const gl = makeMockGL();
+    gl.isContextLost = vi.fn(() => true);
+    const renderer = new WebGLCandleRenderer(makeCanvas(gl));
+    expect(renderer.supported).toBe(true); // init succeeded before the loss
+    expect(() => renderer.render(makeView(5), makeViewport(), makeLayout(), THEME)).not.toThrow();
+    expect(renderer.supported).toBe(false);
+    expect((gl.__calls.drawArrays ?? []).length).toBe(0); // no draw into a dead context
+  });
+
+  it('webglcontextlost event flips supported off and preventDefaults', () => {
+    const gl = makeMockGL();
+    const canvas = makeCanvas(gl);
+    const renderer = new WebGLCandleRenderer(canvas);
+    expect(renderer.supported).toBe(true);
+    const e = new Event('webglcontextlost', { cancelable: true });
+    canvas.dispatchEvent(e);
+    expect(renderer.supported).toBe(false);
+    expect(e.defaultPrevented).toBe(true); // required for restoration to fire
+  });
+
+  it('webglcontextrestored rebuilds the program and re-enables', () => {
+    const gl = makeMockGL();
+    const canvas = makeCanvas(gl);
+    const renderer = new WebGLCandleRenderer(canvas);
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    expect(renderer.supported).toBe(false);
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+    expect(renderer.supported).toBe(true);
+  });
+
+  it('dispose removes the context-loss listeners (no rebuild after teardown)', () => {
+    const gl = makeMockGL();
+    const canvas = makeCanvas(gl);
+    const renderer = new WebGLCandleRenderer(canvas);
+    renderer.dispose();
+    // After dispose the listener is gone, so a late restored event is a no-op.
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+    expect(renderer.supported).toBe(false);
   });
 });

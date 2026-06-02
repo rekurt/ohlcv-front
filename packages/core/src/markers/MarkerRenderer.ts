@@ -18,6 +18,8 @@ export class MarkerRenderer {
     buffer: CandleBuffer,
     markers: readonly Marker[],
     theme: ThemeColors,
+    /** Highest revealed index (replay cap). Markers past it are hidden. */
+    maxIndex = Infinity,
   ): void {
     if (markers.length === 0) return;
 
@@ -35,7 +37,7 @@ export class MarkerRenderer {
 
     for (const marker of markers) {
       const index = buffer.findIndexByTime(marker.time);
-      if (index === -1) continue;
+      if (index === -1 || index > maxIndex) continue;
       const candle = buffer.candleAt(index);
       if (!candle) continue;
 

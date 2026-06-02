@@ -160,9 +160,7 @@ export class CrosshairController {
    * no cap active this is just the last buffer index.
    */
   private _maxIndex(): number {
-    const cap = this._engine.getReplayCap();
-    const len = cap === null ? this._buffer.length : Math.min(cap, this._buffer.length);
-    return len - 1;
+    return this._engine.maxVisibleIndex();
   }
 
   /**

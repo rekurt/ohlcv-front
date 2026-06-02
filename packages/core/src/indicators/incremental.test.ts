@@ -144,6 +144,14 @@ describe('incremental indicator updateTail equivalence', () => {
   checkEquivalence('WMA(20)', () => new WMA(20), CLOSES, 173.25, 175.5);
   checkEquivalence('ROC(12)', () => new ROC(12), CLOSES, 173.25, 175.5);
   checkEquivalence('OBV', () => new OBV(), CLOSES, 173.25, 175.5);
+  // OBV's tail sign branch (`cc > pc` / `cc < pc`) is only exercised on its
+  // boundary when the touched close EQUALS its predecessor. Drive the shared
+  // equivalence harness with that exact transition so a `>` → `>=` (or
+  // `<` → `<=`) mutation in OBV.updateTail diverges from the unmutated full
+  // compute and fails here — not just in the dedicated sign-branch test below.
+  //   updateLast rewrites index N-1 to CLOSES[N-2] (== close[N-2] → flat).
+  //   append adds index N as CLOSES[N-1]    (== close[N-1] → flat).
+  checkEquivalence('OBV (flat close — equality branch)', () => new OBV(), CLOSES, CLOSES[N - 2]!, CLOSES[N - 1]!);
   checkEquivalence('BollingerBands(20,2)', () => new BollingerBands(20, 2), CLOSES, 173.25, 175.5);
   checkEquivalence('Donchian(20)', () => new Donchian(20), CLOSES, 173.25, 175.5);
 
@@ -326,5 +334,33 @@ describe('incremental indicator updateTail equivalence', () => {
       expect(after[0]!.values).not.toBe(before[0]!.values);
       expect(Array.from(before[0]!.values)).toEqual(Array.from(beforeCopy));
     });
+  });
+
+  describe('cache invalidation on clear()+refill (generation guard — P0 review fix)', () => {
+    const cases: [string, () => Indicator][] = [
+      ['SMA', () => new SMA(10)],
+      ['EMA', () => new EMA(10)],
+      ['BollingerBands', () => new BollingerBands(10, 2)],
+    ];
+    for (const [name, make] of cases) {
+      it(`${name}: not stale after clear()+refill (same firstTime, same length → updateLast kind)`, () => {
+        const buf = bufferOfCloses(closesOf(40)); // dataset A
+        const ind = make();
+        ind.computeCached(buf); // warm cache on A
+        buf.clear(); // generation++
+        for (let i = 0; i < 40; i++) buf.append(makeCandle(i, 500 - i * 3)); // dataset B, same len & t[0]
+        // Without the generation guard updateTail would copy A's values.
+        expectSeriesEqual(ind.computeCached(buf), make().compute(buf));
+      });
+
+      it(`${name}: not stale after clear()+refill of length+1 (append kind)`, () => {
+        const buf = bufferOfCloses(closesOf(40));
+        const ind = make();
+        ind.computeCached(buf);
+        buf.clear();
+        for (let i = 0; i < 41; i++) buf.append(makeCandle(i, 500 - i * 3));
+        expectSeriesEqual(ind.computeCached(buf), make().compute(buf));
+      });
+    }
   });
 });

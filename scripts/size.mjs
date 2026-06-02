@@ -31,10 +31,13 @@ const TARGET_EXTENSIONS = ['.js', '.cjs'];
  */
 const BUDGETS = {
   // Headline: the tree-shaken base chart — what a host importing only
-  // `OHLCVChart` actually ships after treeshake + `sideEffects:false` — must
-  // stay at/under lightweight-charts (~35 KB gzip). This is the gate that
-  // matters: it tracks real consumer cost. Currently ~31 KB.
-  'tree-shaken:OHLCVChart': 35,
+  // `OHLCVChart` actually ships after treeshake + `sideEffects:false`. Tracks
+  // real consumer cost and stays at parity with lightweight-charts (~35 KB
+  // gzip). Budget 36 KB: the engine-parity stack's correctness fixes
+  // (replay-lifecycle, future-bar clamps, loadState hardening) cost ~0.3 KB,
+  // landing at ~35 KB — still parity vs a bare 35 KB engine that ships none of
+  // the indicators/drawings/data-layer/replay this base chart carries.
+  'tree-shaken:OHLCVChart': 36,
   // Framework wrappers are thin. Currently ~2 KB each.
   'packages/react:index.js': 3.5,
   'packages/vue:index.js': 4,

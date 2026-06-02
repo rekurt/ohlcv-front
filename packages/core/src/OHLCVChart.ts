@@ -2,6 +2,7 @@ import type { Candle, CandleView, ChartConfig, ChartType, CrosshairMode, ThemeCo
 import type { PriceScaleMode } from './interaction/priceScale';
 import type { HorzScaleBehavior } from './horzscale/HorzScaleBehavior';
 import { resolveTheme } from './utils';
+import { MAX_CANDLE_WIDTH, MIN_CANDLE_WIDTH_FIT } from './constants';
 import { ErrorReporter } from './ErrorReporter';
 import { CandleBuffer } from './data/CandleBuffer';
 import { CandleMerger } from './data/CandleMerger';
@@ -119,6 +120,8 @@ export class OHLCVChart {
   private _clickHandler: ((e: MouseEvent) => void) | null = null;
   private _dblClickHandler: ((e: MouseEvent) => void) | null = null;
   private _loadingMore = false;
+  /** Bumped on every full data swap; guards stale onLoadMoreHistory completions. */
+  private _dataGeneration = 0;
   /**
    * Mirror of the most recent `IndicatorConfig[]` passed through
    * `setIndicatorConfigs`. Needed because `saveLayoutState` must return
@@ -214,7 +217,12 @@ export class OHLCVChart {
       // Only evict on realtime appends — never after a loadHistory/prepend,
       // which would immediately drop the page the user just paged in.
       if (info.realtime) this._enforceMaxCandles();
-      if (vp.autoFollow || this._buffer.length <= vp.visibleCount) {
+      // Don't chase the live edge while replaying — the replay controller owns
+      // the viewport position, so a realtime append must not yank it forward.
+      if (
+        this._engine.getReplayCap() === null &&
+        (vp.autoFollow || this._buffer.length <= vp.visibleCount)
+      ) {
         vp.scrollToEnd(this._buffer.length);
       }
       // Price alerts (C3): evaluate the close-price step on realtime frames.
@@ -230,8 +238,11 @@ export class OHLCVChart {
         this._engine.requestRender();
         if (config.onVisibleRangeChange) {
           const vp = this._engine.viewport;
-          const startIdx = Math.max(0, Math.floor(vp.startIndex));
-          const endIdx = Math.min(this._buffer.length - 1, Math.ceil(vp.startIndex + vp.visibleCount));
+          // Bound by the max visible index so replay doesn't report timestamps
+          // of not-yet-revealed (future) bars to the host.
+          const maxIdx = this._engine.maxVisibleIndex();
+          const startIdx = Math.max(0, Math.min(Math.floor(vp.startIndex), maxIdx));
+          const endIdx = Math.min(maxIdx, Math.ceil(vp.startIndex + vp.visibleCount));
           const startCandle = this._buffer.candleAt(startIdx);
           const endCandle = this._buffer.candleAt(endIdx);
           if (startCandle && endCandle) {
@@ -244,8 +255,11 @@ export class OHLCVChart {
           const vp = this._engine.viewport;
           if (vp.startIndex <= 0 && !this._loadingMore) {
             this._loadingMore = true;
+            const gen = this._dataGeneration;
             void Promise.resolve(config.onLoadMoreHistory(this._buffer)).finally(() => {
-              this._loadingMore = false;
+              // Ignore a completion from before a symbol/data swap so it can't
+              // clear the flag for the new dataset.
+              if (gen === this._dataGeneration) this._loadingMore = false;
             });
           }
         }
@@ -332,7 +346,12 @@ export class OHLCVChart {
       if (config.onCandleClick) {
         const layout = this._engine.layout;
         if (x < layout.chartLeft || x > layout.chartRight || y < layout.chartTop || y > layout.chartBottom) return;
-        const index = this._engine.viewport.xToIndex(x);
+        // Clamp to the max visible index so a click in the future-bar zone
+        // during replay can't resolve to a not-yet-revealed candle.
+        const index = Math.max(
+          0,
+          Math.min(this._engine.viewport.xToIndex(x), this._engine.maxVisibleIndex()),
+        );
         const candle = this._buffer.candleAt(index);
         if (candle) {
           config.onCandleClick(candle, index);
@@ -356,6 +375,10 @@ export class OHLCVChart {
         return;
       }
       if (x < layout.chartLeft || x > layout.chartRight) return;
+      // A host-supplied onDblClick owns the double-click in the chart area — do
+      // not also reset zoom/scroll out from under it (the price-axis reset above
+      // is a different zone and stays). Mirrors the click suppression pattern.
+      if (this._config.onDblClick) return;
       this.fitVisible();
     };
     this._engine.topCanvas.addEventListener('dblclick', this._dblClickHandler);
@@ -380,6 +403,11 @@ export class OHLCVChart {
    * not jump to the right edge every time React re-renders.
    */
   setData(candles: Candle[], opts?: { preserveView?: boolean }): void {
+    // Full data replacement ends any active replay: the cap referred to the old
+    // buffer length, and a stale cap would hide the new bars and freeze play().
+    this._replay?.stop();
+    this._dataGeneration++;
+    this._loadingMore = false;
     const vp = this._engine.viewport;
     const previousStart = vp.startIndex;
     const previousWidth = vp.candleWidth;
@@ -423,6 +451,9 @@ export class OHLCVChart {
   private _enforceMaxCandles(): void {
     const max = this._config.maxCandles;
     if (max === undefined || max <= 0) return;
+    // Frozen during replay: the cap is an absolute index, so evicting from the
+    // head would silently shift which bar the cap points at.
+    if (this._engine.getReplayCap() !== null) return;
     const over = this._buffer.length - max;
     if (over <= 0) return;
     const evicted = this._buffer.evictHead(over);
@@ -433,6 +464,9 @@ export class OHLCVChart {
     // swapped in a custom one via setDrawingLayer), not just the
     // auto-managed instance, so drawings stay pinned to their candles.
     this._engine.drawingLayer?.shiftIndices(-evicted);
+    // The resting-legend index is absolute; eviction shifted every index, so
+    // drop it (re-derived on the next hover) to avoid a one-frame wrong legend.
+    this._engine.resetLegendIndex();
   }
 
   /** Switch to a different symbol/resolution */
@@ -441,10 +475,13 @@ export class OHLCVChart {
     this._config.resolution = resolution;
     this._engine.setSymbol(symbol);
     this._engine.setResolution(resolution);
-    // New symbol = new dataset: reset the alert baseline synchronously before
-    // connect()'s loadHistory + (possibly synchronous) realtime subscribe, so
-    // the first tick of the new symbol isn't checked against the old symbol's
-    // close (C3).
+    // New symbol = new dataset: end replay (stale cap) and reset the alert
+    // baseline synchronously before connect()'s loadHistory + (possibly
+    // synchronous) realtime subscribe, so the first tick of the new symbol
+    // isn't checked against the old symbol's close (C3).
+    this._replay?.stop();
+    this._dataGeneration++;
+    this._loadingMore = false;
     this._lastAlertClose = null;
     await this._dataFeed.connect({ symbol, resolution });
   }
@@ -1025,6 +1062,11 @@ export class OHLCVChart {
     const prev = this._lastAlertClose;
     this._lastAlertClose = close;
     if (!realtime || prev === null) return;
+    // Frozen during replay: the user is viewing the past, so firing on the live
+    // close would consume a one-shot alert on bars they can't see. The baseline
+    // above keeps tracking the live close, so evaluation resumes cleanly after
+    // stopReplay (no spurious cross from a stale baseline).
+    if (this._engine.getReplayCap() !== null) return;
 
     const fired = this._alerts.check(prev, close);
     if (fired.length === 0) return;
@@ -1196,8 +1238,10 @@ export class OHLCVChart {
     if (
       typeof state.viewport !== 'object' ||
       state.viewport === null ||
-      typeof state.viewport.startIndex !== 'number' ||
-      typeof state.viewport.candleWidth !== 'number' ||
+      // Number.isFinite (not typeof === 'number') so NaN/Infinity from a forged
+      // state are rejected — they would otherwise produce NaN render geometry.
+      !Number.isFinite(state.viewport.startIndex) ||
+      !Number.isFinite(state.viewport.candleWidth) ||
       typeof state.viewport.autoFollow !== 'boolean'
     ) {
       throw new ValidationError('loadState', state, 'viewport shape is invalid');
@@ -1208,6 +1252,8 @@ export class OHLCVChart {
     //    garbage into the typed buffer.
     if (isFullState(state)) {
       const validated = validateCandles(state.data, 'loadState.data');
+      // End any active replay before swapping the buffer (stale cap).
+      this._replay?.stop();
       this._buffer.clear();
       this._merger.loadHistory(validated);
     }
@@ -1233,12 +1279,22 @@ export class OHLCVChart {
     // 5. Viewport — restore width before startIndex so clamps use the
     //    right candleStep. setLayout re-derives visibleCount.
     const vp = this._engine.viewport;
-    vp.candleWidth = state.viewport.candleWidth;
+    // Clamp candleWidth into the supported range (MIN..MAX; fitAll uses the
+    // tiny MIN_CANDLE_WIDTH_FIT, so allow that floor) so a forged 0/negative
+    // width can't make candleStep 0 → Infinity visibleCount.
+    vp.candleWidth = Math.max(
+      MIN_CANDLE_WIDTH_FIT,
+      Math.min(MAX_CANDLE_WIDTH, state.viewport.candleWidth),
+    );
     if (vp.layout) vp.setLayout(vp.layout);
-    vp.startIndex = state.viewport.startIndex;
+    vp.startIndex = Math.max(0, state.viewport.startIndex);
     vp.autoFollow = state.viewport.autoFollow;
-    // Optional + additive: pre-F1 states omit priceScaleMode → 'linear'.
-    vp.setScaleMode(state.viewport.priceScaleMode ?? 'linear');
+    // Whitelist the scale mode so a forged state can't inject an unknown enum.
+    // (Optional + additive: pre-F1 states omit it → 'linear'.)
+    const mode = state.viewport.priceScaleMode;
+    vp.setScaleMode(
+      mode === 'log' || mode === 'percentage' || mode === 'indexedTo100' ? mode : 'linear',
+    );
 
     // 6. Alerts (C3) — optional + additive. Re-add into the manager (which
     //    re-derives id collisions) and redraw lines for the active ones.

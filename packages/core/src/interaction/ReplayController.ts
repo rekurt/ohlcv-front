@@ -192,6 +192,9 @@ export class ReplayController {
    * safe to call when not started.
    */
   stop(): void {
+    // Guard against use-after-destroy: a host that calls stopReplay() after
+    // destroy() must not touch the (torn-down) engine.
+    if (this._destroyed) return;
     this._stopTimer();
     this._playing = false;
     this._active = false;

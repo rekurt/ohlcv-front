@@ -77,6 +77,9 @@ export class WebGLCandleRenderer {
   private _resolutionLoc: WebGLUniformLocation | null = null;
   private _width = 0;
   private _height = 0;
+  private readonly _canvas: HTMLCanvasElement;
+  private readonly _onContextLost: (e: Event) => void;
+  private readonly _onContextRestored: () => void;
 
   /**
    * @param canvas The canvas to render candles into. Should be sized/stacked by
@@ -84,14 +87,39 @@ export class WebGLCandleRenderer {
    *   returns null the renderer disables itself ({@link supported} stays false).
    */
   constructor(canvas: HTMLCanvasElement) {
+    this._canvas = canvas;
+    // Handle GPU context loss (tab throttle, GPU switch, driver reset): after a
+    // loss every GL object is invalid. Disable so the host falls back to
+    // Canvas2D; rebuild from scratch if/when the context is restored. Without
+    // this a long-lived chart would silently render nothing forever.
+    this._onContextLost = (e: Event) => {
+      e.preventDefault(); // required, or the context never fires 'restored'
+      this.supported = false;
+    };
+    this._onContextRestored = () => {
+      if (this._gl) this._initGL(this._gl);
+    };
+    canvas.addEventListener('webglcontextlost', this._onContextLost);
+    canvas.addEventListener('webglcontextrestored', this._onContextRestored);
+
     const gl = canvas.getContext('webgl');
     if (!gl) {
       // No WebGL — degrade gracefully. The host falls back to Canvas2D.
       return;
     }
+    this._initGL(gl);
+  }
+
+  /**
+   * (Re)build the GL program/shaders/buffers on the given context. Called from
+   * the constructor and from `webglcontextrestored` (after a loss all prior GL
+   * objects are gone). Leaves {@link supported} false on any compile/link
+   * failure so the host falls back.
+   */
+  private _initGL(gl: WebGLRenderingContext): void {
     this._gl = gl;
-    this._width = canvas.width;
-    this._height = canvas.height;
+    this._width = this._canvas.width || this._width;
+    this._height = this._canvas.height || this._height;
 
     const vs = this._compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
     const fs = this._compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER_SOURCE);
@@ -159,6 +187,12 @@ export class WebGLCandleRenderer {
   render(view: CandleView, viewport: Viewport, layout: ChartLayout, theme: ThemeColors): void {
     const gl = this._gl;
     if (!gl || !this._program) return;
+    // Context lost between frames — disable so the host falls back. The
+    // 'webglcontextrestored' handler re-inits if/when the GPU returns.
+    if (gl.isContextLost()) {
+      this.supported = false;
+      return;
+    }
 
     const { positions, colors, vertexCount } = buildCandleVertices(view, viewport, layout, theme);
 
@@ -190,6 +224,8 @@ export class WebGLCandleRenderer {
    * when unsupported. After this the renderer must not be used again.
    */
   dispose(): void {
+    this._canvas.removeEventListener('webglcontextlost', this._onContextLost);
+    this._canvas.removeEventListener('webglcontextrestored', this._onContextRestored);
     const gl = this._gl;
     if (!gl) return;
     if (this._positionBuffer) gl.deleteBuffer(this._positionBuffer);

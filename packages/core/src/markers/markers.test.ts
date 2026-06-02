@@ -109,4 +109,28 @@ describe('MarkerRenderer', () => {
     );
     expect(calls).toHaveLength(0);
   });
+
+  // Г3c: during replay the buffer still physically holds bars past the cap, so
+  // a marker anchored to a not-yet-revealed bar must be hidden. The engine
+  // passes maxVisibleIndex() as `maxIndex`; a marker whose index exceeds it
+  // draws no glyph.
+  it('hides a marker anchored to a bar past the replay cap (maxIndex)', () => {
+    const buffer = bufferOf([1000, 1060, 1120, 1180]);
+    // Marker on bar index 3 (time 1180). Reveal only bars 0..1 → maxIndex = 1.
+    const marker: Marker = { id: 'm1', time: 1180, shape: 'circle' };
+
+    const hidden = recordingCtx();
+    new MarkerRenderer().render(
+      hidden.ctx, LAYOUT, buildViewport(), buffer, [marker], DARK_THEME, /* maxIndex */ 1,
+    );
+    expect(hidden.calls).not.toContain('arc'); // past the cap → no glyph
+
+    // Sanity: with the cap lifted (default Infinity) the same marker draws,
+    // proving the suppression is the maxIndex gate and not a bad fixture.
+    const shown = recordingCtx();
+    new MarkerRenderer().render(
+      shown.ctx, LAYOUT, buildViewport(), buffer, [marker], DARK_THEME,
+    );
+    expect(shown.calls).toContain('arc');
+  });
 });

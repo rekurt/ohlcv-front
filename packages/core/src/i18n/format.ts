@@ -193,13 +193,23 @@ export function createDateFormatter(
       ? resolution
       : resolutionToDateResolution(resolution);
 
+  // Validate the timeZone up front. A bad one (e.g. 'Mars/Phobos') makes every
+  // Intl.DateTimeFormat below throw, and the locale-fallback reuses the same
+  // opts (same bad timeZone) → silent loss of ALL date labels. Drop to UTC.
+  let tz = timeZone;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+  } catch {
+    tz = 'UTC';
+  }
+
   let opts: Intl.DateTimeFormatOptions;
   if (res === 'month') {
-    opts = { day: 'numeric', month: 'short', year: 'numeric', timeZone };
+    opts = { day: 'numeric', month: 'short', year: 'numeric', timeZone: tz };
   } else if (res === 'day') {
-    opts = { day: 'numeric', month: 'short', timeZone };
+    opts = { day: 'numeric', month: 'short', timeZone: tz };
   } else {
-    opts = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone };
+    opts = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz };
   }
 
   const df = tryDateFormat(locale, opts);

@@ -76,10 +76,16 @@ export function conflate(view: CandleView, viewport: Viewport, layout: ChartLayo
       continue;
     }
 
-    // Merge into the current bucket. `>`/`<` with NaN is false, so NaN
-    // inputs are simply ignored on merge (the first candle seeds the bucket).
-    if (h > high[k]!) high[k] = h;
-    if (l < low[k]!) low[k] = l;
+    // Merge into the current bucket, NaN-safely. Update when the incoming value
+    // is finite AND either beats the current extreme OR the current extreme is
+    // NaN (a NaN seed from the bucket's first candle). `!(h <= high)` is true
+    // both for `h > high` and for `high === NaN`, so a finite candle anywhere in
+    // the column always wins — a NaN-first bar no longer poisons the whole
+    // bucket and lose the column's real extrema (matching the NaN-skipping
+    // CandleRenderer / autoscale paths). If every candle is NaN, the extreme
+    // stays NaN and the renderer skips it as usual.
+    if (Number.isFinite(h) && !(h <= high[k]!)) high[k] = h;
+    if (Number.isFinite(l) && !(l >= low[k]!)) low[k] = l;
     close[k] = c; // last close wins
     if (Number.isFinite(v)) volume[k] = volume[k]! + v;
   }
