@@ -41,6 +41,9 @@ function parseColor01(color: string): [number, number, number] {
     const r = parseInt(hex.slice(0, 2), 16);
     const g = parseInt(hex.slice(2, 4), 16);
     const b = parseInt(hex.slice(4, 6), 16);
+    // Guard a non-hex typo (`#gggggg` → parseInt NaN) so a NaN channel can't
+    // reach the GPU as an undefined-behavior color.
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return [0, 0, 0];
     return [r / 255, g / 255, b / 255];
   }
   const rgbaMatch = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);

@@ -284,6 +284,11 @@ export interface ChartConfig {
    * the viewport + drawings shift to stay anchored to the same candles.
    * Bounds memory for long-running live charts. Omit for unlimited.
    * History prepended via `prependHistory` is never auto-evicted.
+   *
+   * Eviction is suspended while a replay session is active (the replay cap is
+   * an absolute index that head-eviction would desync), so the buffer may
+   * temporarily exceed `maxCandles` during a long replay and is trimmed back
+   * on the first live append after `stopReplay()`.
    */
   maxCandles?: number;
   /**

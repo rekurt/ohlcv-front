@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { OHLCVChart } from './OHLCVChart';
+import { ChartEngine } from './rendering/ChartEngine';
 import { installCanvasStub } from './test-utils/canvasStub';
 import { TrendLine } from './drawings/TrendLine';
 import { DrawingLayer } from './drawings/DrawingLayer';
@@ -38,6 +39,24 @@ function createContainer(): HTMLDivElement {
   return el;
 }
 
+/** Resolve after one animation frame (merger coalesces onUpdate via RAF). */
+const nextFrame = (): Promise<void> =>
+  new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+/** A candle whose close is exactly `c` at sequential time `i` (distinct OHLC). */
+function candleAt(i: number, c: number): Candle {
+  return { o: c, h: c + 1, l: c - 1, c, v: 10, t: 1_700_000_000 + i * 60 };
+}
+
+/**
+ * Reach the engine the facade owns, for the few cross-feature assertions that
+ * must observe real render state (replay cap, viewport position) rather than a
+ * private mirror — never to FORCE a field, only to READ it.
+ */
+function engineOf(chart: OHLCVChart): ChartEngine {
+  return (chart as unknown as { _engine: ChartEngine })._engine;
+}
+
 describe('OHLCVChart facade', () => {
   beforeAll(() => {
     installCanvasStub();
@@ -68,27 +87,53 @@ describe('OHLCVChart facade', () => {
     });
   });
 
-  describe('alerts (C3)', () => {
-    const lastAlertClose = (c: OHLCVChart) =>
-      (c as unknown as { _lastAlertClose: number | null })._lastAlertClose;
-    const setLastAlertClose = (c: OHLCVChart, v: number | null) => {
-      (c as unknown as { _lastAlertClose: number | null })._lastAlertClose = v;
-    };
+  // E2E for the alert-baseline reset on a data swap (Г2a / C3). Replaces a
+  // prior tautology that hand-set `_lastAlertClose` and read it back. Here the
+  // baseline is seeded the only way production seeds it (a real RAF after data
+  // arrives) and observed only through `onAlert` — so reverting the
+  // `_lastAlertClose = null` line in setData/switchSymbol fires a stale cross
+  // and breaks the test.
+  describe('alerts (C3) — baseline reset on data swap (e2e)', () => {
+    it('setData drops the baseline so the OLD dataset close cannot fire on the next tick', async () => {
+      const onAlert = vi.fn();
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', onAlert,
+      });
+      // Old dataset closes at 100; one RAF seeds the live baseline = 100.
+      chart.setData([candleAt(0, 100)]);
+      await nextFrame();
 
-    it('setData clears the alert baseline so a stale close cannot fire', () => {
-      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
-      chart.setData([{ ...makeCandle(0), c: 100 }]);
-      setLastAlertClose(chart, 100); // as the non-realtime RAF would seed it
-      chart.setData([{ ...makeCandle(0), c: 200 }]); // full replacement
-      expect(lastAlertClose(chart)).toBeNull(); // cleared synchronously
+      chart.addAlert({ price: 150, condition: 'above' });
+
+      // Full swap to a dataset already above the level (close 200). Without the
+      // baseline reset, the stale prev=100 + this dataset's first realtime
+      // close (210) would look like an upward 100→210 break through 150.
+      chart.setData([candleAt(0, 200)]);
+      chart.updateLastCandle(candleAt(0, 210)); // realtime tick on the new bar
+      await nextFrame();
+
+      expect(onAlert).not.toHaveBeenCalled();
       chart.destroy();
     });
 
-    it('switchSymbol clears the alert baseline', async () => {
-      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
-      setLastAlertClose(chart, 100);
+    it('switchSymbol drops the baseline so the previous symbol close cannot fire', async () => {
+      const onAlert = vi.fn();
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', onAlert,
+      });
+      chart.setData([candleAt(0, 100)]);
+      await nextFrame(); // live baseline = 100
+
+      chart.addAlert({ price: 150, condition: 'above' });
+
+      // New symbol clears the buffer (connect → clear) and must reset the
+      // baseline synchronously. No setData here, so only the switchSymbol reset
+      // can prevent a stale 100→210 cross.
       await chart.switchSymbol('ETH/USDT', '1H');
-      expect(lastAlertClose(chart)).toBeNull();
+      chart.updateLastCandle(candleAt(0, 210)); // first ETH realtime bar
+      await nextFrame();
+
+      expect(onAlert).not.toHaveBeenCalled();
       chart.destroy();
     });
   });
@@ -498,15 +543,6 @@ describe('OHLCVChart facade', () => {
   });
 
   describe('alerts (C3)', () => {
-    /** Resolve after one animation frame (merger coalesces onUpdate via RAF). */
-    const nextFrame = (): Promise<void> =>
-      new Promise<void>((r) => requestAnimationFrame(() => r()));
-
-    /** A candle whose close is exactly `c` at sequential time `i`. */
-    function candleAt(i: number, c: number): Candle {
-      return { o: c, h: c + 1, l: c - 1, c, v: 10, t: 1_700_000_000 + i * 60 };
-    }
-
     it('addAlert returns the alert, defaults condition, and attaches a dashed line', () => {
       const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
       const alert = chart.addAlert({ price: 150 });
@@ -641,6 +677,387 @@ describe('OHLCVChart facade', () => {
       delete legacy.alerts;
       expect(() => chart.loadState(legacy)).not.toThrow();
       expect(chart.getAlerts()).toHaveLength(0);
+      chart.destroy();
+    });
+
+    // Г3d: while replaying, the user is looking at the past — a realtime tick
+    // moving the LIVE close through an alert level must not consume the one-shot
+    // alert. Once replay stops, evaluation resumes and the (still-armed) alert
+    // fires on the next genuine cross.
+    it('alerts are frozen during replay and resume after stopReplay', async () => {
+      const onAlert = vi.fn();
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', onAlert,
+      });
+      chart.setData([candleAt(0, 100)]);
+      await nextFrame(); // baseline = 100 (below the level)
+      chart.addAlert({ price: 150, condition: 'above' });
+
+      chart.startReplay(0); // cap engaged — viewing the past
+      expect(chart.isReplaying()).toBe(true);
+
+      // The live close jumps 100 → 210, crossing 150. Frozen: must NOT fire,
+      // but the baseline keeps tracking the live close so post-replay is clean.
+      chart.updateLastCandle(candleAt(0, 210));
+      await nextFrame();
+      expect(onAlert).not.toHaveBeenCalled();
+      expect(chart.getAlerts()[0]!.active).toBe(true); // still armed (not consumed)
+
+      chart.stopReplay();
+      // Drop below the level first (no upward break), then cross it upward.
+      chart.updateLastCandle(candleAt(1, 100));
+      await nextFrame();
+      expect(onAlert).not.toHaveBeenCalled();
+      chart.updateLastCandle(candleAt(2, 210)); // 100 → 210 upward break of 150
+      await nextFrame();
+      expect(onAlert).toHaveBeenCalledTimes(1);
+      chart.destroy();
+    });
+  });
+
+  // Replay lifecycle cross-feature regressions (Г2). A live data feed and the
+  // replay controller share one viewport + buffer; these guard the seams where
+  // a realtime tick must NOT disturb replay state and vice-versa.
+  describe('replay lifecycle (Г2)', () => {
+    it('setData ends an active replay and clears the engine cap (Г2a)', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 50 }, (_, i) => makeCandle(i)));
+      chart.startReplay(5);
+      expect(chart.isReplaying()).toBe(true);
+      expect(engineOf(chart).getReplayCap()).not.toBeNull();
+
+      // A full data swap referred to the OLD buffer length — the stale cap would
+      // hide the new bars and freeze play(). setData must stop replay.
+      chart.setData(Array.from({ length: 60 }, (_, i) => makeCandle(i)));
+      expect(chart.isReplaying()).toBe(false);
+      expect(engineOf(chart).getReplayCap()).toBeNull();
+      chart.destroy();
+    });
+
+    it('switchSymbol ends an active replay and clears the engine cap (Г2a)', async () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 50 }, (_, i) => makeCandle(i)));
+      chart.startReplay(5);
+      expect(chart.isReplaying()).toBe(true);
+
+      await chart.switchSymbol('ETH/USDT', '1H');
+      expect(chart.isReplaying()).toBe(false);
+      expect(engineOf(chart).getReplayCap()).toBeNull();
+      chart.destroy();
+    });
+
+    it('a realtime tick does not yank the viewport to the live edge during replay (Г2b)', async () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 500 }, (_, i) => makeCandle(i)));
+      const vp = chart.getViewport();
+      // Zoom in so the buffer is much larger than the visible window — only then
+      // is "scroll to live edge" a visible jump the merger could wrongly do.
+      vp.candleWidth = 20;
+      vp.setLayout(vp.layout);
+      expect(vp.visibleCount).toBeLessThan(chart.getBuffer().length);
+
+      chart.startReplay(30); // controller parks the viewport on bar 30
+      const parkedStart = vp.startIndex;
+
+      // A realtime append/update must repaint but leave the replay viewport put;
+      // the merger's autoFollow scroll is gated on getReplayCap() === null.
+      chart.updateLastCandle(makeCandle(500));
+      await nextFrame();
+      expect(vp.startIndex).toBe(parkedStart);
+      chart.destroy();
+    });
+
+    it('eviction is frozen during replay so the cap keeps pointing at the same bar (Г2c)', async () => {
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      chart.startReplay(40);
+      const capBefore = engineOf(chart).getReplayCap();
+      const lenBefore = chart.getBuffer().length;
+
+      // Push several realtime bars PAST maxCandles. Eviction from the head would
+      // shift every logical index and silently move which bar the cap reveals,
+      // so it must be skipped while a cap is active.
+      for (let i = 0; i < 10; i++) {
+        chart.updateLastCandle(makeCandle(100 + i));
+        await nextFrame();
+      }
+      expect(chart.getBuffer().length).toBe(lenBefore + 10); // not truncated to 100
+      expect(engineOf(chart).getReplayCap()).toBe(capBefore); // cap bar unchanged
+      chart.destroy();
+    });
+
+    it('trims the over-grown buffer to maxCandles on stopReplay without a further tick (Н7)', async () => {
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      chart.startReplay(40);
+      // Realtime bars during replay grow the buffer past maxCandles (eviction
+      // frozen while the cap is active).
+      for (let i = 0; i < 10; i++) {
+        chart.updateLastCandle(makeCandle(100 + i));
+        await nextFrame();
+      }
+      expect(chart.getBuffer().length).toBe(110); // grew past the cap
+
+      // Leaving replay must trim eagerly — NOT wait for another realtime tick
+      // that may never come (otherwise the oversized buffer renders/saves forever).
+      chart.stopReplay();
+      expect(engineOf(chart).getReplayCap()).toBeNull();
+      expect(chart.getBuffer().length).toBe(100); // trimmed back to maxCandles
+      chart.destroy();
+    });
+  });
+
+  // Future-bar leak regressions (Г3). With a replay cap active the buffer
+  // physically holds bars past the cap; every index a pointer/range resolves
+  // must be clamped to maxVisibleIndex so a not-yet-revealed bar never leaks.
+  describe('future-bar leak under replay (Г3)', () => {
+    /** Dispatch a real click at chart-area pixel (x, y) on the interactive canvas. */
+    function clickAt(chart: OHLCVChart, x: number, y: number): void {
+      const canvas = engineOf(chart).topCanvas;
+      // jsdom returns an all-zero canvas rect, so clientX/clientY == chart x/y.
+      canvas.dispatchEvent(new MouseEvent('click', { clientX: x, clientY: y, bubbles: true }));
+    }
+
+    it('onCandleClick is clamped to the cap — a click in the future zone resolves to a revealed bar (Г3a)', () => {
+      const clicked: number[] = [];
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H',
+        onCandleClick: (_c, index) => clicked.push(index),
+      });
+      // Buffer 200, reveal only 20 (cap). With visibleCount (~88) > cap the
+      // revealed bar 19 sits near the left and the right of the chart area is
+      // the empty future zone backed by real bars 20..199.
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20, maxVisibleIndex = 19
+      const maxIdx = engineOf(chart).maxVisibleIndex();
+      expect(maxIdx).toBe(19);
+
+      // Click near the right edge of the chart area (well past the revealed bar
+      // 19). xToIndex resolves to a future bar (~86); the clamp must pull it to
+      // <= 19 instead of reporting candle 86 to the host.
+      clickAt(chart, 900, 400);
+      expect(clicked.length).toBe(1);
+      expect(clicked[0]!).toBeLessThanOrEqual(maxIdx);
+      chart.destroy();
+    });
+
+    it('onVisibleRangeChange never reports a timestamp past the cap (Г3b)', () => {
+      const ranges: Array<[number, number]> = [];
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H',
+        onVisibleRangeChange: (from, to) => ranges.push([from, to]),
+      });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20, maxVisibleIndex = 19
+
+      // Drive a real viewport change so the range callback fires (it only runs
+      // from PanZoomController, not a direct vp.pan). The visible window
+      // nominally reaches ~bar 88, far past the cap; the end index must clamp.
+      const canvas = engineOf(chart).topCanvas;
+      canvas.dispatchEvent(
+        new WheelEvent('wheel', { deltaX: 30, deltaY: 0, clientX: 400, clientY: 250, bubbles: true }),
+      );
+
+      const cappedTime = makeCandle(19).t; // newest revealed bar's time
+      expect(ranges.length).toBeGreaterThan(0);
+      for (const [, to] of ranges) {
+        // The reported end must not be a bar beyond the revealed prefix.
+        expect(to).toBeLessThanOrEqual(cappedTime);
+      }
+      chart.destroy();
+    });
+  });
+
+  // Н1: host-driven navigation (goToLive / fitVisible / fitAll) must treat the
+  // REVEALED length as the end during replay, so a "jump to live" / "fit" never
+  // scrolls the viewport into the not-yet-revealed future zone — the same
+  // future-bar guard as click/range/markers/drawings, applied to navigation.
+  describe('navigation clamp under replay (Н1)', () => {
+    it('goToLive parks at the revealed edge, not the live (future) edge', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20 (revealed), maxVisibleIndex = 19
+      const vp = chart.getViewport();
+      // Zoom in AFTER engaging replay so the revealed prefix (20 bars) is wider
+      // than the viewport — only then does scrolling to the full buffer end
+      // visibly leak future bars (startIndex jumps deep into the 20..199 zone).
+      vp.candleWidth = 60;
+      vp.setLayout(vp.layout);
+      expect(vp.visibleCount).toBeLessThan(20); // discriminating regime
+
+      chart.goToLive();
+      const maxIdx = engineOf(chart).maxVisibleIndex();
+      // The viewport's right data edge must not pass the newest revealed bar.
+      const rightEdge = vp.startIndex + vp.visibleCount - vp.rightPaddingCandles;
+      expect(rightEdge).toBeLessThanOrEqual(maxIdx + 1);
+      expect(vp.startIndex).toBeLessThanOrEqual(maxIdx);
+      chart.destroy();
+    });
+
+    it('fitVisible resets zoom without scrolling into the future zone', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20
+      const vp = chart.getViewport();
+
+      chart.fitVisible();
+      // The default candleWidth makes visibleCount > revealed, so the correct
+      // park is startIndex 0 (revealed prefix + empty future). Broken code
+      // scrolls to ~buffer.length - visibleCount, deep into the future zone.
+      expect(vp.startIndex).toBeLessThanOrEqual(engineOf(chart).maxVisibleIndex());
+      chart.destroy();
+    });
+
+    it('fitAll frames only the revealed bars, not the whole buffer', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20; fitAll should frame ~20 bars, not 200
+      const vp = chart.getViewport();
+
+      chart.fitAll();
+      // Fitting 20 bars leaves a far smaller visibleCount than fitting all 200 —
+      // the discriminator between revealed-len and buffer-len navigation.
+      expect(vp.visibleCount).toBeLessThanOrEqual(40); // ~20, never ~200
+      chart.destroy();
+    });
+  });
+
+  // Г5: a host-supplied onDblClick is purely ADDITIVE — it fires on the same
+  // gesture as the built-in chart-area fit-visible, and BOTH run, exactly as
+  // ChartConfig.onDblClick / setOnDblClick document. (An earlier pass wrongly
+  // suppressed the built-in fit when onDblClick was set; restored to the
+  // documented additive contract.)
+  describe('double-click reset + host onDblClick are additive (Г5)', () => {
+    function dblClickAt(chart: OHLCVChart, x: number, y: number): void {
+      const canvas = engineOf(chart).topCanvas;
+      canvas.dispatchEvent(new MouseEvent('dblclick', { clientX: x, clientY: y, bubbles: true }));
+    }
+
+    it('runs the built-in fitVisible AND fires the host onDblClick (additive)', () => {
+      let hostCalls = 0;
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', onDblClick: () => { hostCalls++; },
+      });
+      chart.setData(Array.from({ length: 500 }, (_, i) => makeCandle(i)));
+      const vp = chart.getViewport();
+      // Deep-zoom + pan away from the live edge so the built-in fitVisible is a
+      // visible change (it resets candleWidth to 8 and scrolls to the end).
+      vp.candleWidth = 25;
+      vp.setLayout(vp.layout);
+      vp.pan(-80);
+
+      dblClickAt(chart, 400, 250); // inside the chart area
+      expect(vp.candleWidth).toBe(8); // DEFAULT_CANDLE_WIDTH — built-in fitVisible ran
+      expect(hostCalls).toBe(1); // host callback ALSO fired on the same gesture
+      chart.destroy();
+    });
+
+    it('still runs the built-in fitVisible when no onDblClick is configured', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 500 }, (_, i) => makeCandle(i)));
+      const vp = chart.getViewport();
+      vp.candleWidth = 25;
+      vp.setLayout(vp.layout);
+      vp.pan(-80);
+
+      dblClickAt(chart, 400, 250);
+      expect(vp.candleWidth).toBe(8); // DEFAULT_CANDLE_WIDTH — fitVisible ran
+      chart.destroy();
+    });
+  });
+
+  // Н9: a full-state load is a data swap like setData/switchSymbol, so it must
+  // reset the load-more guard — otherwise a still-pending onLoadMoreHistory from
+  // the OLD dataset keeps the NEW one from ever paging its own history.
+  describe('loadState data-swap guard (Н9)', () => {
+    // Park the viewport at the left edge and fire PanZoomController.onViewportChange
+    // (where the load-more trigger lives) so a configured onLoadMoreHistory runs.
+    function panLeftEdge(chart: OHLCVChart): void {
+      const vp = chart.getViewport();
+      vp.startIndex = 0;
+      vp.setLayout(vp.layout);
+      engineOf(chart).topCanvas.dispatchEvent(
+        new WheelEvent('wheel', { deltaX: -40, deltaY: 0, clientX: 200, clientY: 250, bubbles: true }),
+      );
+    }
+
+    it('resets the load-more guard so a new dataset pages even with an old request pending', () => {
+      let calls = 0;
+      let keepPending: (() => void) | null = null;
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H',
+        onLoadMoreHistory: () => {
+          calls++;
+          // Never resolves this test — mimics a slow OLD-dataset request still in
+          // flight when the full-state swap arrives.
+          return new Promise<void>((res) => { keepPending = res; });
+        },
+      });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+
+      panLeftEdge(chart);
+      expect(calls).toBe(1); // first load-more fired; _loadingMore is now true
+      expect(keepPending).not.toBeNull(); // the old request is still pending
+
+      // Full-state swap (a new dataset). Without resetting the guard the new data
+      // stays blocked from paging until the OLD pending request ends.
+      const fresh = chart.saveFullState();
+      fresh.data = Array.from({ length: 150 }, (_, i) => makeCandle(1000 + i));
+      chart.loadState(fresh);
+
+      panLeftEdge(chart);
+      expect(calls).toBe(2); // new dataset can page again — the guard was reset
+      chart.destroy();
+    });
+  });
+
+  // Г6: loadState is a trust boundary (share URL / localStorage / server JSON).
+  // A forged viewport must be sanitized, not produce NaN/Infinity render
+  // geometry or an injected scale mode.
+  describe('loadState hardening (Г6)', () => {
+    function baseState(chart: OHLCVChart) {
+      return chart.saveLayoutState();
+    }
+
+    it('clamps a forged candleWidth:0 so visibleCount stays finite (Г6a)', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const forged = baseState(chart);
+      forged.viewport.candleWidth = 0; // candleStep 0 → Infinity visibleCount
+
+      chart.loadState(forged);
+      const vp = chart.getViewport();
+      expect(vp.candleWidth).toBeGreaterThan(0);
+      expect(Number.isFinite(vp.visibleCount)).toBe(true);
+      chart.destroy();
+    });
+
+    it('rejects a forged viewport.startIndex:NaN with a ValidationError (Г6a)', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const forged = baseState(chart);
+      forged.viewport.startIndex = Number.NaN;
+
+      // Number.isFinite guard in loadState must reject this rather than write a
+      // NaN startIndex that poisons every downstream pixel mapping.
+      expect(() => chart.loadState(forged)).toThrow();
+      chart.destroy();
+    });
+
+    it('whitelists priceScaleMode so a forged enum falls back to linear (Г6b)', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const forged = baseState(chart) as unknown as {
+        viewport: { priceScaleMode: string };
+      };
+      forged.viewport.priceScaleMode = 'evil';
+
+      chart.loadState(forged as never);
+      expect(chart.getPriceScaleMode()).toBe('linear');
       chart.destroy();
     });
   });

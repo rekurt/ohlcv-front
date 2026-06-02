@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Drawing, type AnchorPoint } from './Drawing';
 import { TrendLine } from './TrendLine';
 import { HorizontalLine } from './HorizontalLine';
@@ -263,5 +263,165 @@ describe('DrawingLayer', () => {
       { id: 'a', kind: 'never-seen', points: [] },
     ]);
     expect(restored.drawings).toHaveLength(0);
+  });
+});
+
+// Н2: during replay the buffer physically holds bars past the cap, so a
+// drawing whose every anchor sits in the not-yet-revealed future zone must be
+// hidden from both rendering and hit-testing — symmetric with MarkerRenderer
+// (Г3c). The engine threads maxVisibleIndex() into render()/hitTest().
+describe('DrawingLayer replay clamp (Н2)', () => {
+  /** Minimal drawing that counts its renders and reports a hit unconditionally. */
+  class RecordingDrawing extends Drawing {
+    rendered = 0;
+    constructor(pts: AnchorPoint[], id?: string) {
+      super(id);
+      pts.forEach((p) => this.points.push(p));
+    }
+    get kind(): string {
+      return 'rec';
+    }
+    get requiredPoints(): number {
+      return 2;
+    }
+    render(): void {
+      this.rendered++;
+    }
+    // Geometry-agnostic: always "hit" if the layer reaches it, so the only
+    // thing that can suppress a hit is the maxIndex gate under test.
+    override hitTest(): boolean {
+      return true;
+    }
+  }
+
+  it('hides a drawing whose every anchor is past the cap (render + hitTest)', () => {
+    const layer = new DrawingLayer();
+    // `past` added first, `future` second — hitTest walks newest→oldest, so
+    // without the gate `future` would be returned first. The gate must skip it.
+    const past = new RecordingDrawing([{ index: 5, price: 150 }, { index: 8, price: 160 }], 'past');
+    const future = new RecordingDrawing(
+      [{ index: 50, price: 150 }, { index: 60, price: 160 }],
+      'future',
+    );
+    layer.add(past);
+    layer.add(future);
+    const vp = buildViewport();
+
+    // maxIndex = 19: future (anchors 50,60) hidden; past (5,8) shown.
+    layer.render(makeCtx(), LAYOUT, vp, DARK_THEME, 19);
+    expect(future.rendered).toBe(0);
+    expect(past.rendered).toBe(1);
+
+    // A click resolves to the revealed `past`, never the future-zone drawing.
+    expect(layer.hitTest(500, 250, LAYOUT, vp, undefined, 19)?.id).toBe('past');
+
+    // Anti-tautology: lift the cap (default Infinity) and the future drawing
+    // both renders and is hit first — proving the suppression is the gate, not
+    // fixture order.
+    future.rendered = 0;
+    past.rendered = 0;
+    layer.render(makeCtx(), LAYOUT, vp, DARK_THEME);
+    expect(future.rendered).toBe(1);
+    expect(past.rendered).toBe(1);
+    expect(layer.hitTest(500, 250, LAYOUT, vp)?.id).toBe('future');
+  });
+
+  it('shows a drawing with at least one revealed anchor even if another is in the future', () => {
+    const layer = new DrawingLayer();
+    // Anchor 5 is revealed (<= cap 19), anchor 80 is not — the drawing straddles
+    // the cap and must still render (you can see the revealed end of the line).
+    const straddle = new RecordingDrawing(
+      [{ index: 5, price: 150 }, { index: 80, price: 160 }],
+      'straddle',
+    );
+    layer.add(straddle);
+    layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME, 19);
+    expect(straddle.rendered).toBe(1);
+  });
+
+  it('selectAt cannot select a drawing whose anchors are all past the cap (Н6)', () => {
+    const layer = new DrawingLayer();
+    const future = new RecordingDrawing(
+      [{ index: 50, price: 150 }, { index: 60, price: 160 }],
+      'future',
+    );
+    layer.add(future);
+    const vp = buildViewport();
+
+    // Under the cap (19) the future-zone drawing is unselectable — otherwise its
+    // selection handles would redraw the hidden future anchors back onto the chart.
+    expect(layer.selectAt(500, 250, LAYOUT, vp, undefined, 19)).toBeNull();
+    expect(layer.selected).toBeNull();
+
+    // Anti-tautology: with no cap (default Infinity) the same click selects it,
+    // proving the suppression is the maxIndex gate and not a bad fixture.
+    expect(layer.selectAt(500, 250, LAYOUT, vp)?.id).toBe('future');
+    expect(layer.selected?.id).toBe('future');
+  });
+
+  it('keeps a price-only HorizontalLine visible + selectable under the cap with a future anchor (Н8)', () => {
+    // The real HorizontalLine opts into the cap exemption (its render ignores the
+    // index); an index-dependent drawing does not.
+    expect(new HorizontalLine().isReplayCapExempt).toBe(true);
+    expect(new TrendLine().isReplayCapExempt).toBe(false);
+
+    const layer = new DrawingLayer();
+    // Single anchor index 500 sits far past the cap (19); the full-width level
+    // must still draw because the index is cosmetic for it.
+    const hline = new HorizontalLine('hl');
+    hline.addPoint({ index: 500, price: 150 });
+    layer.add(hline);
+    const vp = buildViewport();
+
+    // Recording ctx: the level must still stroke under the cap.
+    const calls: string[] = [];
+    const recCtx = new Proxy({} as Record<string, unknown>, {
+      get: (t, p: string) =>
+        p === 'measureText'
+          ? (s: string) => ({ width: s.length * 6 })
+          : p in t
+            ? t[p]
+            : () => {
+                calls.push(p);
+              },
+      set: (t, p: string, v: unknown) => {
+        t[p] = v;
+        return true;
+      },
+    }) as unknown as CanvasRenderingContext2D;
+    layer.render(recCtx, LAYOUT, vp, DARK_THEME, 19);
+    expect(calls).toContain('stroke'); // drawn despite the future anchor
+
+    // And it stays selectable under the cap (click anywhere on the level's price).
+    const y = vp.priceToY(150);
+    expect(layer.selectAt(500, y, LAYOUT, vp, undefined, 19)?.id).toBe('hl');
+  });
+
+  it('does not draw selection handles for a capped drawing selected via select(id) (Н10)', () => {
+    const layer = new DrawingLayer();
+    const future = new RecordingDrawing(
+      [{ index: 50, price: 150 }, { index: 60, price: 160 }],
+      'future',
+    );
+    layer.add(future);
+    // Programmatic select bypasses selectAt's cap gate (so does selecting before
+    // replay starts) — the render-time handle pass must still respect the cap.
+    layer.select('future');
+    expect(layer.selected?.id).toBe('future');
+
+    const spy = vi.spyOn(
+      layer as unknown as { _renderHandles: () => void },
+      '_renderHandles',
+    );
+    // Under the cap the body is skipped (Н2) AND the handles must be gated, or
+    // the future anchors reappear as handles.
+    layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME, 19);
+    expect(spy).not.toHaveBeenCalled();
+
+    // Anti-tautology: with no cap the handles draw for the selected drawing.
+    spy.mockClear();
+    layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
   });
 });

@@ -41,6 +41,12 @@ const MAX_BARS_PER_SECOND = 240;
  * live edge (it scrolls to `index + 1`, treating the revealed prefix as the
  * whole buffer), so playback visually tracks the revealing candle the same way
  * the live feed tracks new appends.
+ *
+ * Interaction with `maxCandles` eviction: while a cap is active the host's
+ * `_enforceMaxCandles` is a no-op (the cap is an absolute index; head-eviction
+ * would silently shift which bar it points at). A long replay session under a
+ * live feed therefore lets the buffer grow past `maxCandles` until {@link stop}
+ * — an intentional, bounded trade-off in favor of a stable cap.
  */
 export class ReplayController {
   private _engine: ChartEngine;
@@ -192,6 +198,9 @@ export class ReplayController {
    * safe to call when not started.
    */
   stop(): void {
+    // Guard against use-after-destroy: a host that calls stopReplay() after
+    // destroy() must not touch the (torn-down) engine.
+    if (this._destroyed) return;
     this._stopTimer();
     this._playing = false;
     this._active = false;

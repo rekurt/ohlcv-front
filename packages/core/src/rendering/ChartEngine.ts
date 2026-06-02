@@ -309,6 +309,26 @@ export class ChartEngine {
   }
 
   /**
+   * Highest buffer index currently visible to the user — `effectiveLength - 1`
+   * (or `-1` on an empty buffer). Equals the last buffer index when no replay
+   * cap is active. Consumers that resolve a pointer / visible-range index into
+   * a candle (click, range callbacks, markers, crosshair) must clamp to this so
+   * replay never leaks a not-yet-revealed (future) bar.
+   */
+  maxVisibleIndex(): number {
+    return this._effectiveLength() - 1;
+  }
+
+  /**
+   * Drop the resting-legend index. The index is absolute, so after a buffer
+   * eviction shifts every index the chart must re-derive it on the next hover
+   * rather than show the (now wrong) candle for a frame.
+   */
+  resetLegendIndex(): void {
+    this._lastLegendIndex = -1;
+  }
+
+  /**
    * Resolve a timestamp to a (fractional) buffer index against the live buffer,
    * the seam behind {@link Viewport.timeToX} for time-keyed overlay primitives
    * (C2 compare). Returns NaN when no buffer is set so the overlay skips
@@ -836,14 +856,17 @@ export class ChartEngine {
       }
     }
 
-    // Markers sit above indicators; drawings sit above markers.
+    // Markers sit above indicators; drawings sit above markers. Pass the max
+    // visible index so a marker anchored to a not-yet-revealed bar stays hidden
+    // during replay.
     this._markerRenderer.render(
       ctx, this._layout, this.viewport, this._buffer, this._markers, this._theme,
+      this.maxVisibleIndex(),
     );
 
     // Drawing layer on top of indicators + markers.
     if (this._drawingLayer) {
-      this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
+      this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme, this.maxVisibleIndex());
     }
 
     // 'normal' primitives sit with the drawing layer, above the series.

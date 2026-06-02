@@ -18,6 +18,22 @@ import { FibFan } from './FibFan';
 import { Measure } from './Measure';
 
 /**
+ * Whether a drawing should be shown under a replay cap of `maxIndex`. Shown
+ * when it is cap-exempt (its geometry ignores the anchor index — e.g. a
+ * full-width `HorizontalLine` price level), has no anchors, or has at least one
+ * anchor at/under the cap. Hidden only when every anchor sits in the
+ * not-yet-revealed future zone AND the geometry is index-dependent — symmetric
+ * with `MarkerRenderer`.
+ */
+function anchorRevealed(d: Drawing, maxIndex: number): boolean {
+  return (
+    d.isReplayCapExempt ||
+    d.points.length === 0 ||
+    d.points.some((p) => p.index <= maxIndex)
+  );
+}
+
+/**
  * Factory that resurrects a Drawing from its serialized snapshot.
  * Consumers can register additional subclasses via `registerKind`.
  */
@@ -167,9 +183,12 @@ export class DrawingLayer {
     layout: ChartLayout,
     viewport: Viewport,
     tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+    /** Highest revealed index (replay cap). Drawings fully past it are skipped. */
+    maxIndex = Infinity,
   ): Drawing | null {
     for (let i = this._drawings.length - 1; i >= 0; i--) {
       const d = this._drawings[i]!;
+      if (!anchorRevealed(d, maxIndex)) continue;
       if (d.hitTest(x, y, layout, viewport, tolerance)) return d;
     }
     return null;
@@ -185,8 +204,11 @@ export class DrawingLayer {
     layout: ChartLayout,
     viewport: Viewport,
     tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+    /** Highest revealed index (replay cap). A drawing fully past it can't be
+     *  selected — otherwise its handles would redraw the hidden future anchors. */
+    maxIndex = Infinity,
   ): Drawing | null {
-    const hit = this.hitTest(x, y, layout, viewport, tolerance);
+    const hit = this.hitTest(x, y, layout, viewport, tolerance, maxIndex);
     this._selectedId = hit ? hit.id : null;
     return hit;
   }
@@ -284,13 +306,27 @@ export class DrawingLayer {
     layout: ChartLayout,
     viewport: Viewport,
     theme: ThemeColors,
+    /** Highest revealed index (replay cap). Drawings fully past it are hidden. */
+    maxIndex = Infinity,
   ): void {
-    for (const d of this._drawings) d.render(ctx, layout, viewport, theme);
+    for (const d of this._drawings) {
+      // Hide a drawing whose every anchor is in the not-yet-revealed future
+      // zone during replay (symmetric with MarkerRenderer). A partially-visible
+      // drawing (≥1 anchor revealed) still renders.
+      if (!anchorRevealed(d, maxIndex)) continue;
+      d.render(ctx, layout, viewport, theme);
+    }
     if (this._active && this._active.points.length > 0) {
       this._active.render(ctx, layout, viewport, theme);
     }
     const sel = this.selected;
-    if (sel) this._renderHandles(ctx, sel, layout, viewport, theme);
+    // Don't draw handles for a selected drawing the cap hides — otherwise its
+    // future anchors reappear as handles even though its body was skipped above
+    // (it may have been selected before replay started, or via select(id), which
+    // doesn't hit-test). Cap-exempt drawings (HorizontalLine) keep their handles.
+    if (sel && anchorRevealed(sel, maxIndex)) {
+      this._renderHandles(ctx, sel, layout, viewport, theme);
+    }
   }
 
   /** Draw square handles at the anchor points of the selected drawing. */

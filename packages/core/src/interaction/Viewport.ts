@@ -828,6 +828,13 @@ export class Viewport {
   private _recalcVisibleCount(): void {
     if (!this.layout) return;
     const chartWidth = this.layout.chartRight - this.layout.chartLeft;
+    // Guard against candleStep <= 0 (candleWidth forced to 0 by a corrupt
+    // loadState or a preserved view) — division would yield Infinity/NaN and
+    // poison the whole render geometry downstream.
+    if (!(this.candleStep > 0)) {
+      this.visibleCount = 0;
+      return;
+    }
     this.visibleCount = Math.floor(chartWidth / this.candleStep);
   }
 

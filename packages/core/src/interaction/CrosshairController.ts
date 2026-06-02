@@ -160,9 +160,7 @@ export class CrosshairController {
    * no cap active this is just the last buffer index.
    */
   private _maxIndex(): number {
-    const cap = this._engine.getReplayCap();
-    const len = cap === null ? this._buffer.length : Math.min(cap, this._buffer.length);
-    return len - 1;
+    return this._engine.maxVisibleIndex();
   }
 
   /**
@@ -219,7 +217,9 @@ export class CrosshairController {
   private _hitTest(x: number, y: number): HoveredObject | null {
     const drawingLayer = this._engine.drawingLayer;
     if (drawingLayer) {
-      const hit = drawingLayer.hitTest(x, y, this._engine.layout, this._engine.viewport);
+      const hit = drawingLayer.hitTest(
+        x, y, this._engine.layout, this._engine.viewport, undefined, this._engine.maxVisibleIndex(),
+      );
       if (hit) return { kind: 'drawing', id: hit.id };
     }
     const primitive = this._engine.hitTestPrimitives(x, y);
