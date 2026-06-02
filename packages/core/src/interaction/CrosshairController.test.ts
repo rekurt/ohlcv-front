@@ -217,6 +217,20 @@ describe('CrosshairController', () => {
     expect(info.hovered).toBeNull();
   });
 
+  it('clamps hover/crosshair index to the replay cap — no future bars (C1)', async () => {
+    engine.setReplayCap(10); // only the first 10 of 100 bars are revealed
+    const onHover = vi.fn<(info: HoverInfo | null) => void>();
+    controller.setOnHover(onHover);
+    fireMove(engine.layout.chartRight - 2, 250); // cursor at the far right edge
+    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+
+    const crosshairIndex = setCrosshairSpy.mock.calls.at(-1)![2] as number;
+    expect(crosshairIndex).toBeLessThanOrEqual(9); // <= cap - 1, never a hidden bar
+    const info = onHover.mock.lastCall![0] as HoverInfo;
+    expect(info).not.toBeNull();
+    expect(info.index).toBeLessThanOrEqual(9);
+  });
+
   it('reports hovered.kind/id for an attached primitive under the cursor', async () => {
     // A primitive whose hitTest passes anywhere → it is the topmost object.
     const primitive: Primitive = {

@@ -122,9 +122,9 @@ export class CrosshairController {
       return;
     }
 
-    // Snap to nearest candle
+    // Snap to nearest candle (bounded by the replay cap when active).
     let index = viewport.xToIndex(x);
-    index = clamp(index, 0, this._buffer.length - 1);
+    index = clamp(index, 0, this._maxIndex());
 
     const candle = this._buffer.candleAt(index);
     const snappedX = viewport.indexToX(index);
@@ -154,6 +154,18 @@ export class CrosshairController {
   }
 
   /**
+   * Highest buffer index the cursor may resolve to. During replay (C1) only the
+   * capped prefix is revealed, so hover / double-click / crosshair must not snap
+   * to candles past the cap even though the buffer physically holds more. With
+   * no cap active this is just the last buffer index.
+   */
+  private _maxIndex(): number {
+    const cap = this._engine.getReplayCap();
+    const len = cap === null ? this._buffer.length : Math.min(cap, this._buffer.length);
+    return len - 1;
+  }
+
+  /**
    * Assemble the `HoverInfo` payload for a cursor position. Returns `null`
    * when the cursor is outside the plot area or the snapped candle is
    * missing. `crosshairY` is the (possibly magnet-snapped) Y used to derive
@@ -168,7 +180,7 @@ export class CrosshairController {
       return null;
     }
     let index = viewport.xToIndex(x);
-    index = clamp(index, 0, this._buffer.length - 1);
+    index = clamp(index, 0, this._maxIndex());
     const candle = this._buffer.candleAt(index);
     if (!candle) return null;
 

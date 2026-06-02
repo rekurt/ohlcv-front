@@ -965,7 +965,7 @@ export class ChartEngine {
       // Scale from the VISIBLE bars only (exclude the +1 render bar), matching
       // the default path; the +1 bar stays in baseView for drawing.
       const scaleView = capView(baseView, visibleEnd - start);
-      this.viewport.autoScaleFromView(buffer, scaleView, series.priceRange);
+      this.viewport.autoScaleFromView(buffer, scaleView, series.priceRange, effLen);
     } else {
       // Pass the effective length so autoscale never scans past the replay cap
       // (C1). With no cap effLen === buffer.length, so this is the exact

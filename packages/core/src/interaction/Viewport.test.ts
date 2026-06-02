@@ -36,6 +36,37 @@ describe('Viewport.autoFollow', () => {
   });
 });
 
+describe('Viewport.autoScale replay cap (C1)', () => {
+  let vp: Viewport;
+  beforeEach(() => {
+    vp = new Viewport();
+    vp.setLayout(LAYOUT);
+    vp.visibleCount = 20;
+  });
+  const bufLen = (v: Viewport) => (v as unknown as { _bufferLength: number })._bufferLength;
+
+  it('stores the CAPPED length when maxLength is supplied (bounds pan/zoom)', () => {
+    vp.autoScale(fillBuffer(100), undefined, 30);
+    expect(bufLen(vp)).toBe(30);
+  });
+
+  it('stores the real length when no cap is supplied', () => {
+    vp.autoScale(fillBuffer(100));
+    expect(bufLen(vp)).toBe(100);
+  });
+
+  it('clamps a cap larger than the buffer to the real length', () => {
+    vp.autoScale(fillBuffer(40), undefined, 999);
+    expect(bufLen(vp)).toBe(40);
+  });
+
+  it('autoScaleFromView honors the cap on the transform path', () => {
+    const buf = fillBuffer(100);
+    vp.autoScaleFromView(buf, buf.sliceView(0, 100), undefined, 25);
+    expect(bufLen(vp)).toBe(25);
+  });
+});
+
 describe('Viewport.rightPaddingCandles', () => {
   let vp: Viewport;
 

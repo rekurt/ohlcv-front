@@ -485,8 +485,11 @@ export class Viewport {
    * viewport's visible window nominally extends past the cap.
    */
   autoScale(buffer: CandleBuffer, accel?: RangeSource, maxLength?: number): void {
-    this._bufferLength = buffer.length;
     const cap = maxLength === undefined ? buffer.length : Math.min(buffer.length, maxLength);
+    // Store the CAPPED length: pan/zoom/end clamping reads `_bufferLength`, so
+    // during replay (C1) it must not let the viewport scroll or zoom into bars
+    // the cap hasn't revealed yet. With no cap, `cap === buffer.length`.
+    this._bufferLength = cap;
 
     const start = Math.max(0, Math.floor(this.startIndex));
     const end = Math.min(cap, Math.ceil(this.startIndex + this.visibleCount));
@@ -638,8 +641,12 @@ export class Viewport {
     buffer: CandleBuffer,
     view: CandleView,
     priceRange?: (v: CandleView, i: number) => { min: number; max: number },
+    maxLength?: number,
   ): void {
-    this._bufferLength = buffer.length;
+    // Capped length on the transform path too (Heikin-Ashi / custom series),
+    // so replay (C1) bounds pan/zoom the same way as the default path.
+    this._bufferLength =
+      maxLength === undefined ? buffer.length : Math.min(buffer.length, maxLength);
 
     if (this.manualPriceScale) {
       let maxVol = 0;
