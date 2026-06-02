@@ -320,7 +320,13 @@ export class DrawingLayer {
       this._active.render(ctx, layout, viewport, theme);
     }
     const sel = this.selected;
-    if (sel) this._renderHandles(ctx, sel, layout, viewport, theme);
+    // Don't draw handles for a selected drawing the cap hides — otherwise its
+    // future anchors reappear as handles even though its body was skipped above
+    // (it may have been selected before replay started, or via select(id), which
+    // doesn't hit-test). Cap-exempt drawings (HorizontalLine) keep their handles.
+    if (sel && anchorRevealed(sel, maxIndex)) {
+      this._renderHandles(ctx, sel, layout, viewport, theme);
+    }
   }
 
   /** Draw square handles at the anchor points of the selected drawing. */

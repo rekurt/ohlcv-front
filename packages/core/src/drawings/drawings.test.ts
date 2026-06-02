@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Drawing, type AnchorPoint } from './Drawing';
 import { TrendLine } from './TrendLine';
 import { HorizontalLine } from './HorizontalLine';
@@ -395,5 +395,33 @@ describe('DrawingLayer replay clamp (Н2)', () => {
     // And it stays selectable under the cap (click anywhere on the level's price).
     const y = vp.priceToY(150);
     expect(layer.selectAt(500, y, LAYOUT, vp, undefined, 19)?.id).toBe('hl');
+  });
+
+  it('does not draw selection handles for a capped drawing selected via select(id) (Н10)', () => {
+    const layer = new DrawingLayer();
+    const future = new RecordingDrawing(
+      [{ index: 50, price: 150 }, { index: 60, price: 160 }],
+      'future',
+    );
+    layer.add(future);
+    // Programmatic select bypasses selectAt's cap gate (so does selecting before
+    // replay starts) — the render-time handle pass must still respect the cap.
+    layer.select('future');
+    expect(layer.selected?.id).toBe('future');
+
+    const spy = vi.spyOn(
+      layer as unknown as { _renderHandles: () => void },
+      '_renderHandles',
+    );
+    // Under the cap the body is skipped (Н2) AND the handles must be gated, or
+    // the future anchors reappear as handles.
+    layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME, 19);
+    expect(spy).not.toHaveBeenCalled();
+
+    // Anti-tautology: with no cap the handles draw for the selected drawing.
+    spy.mockClear();
+    layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
   });
 });

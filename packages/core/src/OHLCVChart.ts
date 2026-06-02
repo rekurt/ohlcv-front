@@ -1278,8 +1278,13 @@ export class OHLCVChart {
     //    garbage into the typed buffer.
     if (isFullState(state)) {
       const validated = validateCandles(state.data, 'loadState.data');
-      // End any active replay before swapping the buffer (stale cap).
+      // A full-state load is a data swap, exactly like setData/switchSymbol: end
+      // any active replay (stale cap), and bump the data generation + clear the
+      // load-more flag so a still-pending onLoadMoreHistory from the OLD dataset
+      // can't keep the new one from paging, and its late completion is ignored.
       this._replay?.stop();
+      this._dataGeneration++;
+      this._loadingMore = false;
       this._buffer.clear();
       this._merger.loadHistory(validated);
     }

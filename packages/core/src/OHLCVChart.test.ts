@@ -970,6 +970,51 @@ describe('OHLCVChart facade', () => {
     });
   });
 
+  // Н9: a full-state load is a data swap like setData/switchSymbol, so it must
+  // reset the load-more guard — otherwise a still-pending onLoadMoreHistory from
+  // the OLD dataset keeps the NEW one from ever paging its own history.
+  describe('loadState data-swap guard (Н9)', () => {
+    // Park the viewport at the left edge and fire PanZoomController.onViewportChange
+    // (where the load-more trigger lives) so a configured onLoadMoreHistory runs.
+    function panLeftEdge(chart: OHLCVChart): void {
+      const vp = chart.getViewport();
+      vp.startIndex = 0;
+      vp.setLayout(vp.layout);
+      engineOf(chart).topCanvas.dispatchEvent(
+        new WheelEvent('wheel', { deltaX: -40, deltaY: 0, clientX: 200, clientY: 250, bubbles: true }),
+      );
+    }
+
+    it('resets the load-more guard so a new dataset pages even with an old request pending', () => {
+      let calls = 0;
+      let keepPending: (() => void) | null = null;
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H',
+        onLoadMoreHistory: () => {
+          calls++;
+          // Never resolves this test — mimics a slow OLD-dataset request still in
+          // flight when the full-state swap arrives.
+          return new Promise<void>((res) => { keepPending = res; });
+        },
+      });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+
+      panLeftEdge(chart);
+      expect(calls).toBe(1); // first load-more fired; _loadingMore is now true
+      expect(keepPending).not.toBeNull(); // the old request is still pending
+
+      // Full-state swap (a new dataset). Without resetting the guard the new data
+      // stays blocked from paging until the OLD pending request ends.
+      const fresh = chart.saveFullState();
+      fresh.data = Array.from({ length: 150 }, (_, i) => makeCandle(1000 + i));
+      chart.loadState(fresh);
+
+      panLeftEdge(chart);
+      expect(calls).toBe(2); // new dataset can page again — the guard was reset
+      chart.destroy();
+    });
+  });
+
   // Г6: loadState is a trust boundary (share URL / localStorage / server JSON).
   // A forged viewport must be sanitized, not produce NaN/Infinity render
   // geometry or an injected scale mode.
