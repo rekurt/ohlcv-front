@@ -265,3 +265,77 @@ describe('DrawingLayer', () => {
     expect(restored.drawings).toHaveLength(0);
   });
 });
+
+// Н2: during replay the buffer physically holds bars past the cap, so a
+// drawing whose every anchor sits in the not-yet-revealed future zone must be
+// hidden from both rendering and hit-testing — symmetric with MarkerRenderer
+// (Г3c). The engine threads maxVisibleIndex() into render()/hitTest().
+describe('DrawingLayer replay clamp (Н2)', () => {
+  /** Minimal drawing that counts its renders and reports a hit unconditionally. */
+  class RecordingDrawing extends Drawing {
+    rendered = 0;
+    constructor(pts: AnchorPoint[], id?: string) {
+      super(id);
+      pts.forEach((p) => this.points.push(p));
+    }
+    get kind(): string {
+      return 'rec';
+    }
+    get requiredPoints(): number {
+      return 2;
+    }
+    render(): void {
+      this.rendered++;
+    }
+    // Geometry-agnostic: always "hit" if the layer reaches it, so the only
+    // thing that can suppress a hit is the maxIndex gate under test.
+    override hitTest(): boolean {
+      return true;
+    }
+  }
+
+  it('hides a drawing whose every anchor is past the cap (render + hitTest)', () => {
+    const layer = new DrawingLayer();
+    // `past` added first, `future` second — hitTest walks newest→oldest, so
+    // without the gate `future` would be returned first. The gate must skip it.
+    const past = new RecordingDrawing([{ index: 5, price: 150 }, { index: 8, price: 160 }], 'past');
+    const future = new RecordingDrawing(
+      [{ index: 50, price: 150 }, { index: 60, price: 160 }],
+      'future',
+    );
+    layer.add(past);
+    layer.add(future);
+    const vp = buildViewport();
+
+    // maxIndex = 19: future (anchors 50,60) hidden; past (5,8) shown.
+    layer.render(makeCtx(), LAYOUT, vp, DARK_THEME, 19);
+    expect(future.rendered).toBe(0);
+    expect(past.rendered).toBe(1);
+
+    // A click resolves to the revealed `past`, never the future-zone drawing.
+    expect(layer.hitTest(500, 250, LAYOUT, vp, undefined, 19)?.id).toBe('past');
+
+    // Anti-tautology: lift the cap (default Infinity) and the future drawing
+    // both renders and is hit first — proving the suppression is the gate, not
+    // fixture order.
+    future.rendered = 0;
+    past.rendered = 0;
+    layer.render(makeCtx(), LAYOUT, vp, DARK_THEME);
+    expect(future.rendered).toBe(1);
+    expect(past.rendered).toBe(1);
+    expect(layer.hitTest(500, 250, LAYOUT, vp)?.id).toBe('future');
+  });
+
+  it('shows a drawing with at least one revealed anchor even if another is in the future', () => {
+    const layer = new DrawingLayer();
+    // Anchor 5 is revealed (<= cap 19), anchor 80 is not — the drawing straddles
+    // the cap and must still render (you can see the revealed end of the line).
+    const straddle = new RecordingDrawing(
+      [{ index: 5, price: 150 }, { index: 80, price: 160 }],
+      'straddle',
+    );
+    layer.add(straddle);
+    layer.render(makeCtx(), LAYOUT, buildViewport(), DARK_THEME, 19);
+    expect(straddle.rendered).toBe(1);
+  });
+});

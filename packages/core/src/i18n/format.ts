@@ -194,8 +194,10 @@ export function createDateFormatter(
       : resolutionToDateResolution(resolution);
 
   // Validate the timeZone up front. A bad one (e.g. 'Mars/Phobos') makes every
-  // Intl.DateTimeFormat below throw, and the locale-fallback reuses the same
-  // opts (same bad timeZone) → silent loss of ALL date labels. Drop to UTC.
+  // Intl.DateTimeFormat below throw — and since the locale fallback reuses the
+  // same opts, the throw repeats and the formatter fails to build at all. Degrade
+  // to UTC once here so every date label still renders (in UTC) instead of the
+  // whole formatter throwing.
   let tz = timeZone;
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: tz });

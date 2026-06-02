@@ -18,6 +18,16 @@ import { FibFan } from './FibFan';
 import { Measure } from './Measure';
 
 /**
+ * Whether a drawing has at least one anchor at/under `maxIndex` (the replay
+ * cap). A drawing with no anchors, or any anchor in the revealed range, is
+ * shown; one whose every anchor sits in the not-yet-revealed future zone is
+ * hidden during replay — symmetric with `MarkerRenderer`.
+ */
+function anchorRevealed(d: Drawing, maxIndex: number): boolean {
+  return d.points.length === 0 || d.points.some((p) => p.index <= maxIndex);
+}
+
+/**
  * Factory that resurrects a Drawing from its serialized snapshot.
  * Consumers can register additional subclasses via `registerKind`.
  */
@@ -167,9 +177,12 @@ export class DrawingLayer {
     layout: ChartLayout,
     viewport: Viewport,
     tolerance: number = DRAWING_HIT_TOLERANCE_PX,
+    /** Highest revealed index (replay cap). Drawings fully past it are skipped. */
+    maxIndex = Infinity,
   ): Drawing | null {
     for (let i = this._drawings.length - 1; i >= 0; i--) {
       const d = this._drawings[i]!;
+      if (!anchorRevealed(d, maxIndex)) continue;
       if (d.hitTest(x, y, layout, viewport, tolerance)) return d;
     }
     return null;
@@ -284,8 +297,16 @@ export class DrawingLayer {
     layout: ChartLayout,
     viewport: Viewport,
     theme: ThemeColors,
+    /** Highest revealed index (replay cap). Drawings fully past it are hidden. */
+    maxIndex = Infinity,
   ): void {
-    for (const d of this._drawings) d.render(ctx, layout, viewport, theme);
+    for (const d of this._drawings) {
+      // Hide a drawing whose every anchor is in the not-yet-revealed future
+      // zone during replay (symmetric with MarkerRenderer). A partially-visible
+      // drawing (≥1 anchor revealed) still renders.
+      if (!anchorRevealed(d, maxIndex)) continue;
+      d.render(ctx, layout, viewport, theme);
+    }
     if (this._active && this._active.points.length > 0) {
       this._active.render(ctx, layout, viewport, theme);
     }

@@ -866,7 +866,7 @@ export class ChartEngine {
 
     // Drawing layer on top of indicators + markers.
     if (this._drawingLayer) {
-      this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme);
+      this._drawingLayer.render(ctx, this._layout, this.viewport, this._theme, this.maxVisibleIndex());
     }
 
     // 'normal' primitives sit with the drawing layer, above the series.

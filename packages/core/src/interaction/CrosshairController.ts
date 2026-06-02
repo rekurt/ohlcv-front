@@ -217,7 +217,9 @@ export class CrosshairController {
   private _hitTest(x: number, y: number): HoveredObject | null {
     const drawingLayer = this._engine.drawingLayer;
     if (drawingLayer) {
-      const hit = drawingLayer.hitTest(x, y, this._engine.layout, this._engine.viewport);
+      const hit = drawingLayer.hitTest(
+        x, y, this._engine.layout, this._engine.viewport, undefined, this._engine.maxVisibleIndex(),
+      );
       if (hit) return { kind: 'drawing', id: hit.id };
     }
     const primitive = this._engine.hitTestPrimitives(x, y);

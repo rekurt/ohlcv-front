@@ -850,6 +850,60 @@ describe('OHLCVChart facade', () => {
     });
   });
 
+  // Н1: host-driven navigation (goToLive / fitVisible / fitAll) must treat the
+  // REVEALED length as the end during replay, so a "jump to live" / "fit" never
+  // scrolls the viewport into the not-yet-revealed future zone — the same
+  // future-bar guard as click/range/markers/drawings, applied to navigation.
+  describe('navigation clamp under replay (Н1)', () => {
+    it('goToLive parks at the revealed edge, not the live (future) edge', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20 (revealed), maxVisibleIndex = 19
+      const vp = chart.getViewport();
+      // Zoom in AFTER engaging replay so the revealed prefix (20 bars) is wider
+      // than the viewport — only then does scrolling to the full buffer end
+      // visibly leak future bars (startIndex jumps deep into the 20..199 zone).
+      vp.candleWidth = 60;
+      vp.setLayout(vp.layout);
+      expect(vp.visibleCount).toBeLessThan(20); // discriminating regime
+
+      chart.goToLive();
+      const maxIdx = engineOf(chart).maxVisibleIndex();
+      // The viewport's right data edge must not pass the newest revealed bar.
+      const rightEdge = vp.startIndex + vp.visibleCount - vp.rightPaddingCandles;
+      expect(rightEdge).toBeLessThanOrEqual(maxIdx + 1);
+      expect(vp.startIndex).toBeLessThanOrEqual(maxIdx);
+      chart.destroy();
+    });
+
+    it('fitVisible resets zoom without scrolling into the future zone', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20
+      const vp = chart.getViewport();
+
+      chart.fitVisible();
+      // The default candleWidth makes visibleCount > revealed, so the correct
+      // park is startIndex 0 (revealed prefix + empty future). Broken code
+      // scrolls to ~buffer.length - visibleCount, deep into the future zone.
+      expect(vp.startIndex).toBeLessThanOrEqual(engineOf(chart).maxVisibleIndex());
+      chart.destroy();
+    });
+
+    it('fitAll frames only the revealed bars, not the whole buffer', () => {
+      const chart = new OHLCVChart({ container, symbol: 'BTC/USDT', resolution: '1H' });
+      chart.setData(Array.from({ length: 200 }, (_, i) => makeCandle(i)));
+      chart.startReplay(19); // cap = 20; fitAll should frame ~20 bars, not 200
+      const vp = chart.getViewport();
+
+      chart.fitAll();
+      // Fitting 20 bars leaves a far smaller visibleCount than fitting all 200 —
+      // the discriminator between revealed-len and buffer-len navigation.
+      expect(vp.visibleCount).toBeLessThanOrEqual(40); // ~20, never ~200
+      chart.destroy();
+    });
+  });
+
   // Г5: a host-supplied onDblClick owns the double-click in the chart area, so
   // the built-in fit-visible reset must NOT also fire and yank zoom/scroll.
   describe('double-click reset vs host onDblClick (Г5)', () => {

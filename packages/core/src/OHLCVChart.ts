@@ -403,8 +403,9 @@ export class OHLCVChart {
    * not jump to the right edge every time React re-renders.
    */
   setData(candles: Candle[], opts?: { preserveView?: boolean }): void {
-    // Full data replacement ends any active replay: the cap referred to the old
-    // buffer length, and a stale cap would hide the new bars and freeze play().
+    // Full data replacement ends any active replay: the cap is an absolute index
+    // into the OLD buffer, so against the new data it would point at the wrong
+    // bar (or past the end) — hiding bars and desyncing the replay viewport. Stop it.
     this._replay?.stop();
     this._dataGeneration++;
     this._loadingMore = false;
@@ -447,6 +448,13 @@ export class OHLCVChart {
    * Evict oldest candles past `config.maxCandles`, keeping the viewport and
    * drawings anchored to the same candles (eviction lowers every remaining
    * candle's logical index by the evicted count). No-op when uncapped.
+   *
+   * Trade-off under replay: eviction is suspended while a replay cap is active
+   * (the cap is an absolute index — evicting from the head would silently shift
+   * which bar it points at). So if realtime bars keep arriving during a long
+   * replay session the buffer grows past `maxCandles` and is only trimmed on
+   * the first eviction after `stopReplay()`. This is intentional: a brief,
+   * bounded over-growth window is preferable to a desynced replay cap.
    */
   private _enforceMaxCandles(): void {
     const max = this._config.maxCandles;
@@ -535,21 +543,32 @@ export class OHLCVChart {
     this._engine.requestRender();
   }
 
+  /**
+   * Length the host-driven navigation (goToLive/fitVisible/fitAll) treats as the
+   * end. Under replay this is the capped (revealed) length, so "go to live" /
+   * "fit" jumps to the REVEALED edge instead of the real live edge in the
+   * not-yet-revealed future zone (same future-bar guard as click/range/markers).
+   */
+  private _navLen(): number {
+    const cap = this._engine.getReplayCap();
+    return cap === null ? this._buffer.length : Math.min(this._buffer.length, cap);
+  }
+
   /** Scroll to the live edge and resume following new candles. */
   goToLive(): void {
-    this._engine.viewport.goToLive(this._buffer.length);
+    this._engine.viewport.goToLive(this._navLen());
     this._engine.requestRender();
   }
 
   /** Reset zoom to the default candleWidth and go to live. */
   fitVisible(): void {
-    this._engine.viewport.fitVisible(this._buffer.length);
+    this._engine.viewport.fitVisible(this._navLen());
     this._engine.requestRender();
   }
 
   /** Zoom out so the entire buffer is visible at once, from the start. */
   fitAll(): void {
-    this._engine.viewport.fitAll(this._buffer.length);
+    this._engine.viewport.fitAll(this._navLen());
     this._engine.requestRender();
   }
 
