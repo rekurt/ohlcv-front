@@ -15,11 +15,14 @@ React and Vue wrappers with full API parity.
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
-| [`@rekurt/ohlcv-core`](./packages/core) | Framework-agnostic rendering + data + interaction (no React/Vue) |
-| [`@rekurt/ohlcv-react`](./packages/react) | React 18+/19 wrapper — `<OHLCVChart>` component + `useOHLCVChart` hook |
-| [`@rekurt/ohlcv-vue`](./packages/vue) | Vue 3 wrapper — `<OHLCVChart>` component + `useOHLCVChart` composable |
+| Package | Repository | Purpose |
+| --- | --- | --- |
+| [`@rekurt/ohlcv-core`](./packages/core) | this repo | Framework-agnostic rendering + data + interaction (no React/Vue) |
+| `@rekurt/ohlcv-react` | [rekurt/ohlcv-react](https://github.com/rekurt/ohlcv-react) | React 18+/19 wrapper — `<OHLCVChart>` component + `useOHLCVChart` hook |
+| `@rekurt/ohlcv-vue` | [rekurt/ohlcv-vue](https://github.com/rekurt/ohlcv-vue) | Vue 3 wrapper — `<OHLCVChart>` component + `useOHLCVChart` composable |
+
+The React and Vue wrappers were extracted from this monorepo into their
+own repositories — each ships its own demo app, tests, and CI.
 
 ## Install
 
@@ -39,17 +42,18 @@ npm install @rekurt/ohlcv-core @rekurt/ohlcv-vue
 ```bash
 npm install
 npm run dev:playground  # unified demo → http://localhost:5176
-# or individual framework demos:
-npm run dev:core        # → http://localhost:5173
-npm run dev:react       # → http://localhost:5174
-npm run dev:vue         # → http://localhost:5175
+npm run dev:core        # vanilla demo → http://localhost:5173
 
-npm run lint            # ESLint (TS + React + Vue), --max-warnings 0
+npm run lint            # ESLint, --max-warnings 0
 npm run typecheck       # strict tsc across all tsconfigs
-npm test                # vitest — 440+ tests
-npm run build           # tsup bundles for all three packages
+npm test                # vitest — 400+ tests
+npm run build           # tsup bundle for @rekurt/ohlcv-core
 npm run docs            # TypeDoc → docs/api/
 ```
+
+For the React and Vue wrapper demos, see
+[rekurt/ohlcv-react](https://github.com/rekurt/ohlcv-react) and
+[rekurt/ohlcv-vue](https://github.com/rekurt/ohlcv-vue).
 
 ## What's in the core library
 
@@ -146,6 +150,8 @@ chart.loadState(JSON.parse(atob(shareParam)));
 
 ## React
 
+> The React wrapper lives in [rekurt/ohlcv-react](https://github.com/rekurt/ohlcv-react).
+
 ```tsx
 import { useRef, useState, useMemo } from 'react';
 import {
@@ -197,6 +203,8 @@ export function App({ candles }: { candles: Candle[] }) {
 ```
 
 ## Vue 3
+
+> The Vue wrapper lives in [rekurt/ohlcv-vue](https://github.com/rekurt/ohlcv-vue).
 
 ```vue
 <script setup lang="ts">
