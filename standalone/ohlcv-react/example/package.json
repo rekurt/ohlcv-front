@@ -1,5 +1,5 @@
 {
-  "name": "@ohlcv-examples/react",
+  "name": "@rekurt/ohlcv-react-example",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,9 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rekurt/ohlcv-core": "*",
-    "@rekurt/ohlcv-react": "*",
-    "@ohlcv-examples/shared": "*",
+    "@rekurt/ohlcv-core": "file:../vendor/rekurt-ohlcv-core.tgz",
+    "@rekurt/ohlcv-react": "file:..",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

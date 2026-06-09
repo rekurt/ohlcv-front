@@ -23,7 +23,7 @@ import {
   RESOLUTIONS,
   generateCandles,
   advanceLastCandle,
-} from '@ohlcv-examples/shared';
+} from './shared';
 
 type DrawingTool = 'none' | 'trendline' | 'hline';
 type DataTransform = 'none' | 'heikin-ashi' | 'renko';

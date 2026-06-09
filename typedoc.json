@@ -1,11 +1,7 @@
 {
   "$schema": "https://typedoc.org/schema.json",
   "entryPointStrategy": "expand",
-  "entryPoints": [
-    "packages/core/src/index.ts",
-    "packages/react/src/index.ts",
-    "packages/vue/src/index.ts"
-  ],
+  "entryPoints": ["packages/core/src/index.ts"],
   "out": "docs/api",
   "name": "@rekurt/ohlcv",
   "includeVersion": true,

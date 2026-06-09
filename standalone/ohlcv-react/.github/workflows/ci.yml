@@ -29,28 +29,23 @@ jobs:
           cache: npm
 
       - name: Install dependencies
+        # @rekurt/ohlcv-core is vendored as a tarball in vendor/ until it
+        # is published to npm — refresh it with `npm run update:core`.
         run: npm ci
 
       - name: Lint
         run: npm run lint
 
-      - name: Build library packages
+      - name: Build library
         run: npm run build
 
-      - name: Typecheck (all tsconfigs)
-        # Examples import from `@rekurt/ohlcv-core` which resolves to
-        # `packages/core/dist/index.d.ts`. Typecheck must run AFTER the
-        # build step or the example tsconfigs can't find the core type
-        # declarations in a fresh `npm ci` environment.
+      - name: Typecheck
+        # The example imports `@rekurt/ohlcv-react` which resolves to
+        # `dist/index.d.ts`, so typecheck must run AFTER the build step.
         run: npm run typecheck
 
       - name: Run unit tests
-        run: npm test -- --run
+        run: npm test
 
-      - name: Build examples (smoke)
-        run: npm run build:examples
-
-      - name: Report bundle size
-        if: matrix.node == '22'
-        run: npm run size
-        continue-on-error: true
+      - name: Build example (smoke)
+        run: npm run build:example

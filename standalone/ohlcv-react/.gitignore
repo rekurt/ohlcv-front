@@ -1,0 +1,28 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.DS_Store
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# Caches
+.cache/
+.eslintcache
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+Thumbs.db

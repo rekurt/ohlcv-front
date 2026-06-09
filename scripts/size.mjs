@@ -21,7 +21,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 
 const ROOT = process.cwd();
-const PACKAGES = ['packages/core', 'packages/react', 'packages/vue'];
+const PACKAGES = ['packages/core'];
 const TARGET_EXTENSIONS = ['.js', '.cjs'];
 
 /**
@@ -38,9 +38,6 @@ const BUDGETS = {
   // landing at ~35 KB — still parity vs a bare 35 KB engine that ships none of
   // the indicators/drawings/data-layer/replay this base chart carries.
   'tree-shaken:OHLCVChart': 36,
-  // Framework wrappers are thin. Currently ~2 KB each.
-  'packages/react:index.js': 3.5,
-  'packages/vue:index.js': 4,
 };
 
 // NOT gated (reported only): the full barrel `packages/core:index.js`. It
