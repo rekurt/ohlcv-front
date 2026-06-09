@@ -30,6 +30,10 @@ interface CoreTabProps {
 export function CoreTab(props: CoreTabProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<CoreChart | null>(null);
+  const initialIdRef = useRef({
+    symbol: props.symbol.label,
+    resolution: props.resolution.id,
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -43,6 +47,10 @@ export function CoreTab(props: CoreTabProps) {
     chart.setData(props.candles);
     chart.setIndicatorConfigs(props.indicators);
     chartRef.current = chart;
+    initialIdRef.current = {
+      symbol: props.symbol.label,
+      resolution: props.resolution.id,
+    };
 
     if (props.initialState) {
       chart.loadState(props.initialState);
@@ -57,6 +65,25 @@ export function CoreTab(props: CoreTabProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Symbol / resolution — switchSymbol() updates the chart identity
+  // (legend, time scale, share state) and resets the view, mirroring the
+  // React wrapper this tab replaced. Skip the initial run for the pair
+  // the chart was constructed with. Declared BEFORE the data effect so
+  // the identity switch lands before the new dataset.
+  useEffect(() => {
+    const initial = initialIdRef.current;
+    if (
+      initial.symbol === props.symbol.label &&
+      initial.resolution === props.resolution.id
+    ) {
+      // Clear after first invocation so a later change back to the
+      // original pair still re-triggers switchSymbol.
+      initialIdRef.current = { symbol: '', resolution: '' };
+      return;
+    }
+    void chartRef.current?.switchSymbol(props.symbol.label, props.resolution.id);
+  }, [props.symbol, props.resolution]);
 
   useEffect(() => {
     chartRef.current?.setData(props.candles, { preserveView: true });
