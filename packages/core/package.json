@@ -1,6 +1,6 @@
 {
   "name": "@rekurt/openkline-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-agnostic OHLCV candlestick chart library. Canvas-based, TypedArray-backed, keyboard-first.",
   "keywords": [
     "ohlcv",
