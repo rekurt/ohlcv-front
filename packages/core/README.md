@@ -1,19 +1,19 @@
-# @rekurt/ohlcv-core
+# @rekurt/openkline-core
 
 Framework-agnostic OHLCV (candlestick) chart library. Zero runtime dependencies. Canvas-based rendering. TypedArray buffers.
 
-This is the core of the `@ohlcv` monorepo. For framework wrappers see `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue`.
+This is the core of the [**OpenKline**](https://github.com/rekurt/openkline) monorepo. For framework wrappers see [`@rekurt/openkline-react`](https://github.com/rekurt/openkline-react) and [`@rekurt/openkline-vue`](https://github.com/rekurt/openkline-vue).
 
 ## Install
 
 ```bash
-npm install @rekurt/ohlcv-core
+npm install @rekurt/openkline-core
 ```
 
 ## Quick start
 
 ```ts
-import { OHLCVChart } from '@rekurt/ohlcv-core';
+import { OHLCVChart } from '@rekurt/openkline-core';
 
 const chart = new OHLCVChart({
   container: document.getElementById('chart')!,

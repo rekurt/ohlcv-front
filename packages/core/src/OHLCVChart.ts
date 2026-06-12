@@ -410,9 +410,20 @@ export class OHLCVChart {
     // prop change) is NOT a swap, so it keeps replay — tearing it down on a
     // no-op refresh would yank the user out of replay. Rendering stays safe if
     // the length drifts because effectiveLength is min(newLength, cap).
-    if (!opts?.preserveView) this._replay?.stop();
-    this._dataGeneration++;
-    this._loadingMore = false;
+    // Bump the data generation and clear the load-more guard ONLY on a true
+    // swap. The generation bump invalidates any in-flight onLoadMoreHistory
+    // completion (it targets the old dataset); clearing _loadingMore re-arms
+    // the guard for the new data. On the preserveView path the dataset is
+    // logically unchanged, so a pending load-more is still valid — bumping the
+    // generation here would orphan its completion (the stale gen check drops
+    // it) while clearing _loadingMore re-opens the guard, letting the next
+    // left-edge viewport change fire a duplicate request before the first
+    // settles. Leave both untouched so the in-flight request completes normally.
+    if (!opts?.preserveView) {
+      this._replay?.stop();
+      this._dataGeneration++;
+      this._loadingMore = false;
+    }
     const vp = this._engine.viewport;
     const previousStart = vp.startIndex;
     const previousWidth = vp.candleWidth;
@@ -633,13 +644,18 @@ export class OHLCVChart {
     // Only create the controller if one exists or replay was used; if it was
     // never started, there's nothing to stop — but routing through the lazy
     // getter keeps the cap-clear + render idempotent and cheap.
+    // Capture whether a replay cap was actually active BEFORE stopping — the
+    // post-stop trim is only warranted to clean up replay-suspended growth.
+    const hadCap = this._engine.getReplayCap() !== null;
     this._ensureReplay().stop();
     // Eviction was suspended while the cap was active (see _enforceMaxCandles),
     // so a long replay under a live feed may have let the buffer grow past
     // maxCandles. Now that the cap is cleared, trim eagerly — otherwise a chart
     // that gets no further realtime tick would render/save the oversized buffer
-    // forever. No-op when uncapped or already within budget.
-    this._enforceMaxCandles();
+    // forever. Gate on hadCap: with no cap active there was no suspended
+    // growth to reclaim, and an unconditional trim would evict bars added via
+    // prependHistory (which is documented as never auto-evicted).
+    if (hadCap) this._enforceMaxCandles();
   }
 
   /** True while replay mode is engaged (a virtual buffer cap is active). */

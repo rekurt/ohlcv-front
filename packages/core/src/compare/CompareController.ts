@@ -28,7 +28,7 @@ export interface CompareHost {
  *
  * Usage:
  * ```ts
- * import { CompareController } from '@rekurt/ohlcv-core';
+ * import { CompareController } from '@rekurt/openkline-core';
  * const compare = new CompareController(chart);
  * compare.add({ id: 'ETH', color: '#8884', points, normalization: 'percentage' });
  * // ...

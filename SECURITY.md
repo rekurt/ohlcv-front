@@ -12,9 +12,9 @@ Older versions may receive fixes at maintainers' discretion.
 
 ## Reporting a Vulnerability
 
-If you believe you have found a security vulnerability in `@rekurt/ohlcv-*`,
+If you believe you have found a security vulnerability in `@rekurt/openkline-*`,
 **please do not file a public issue**. Instead, report it privately via
-GitHub's [security advisory form](https://github.com/rekurt/ohlcv-front/security/advisories/new),
+GitHub's [security advisory form](https://github.com/rekurt/openkline/security/advisories/new),
 or email the maintainers at the address listed on the GitHub profile.
 
 Please include:

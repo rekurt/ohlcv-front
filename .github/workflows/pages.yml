@@ -41,7 +41,7 @@ jobs:
       - name: Build playground
         run: npm run build -w examples/playground
         env:
-          PLAYGROUND_BASE: /ohlcv-front/
+          PLAYGROUND_BASE: /openkline/
 
       - name: Generate TypeDoc
         run: npm run docs

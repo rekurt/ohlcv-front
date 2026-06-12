@@ -4,14 +4,10 @@ import type {
   IndicatorConfig,
   LayoutState,
   ThemeMode,
-} from '@rekurt/ohlcv-core';
-import { SYMBOLS, RESOLUTIONS, generateCandles } from '@ohlcv-examples/shared';
+} from '@rekurt/openkline-core';
+import { SYMBOLS, RESOLUTIONS, generateCandles } from '@openkline-examples/shared';
 import { CoreTab } from './tabs/CoreTab';
-import { ReactTab } from './tabs/ReactTab';
-import { VueTab } from './tabs/VueTab';
 import { buildShareUrl, readStateFromUrl } from './shareUrl';
-
-type Framework = 'core' | 'react' | 'vue';
 
 type IndicatorId = 'sma20' | 'ema50' | 'bb' | 'rsi14' | 'macd';
 
@@ -26,18 +22,17 @@ const INDICATOR_CONFIG: Record<IndicatorId, IndicatorConfig> = {
 const CANDLE_COUNT = 500;
 
 /**
- * Unified playground for the three @rekurt/ohlcv packages. Tab switcher
- * re-mounts one of three tab components — each uses its own framework
- * (vanilla core, React wrapper, Vue wrapper) against the same generated
- * candle buffer and the same toolbar state (theme, chartType, indicators).
+ * Playground for @rekurt/openkline-core (the React and Vue wrappers live in
+ * their own repositories — rekurt/openkline-react and rekurt/openkline-vue —
+ * each with its own demo app). The toolbar drives the vanilla-core chart
+ * (theme, chartType, indicators) against a generated candle buffer.
  *
  * "Share this chart" pulls the current chart's LayoutState through the
  * ref API, base64-encodes it, and writes it to `window.location`. On
  * load, the App reads the state from `?state=` and feeds it into the
- * active tab as initial state.
+ * chart as initial state.
  */
 export function App() {
-  const [framework, setFramework] = useState<Framework>('react');
   const [symbolId, setSymbolId] = useState(SYMBOLS[0]!.id);
   const [resolutionId, setResolutionId] = useState('1H');
   const [theme, setTheme] = useState<ThemeMode>('dark');
@@ -132,18 +127,7 @@ export function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <span className="brand">@rekurt/ohlcv playground</span>
-        <div className="framework-tabs">
-          {(['core', 'react', 'vue'] as Framework[]).map((f) => (
-            <button
-              key={f}
-              className={framework === f ? 'tab active' : 'tab'}
-              onClick={() => setFramework(f)}
-            >
-              {f === 'core' ? 'Vanilla TS' : f === 'react' ? 'React' : 'Vue'}
-            </button>
-          ))}
-        </div>
+        <span className="brand">@rekurt/openkline playground</span>
         <span className="spacer" />
         <label>Symbol</label>
         <select value={symbolId} onChange={(e) => setSymbolId(e.target.value)}>
@@ -201,42 +185,16 @@ export function App() {
       {shareMsg && <div className="share-msg">{shareMsg}</div>}
 
       <main className="chart-host">
-        {framework === 'core' && (
-          <CoreTab
-            symbol={symbol}
-            resolution={resolution}
-            candles={candles}
-            theme={theme}
-            chartType={chartType}
-            indicators={indicatorConfigs}
-            registerShareFn={registerShareFn}
-            initialState={initialState}
-          />
-        )}
-        {framework === 'react' && (
-          <ReactTab
-            symbol={symbol.label}
-            resolution={resolution.id}
-            candles={candles}
-            theme={theme}
-            chartType={chartType}
-            indicators={indicatorConfigs}
-            registerShareFn={registerShareFn}
-            initialState={initialState}
-          />
-        )}
-        {framework === 'vue' && (
-          <VueTab
-            symbol={symbol.label}
-            resolution={resolution.id}
-            candles={candles}
-            theme={theme}
-            chartType={chartType}
-            indicators={indicatorConfigs}
-            registerShareFn={registerShareFn}
-            initialState={initialState}
-          />
-        )}
+        <CoreTab
+          symbol={symbol}
+          resolution={resolution}
+          candles={candles}
+          theme={theme}
+          chartType={chartType}
+          indicators={indicatorConfigs}
+          registerShareFn={registerShareFn}
+          initialState={initialState}
+        />
       </main>
     </div>
   );

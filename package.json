@@ -1,5 +1,5 @@
 {
-  "name": "ohlcv-front",
+  "name": "openkline",
   "private": true,
   "type": "module",
   "engines": {
@@ -7,25 +7,19 @@
   },
   "workspaces": [
     "packages/core",
-    "packages/react",
-    "packages/vue",
     "examples/_shared",
     "examples/core",
-    "examples/react",
-    "examples/vue",
     "examples/playground"
   ],
   "scripts": {
-    "build": "npm run build -w packages/core && npm run build -w packages/react -w packages/vue",
-    "build:examples": "npm run build -w examples/core -w examples/react -w examples/vue -w examples/playground",
+    "build": "npm run build -w packages/core",
+    "build:examples": "npm run build -w examples/core -w examples/playground",
     "dev:core": "npm run dev -w examples/core",
-    "dev:react": "npm run dev -w examples/react",
-    "dev:vue": "npm run dev -w examples/vue",
     "dev:playground": "npm run dev -w examples/playground",
     "test": "vitest run",
     "test:watch": "vitest",
     "bench": "vitest bench --run",
-    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/react/tsconfig.json && tsc --noEmit -p packages/vue/tsconfig.json && tsc --noEmit -p examples/core/tsconfig.json && tsc --noEmit -p examples/react/tsconfig.json && tsc --noEmit -p examples/vue/tsconfig.json",
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p examples/core/tsconfig.json",
     "lint": "eslint packages examples --max-warnings 0",
     "lint:fix": "eslint packages examples --fix",
     "size": "node scripts/size.mjs",
@@ -37,15 +31,13 @@
     "eslint": "^9.39.4",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-vue": "^10.9.1",
     "globals": "^17.6.0",
     "jsdom": "^29.1.1",
     "tsup": "^8.5.0",
     "typedoc": "^0.28.19",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.59.4",
-    "vite": "^8.0.14",
-    "vitest": "^4.1.7",
-    "vue-eslint-parser": "^10.4.0"
+    "typescript-eslint": "^8.60.1",
+    "vite": "^8.0.16",
+    "vitest": "^4.1.8"
   }
 }

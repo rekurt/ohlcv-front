@@ -1,8 +1,8 @@
-# lightweight-charts vs rekurt/ohlcv-front — технический сравнительный анализ
+# lightweight-charts vs rekurt/openkline — технический сравнительный анализ
 
 > Дата: 2026-06-01
 >
-> **Методология.** Анализ построен на прямом чтении исходного кода `@rekurt/ohlcv-*`
+> **Методология.** Анализ построен на прямом чтении исходного кода `@rekurt/openkline-*`
 > (монорепо `packages/core|react|vue`) и на публичной модели API/архитектуры
 > TradingView lightweight-charts v5.2. Ссылки на код приводятся как
 > `packages/core/src/<path>:<lines>`. **Бенчмарков не проводилось** — выводы о
@@ -49,7 +49,7 @@
 
 ## 1. TL;DR — это решения разных классов
 
-|  | **lightweight-charts** | **rekurt/ohlcv-front** |
+|  | **lightweight-charts** | **rekurt/openkline** |
 |---|---|---|
 | Что это по сути | Тонкий **движок отрисовки** котировок | **Полное «из коробки» решение** для OHLCV-терминала |
 | Класс продукта | Rendering primitive (ядро) | Ближе к TradingView **Advanced Charts** (платной), а не к lightweight |
@@ -78,7 +78,7 @@ lightweight-charts — потому что lightweight-charts намеренно
 - ты сам реализуешь рисовалки (или ставишь сторонний плагин);
 - библиотека отвечает **только** за шкалы, отрисовку серий, crosshair, зум/пан, события.
 
-**rekurt/ohlcv-front** — философия «**батарейки в комплекте**»:
+**rekurt/openkline** — философия «**батарейки в комплекте**»:
 
 - свой слой данных: `PollingTransport` (REST), `WebSocketTransport` (абстракция),
   `DataFeed` (оркестратор), `CandleMerger` (склейка тиков), lazy-load истории,
@@ -209,7 +209,7 @@ magnet-crosshair, hovered-object info; большое сообщество и д
 слоя данных, ни realtime-склейки, ни сохранения состояния); Apache-2.0 требует
 видимой атрибуции TradingView; официальные React/Vue-обёртки — сторонние.
 
-### rekurt/ohlcv-front
+### rekurt/openkline
 
 **Плюсы:** огромный охват из коробки (24 индикатора, 9 рисовалок, полный слой
 данных, realtime, сохранение/шеринг состояния, легенда, темы, ARIA); качественная

@@ -1,7 +1,7 @@
-# Contributing to @rekurt/ohlcv
+# Contributing to @rekurt/openkline
 
 Thanks for your interest! This project is a TypeScript monorepo with
-three published packages (`@rekurt/ohlcv-core`, `-react`, `-vue`) plus
+three published packages (`@rekurt/openkline-core`, `-react`, `-vue`) plus
 example apps and a unified playground.
 
 ## Prerequisites
@@ -12,8 +12,8 @@ example apps and a unified playground.
 ## One-time setup
 
 ```bash
-git clone https://github.com/rekurt/ohlcv-front.git
-cd ohlcv-front
+git clone https://github.com/rekurt/openkline.git
+cd openkline
 npm install
 ```
 
@@ -42,9 +42,9 @@ the dev servers.
 
 ```
 packages/
-├─ core/      @rekurt/ohlcv-core   — framework-agnostic rendering + data + interaction
-├─ react/     @rekurt/ohlcv-react  — React 18+/19 wrapper
-└─ vue/       @rekurt/ohlcv-vue    — Vue 3 wrapper
+├─ core/      @rekurt/openkline-core   — framework-agnostic rendering + data + interaction
+├─ react/     @rekurt/openkline-react  — React 18+/19 wrapper
+└─ vue/       @rekurt/openkline-vue    — Vue 3 wrapper
 examples/
 ├─ core/          vanilla TS demo (minimal, used for bug repros)
 ├─ react/         React demo (minimal, used for bug repros)
@@ -59,7 +59,7 @@ The unified playground is where new features land for visual inspection.
 
 ## Architectural rule
 
-**Business logic lives in `@rekurt/ohlcv-core`.** The React and Vue
+**Business logic lives in `@rekurt/openkline-core`.** The React and Vue
 wrappers are thin adapters that translate props/reactivity into core
 imperative calls. If you find yourself writing a `for` loop, an `if`
 tree, or a diff function inside a wrapper, stop — move it into core as
@@ -86,7 +86,7 @@ This repo uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat(core): add saveLayoutState`
 - `fix(react): preserve view on prop-driven data updates`
-- `refactor: rename @ohlcv/* → @rekurt/ohlcv-*`
+- `refactor: rename @ohlcv/* → @rekurt/openkline-*`
 - `docs: M1 implementation plan`
 - `chore: add ESLint flat config`
 - `ci: add Pages workflow`

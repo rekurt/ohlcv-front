@@ -1,5 +1,5 @@
 {
-  "name": "@ohlcv-examples/shared",
+  "name": "@openkline-examples/shared",
   "private": true,
   "version": "0.0.0",
   "type": "module",

@@ -49,8 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **`@rekurt/ohlcv-core` is now a `peerDependency`** (not a regular
-  dependency) of `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue`, preventing
+- **`@rekurt/openkline-core` is now a `peerDependency`** (not a regular
+  dependency) of `@rekurt/openkline-react` and `@rekurt/openkline-vue`, preventing
   duplicate core copies / version mismatches in consumer bundles.
 
 ### Changed
@@ -66,6 +66,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now dispatches indicator-compute failures through `ErrorReporter` with
   `where: 'indicator'` instead of an empty `catch {}`, matching the
   project's "no silent catches" policy. New `ChartEngine.setErrorReporter`.
+- **`setData({ preserveView: true })` no longer re-arms the load-more
+  guard.** A preserveView refresh (React/Vue re-dispatching the same data
+  array on a prop change) is not a dataset swap, so it now leaves
+  `_dataGeneration` and the `_loadingMore` flag untouched. Previously it
+  cleared the guard (and orphaned the in-flight request's completion via the
+  generation bump), letting a left-edge viewport change fire a duplicate
+  `onLoadMoreHistory` before the first settled.
+- **`stopReplay()` no longer trims `maxCandles` when no replay cap was
+  active.** The post-stop eviction is now gated on a cap having been active
+  before stopping, so a defensive `stopReplay()` call from a replay UI can no
+  longer evict bars added via `prependHistory` (documented as never
+  auto-evicted).
 
 ### Removed
 
@@ -127,8 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `σ² = E[x²] − (E[x])²` identity. ~20× faster at
   `n=100k, period=20` while preserving correctness on all 9
   existing tests.
-- **Subpath exports**: `@rekurt/ohlcv-core/indicators` and
-  `@rekurt/ohlcv-core/drawings` are now importable directly,
+- **Subpath exports**: `@rekurt/openkline-core/indicators` and
+  `@rekurt/openkline-core/drawings` are now importable directly,
   enabling consumers to tree-shake unused subsystems.
 - **State migrations scaffold**: `migrateState` + `migrations`
   registry + `CURRENT_STATE_VERSION` so future schema bumps are
@@ -185,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed (PR #1 review + CI)
 
 - CI reordered to build before typecheck — the wrapper tsconfigs
-  resolve `@rekurt/ohlcv-core` to its built `dist/`, so typecheck
+  resolve `@rekurt/openkline-core` to its built `dist/`, so typecheck
   must follow the build in a fresh `npm ci` environment. (Both
   Node 20 and 22 jobs were red on `master` since commit 2f322f4.)
 - React `useOHLCVChart` no longer fires a duplicate `switchSymbol`
@@ -226,7 +238,7 @@ consolidates all prior iteration work into a shippable package set.
   `@rekurt/ohlcv-*`. All package names, imports, dependencies,
   and documentation updated. There is no upgrade path from 0.0.x
   — treat this as a fresh install.
-- **React wrapper (`@rekurt/ohlcv-react`) reaches full API parity.**
+- **React wrapper (`@rekurt/openkline-react`) reaches full API parity.**
   `<OHLCVChart>` exposes `chartType`, `indicators` (declarative
   config array), `idleCursor`, `onHover`, `onError`, and
   `onLoadMoreHistory` props. `forwardRef` / `useImperativeHandle`
@@ -237,7 +249,7 @@ consolidates all prior iteration work into a shippable package set.
   extended to 1:1 parity with the component. Indicator
   reconciliation through `diffIndicatorConfigs` — reference-stable
   arrays no longer thrash the chart.
-- **Vue wrapper (`@rekurt/ohlcv-vue`) reaches full API parity.**
+- **Vue wrapper (`@rekurt/openkline-vue`) reaches full API parity.**
   Reactive props match React, typed `emits` for all events, and
   `defineExpose` mirrors the React ref surface 1:1. `v-model:indicators`
   supported via the `update:indicators` emit for forward compatibility.

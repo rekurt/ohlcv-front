@@ -1,5 +1,5 @@
 {
-  "name": "@ohlcv-examples/core",
+  "name": "@openkline-examples/core",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,10 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rekurt/ohlcv-core": "*",
-    "@ohlcv-examples/shared": "*"
+    "@rekurt/openkline-core": "*",
+    "@openkline-examples/shared": "*"
   },
   "devDependencies": {
-    "vite": "^8.0.14"
+    "vite": "^8.0.16"
   }
 }

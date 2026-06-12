@@ -1,10 +1,13 @@
-// Flat ESLint config for the @rekurt/ohlcv monorepo.
+// Flat ESLint config for the @rekurt/openkline monorepo.
 //
 // Scopes:
-//   - packages/core, packages/react, packages/vue — strict TypeScript +
-//     no-console (lib code should dispatch through ErrorReporter, not log)
+//   - packages/core — strict TypeScript + no-console (lib code should
+//     dispatch through ErrorReporter, not log)
 //   - examples/** — relaxed: allow console, allow any to keep demo code
 //     focused on the feature under demonstration
+//
+// The React and Vue wrappers live in their own repositories
+// (rekurt/openkline-react, rekurt/openkline-vue) with their own ESLint configs.
 //
 // Keep rule additions minimal in M1 — the goal is to establish a clean
 // baseline for CI, not to prescribe taste. Subsequent milestones can
@@ -14,8 +17,6 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
-import vuePlugin from 'eslint-plugin-vue';
-import vueParser from 'vue-eslint-parser';
 import globals from 'globals';
 
 export default [
@@ -26,6 +27,7 @@ export default [
       '**/node_modules/**',
       'docs/api/**',
       '.claude/**',
+      'standalone/**',
       '**/*.d.ts',
       '**/*.d.cts',
     ],
@@ -52,15 +54,9 @@ export default [
     },
   },
 
-  // React wrapper + examples.
+  // Playground — a React app demonstrating the vanilla core.
   {
-    files: [
-      'packages/react/**/*.ts',
-      'packages/react/**/*.tsx',
-      'examples/react/**/*.ts',
-      'examples/react/**/*.tsx',
-      'examples/playground/**/*.tsx',
-    ],
+    files: ['examples/playground/**/*.ts', 'examples/playground/**/*.tsx'],
     plugins: {
       react: reactPlugin,
       'react-hooks': reactHooks,
@@ -77,33 +73,10 @@ export default [
     },
   },
 
-  // Vue wrapper + examples.
-  {
-    files: ['packages/vue/**/*.ts', 'examples/vue/**/*.ts'],
-    plugins: { vue: vuePlugin },
-  },
-  {
-    files: ['**/*.vue'],
-    languageOptions: {
-      parser: vueParser,
-      parserOptions: {
-        parser: tseslint.parser,
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-      },
-      globals: { ...globals.browser },
-    },
-    plugins: { vue: vuePlugin },
-    rules: {
-      ...vuePlugin.configs['flat/recommended'].rules,
-      'vue/multi-word-component-names': 'off',
-    },
-  },
-
   // Examples — relaxed. Demo apps log stuff, use `any` when it keeps the
   // example simple, and import from built dist paths.
   {
-    files: ['examples/**/*.ts', 'examples/**/*.tsx', 'examples/**/*.vue'],
+    files: ['examples/**/*.ts', 'examples/**/*.tsx'],
     rules: {
       'no-console': 'off',
       '@typescript-eslint/no-explicit-any': 'off',

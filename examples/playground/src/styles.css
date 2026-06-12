@@ -41,25 +41,6 @@ body,
   color: var(--accent);
 }
 
-.framework-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.tab {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--border);
-  padding: 4px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.tab.active {
-  color: var(--text);
-  border-color: var(--accent);
-  background: var(--accent-active);
-}
-
 .toolbar label {
   color: var(--muted);
   margin-left: 6px;
