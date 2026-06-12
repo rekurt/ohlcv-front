@@ -38,7 +38,7 @@ jobs:
         run: npm run build
 
       - name: Typecheck (all tsconfigs)
-        # Examples import from `@rekurt/ohlcv-core` which resolves to
+        # Examples import from `@rekurt/openkline-core` which resolves to
         # `packages/core/dist/index.d.ts`. Typecheck must run AFTER the
         # build step or the example tsconfigs can't find the core type
         # declarations in a fresh `npm ci` environment.

@@ -1,13 +1,13 @@
 import { useEffect, useRef } from 'react';
-import { OHLCVChart as CoreChart } from '@rekurt/ohlcv-core';
+import { OHLCVChart as CoreChart } from '@rekurt/openkline-core';
 import type {
   Candle,
   ChartType,
   IndicatorConfig,
   LayoutState,
   ThemeMode,
-} from '@rekurt/ohlcv-core';
-import type { SymbolInfo, ResolutionInfo } from '@ohlcv-examples/shared';
+} from '@rekurt/openkline-core';
+import type { SymbolInfo, ResolutionInfo } from '@openkline-examples/shared';
 
 interface CoreTabProps {
   symbol: SymbolInfo;
@@ -21,7 +21,7 @@ interface CoreTabProps {
 }
 
 /**
- * Vanilla TS tab — uses @rekurt/ohlcv-core directly without any
+ * Vanilla TS tab — uses @rekurt/openkline-core directly without any
  * framework wrapper. The imperative API is exercised in a React useEffect
  * host because the playground's outer shell happens to be React, but
  * nothing here touches React semantics — `new CoreChart(...)` gets a

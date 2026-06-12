@@ -1,4 +1,4 @@
-import type { LayoutState } from '@rekurt/ohlcv-core';
+import type { LayoutState } from '@rekurt/openkline-core';
 
 /**
  * URL-safe base64 encoder for chart layout states. Strips padding and

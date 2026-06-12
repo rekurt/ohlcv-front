@@ -1,4 +1,4 @@
-// Flat ESLint config for the @rekurt/ohlcv monorepo.
+// Flat ESLint config for the @rekurt/openkline monorepo.
 //
 // Scopes:
 //   - packages/core — strict TypeScript + no-console (lib code should
@@ -7,7 +7,7 @@
 //     focused on the feature under demonstration
 //
 // The React and Vue wrappers live in their own repositories
-// (rekurt/ohlcv-react, rekurt/ohlcv-vue) with their own ESLint configs.
+// (rekurt/openkline-react, rekurt/openkline-vue) with their own ESLint configs.
 //
 // Keep rule additions minimal in M1 — the goal is to establish a clean
 // baseline for CI, not to prescribe taste. Subsequent milestones can

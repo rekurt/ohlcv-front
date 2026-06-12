@@ -1,5 +1,5 @@
 /**
- * Subpath export — `@rekurt/ohlcv-core/indicators`.
+ * Subpath export — `@rekurt/openkline-core/indicators`.
  *
  * Re-exports every indicator class plus the registry helpers so
  * tree-shakers can drop unused indicators when consumers only need

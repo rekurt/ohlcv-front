@@ -4,8 +4,8 @@ import type {
   IndicatorConfig,
   LayoutState,
   ThemeMode,
-} from '@rekurt/ohlcv-core';
-import { SYMBOLS, RESOLUTIONS, generateCandles } from '@ohlcv-examples/shared';
+} from '@rekurt/openkline-core';
+import { SYMBOLS, RESOLUTIONS, generateCandles } from '@openkline-examples/shared';
 import { CoreTab } from './tabs/CoreTab';
 import { buildShareUrl, readStateFromUrl } from './shareUrl';
 
@@ -22,8 +22,8 @@ const INDICATOR_CONFIG: Record<IndicatorId, IndicatorConfig> = {
 const CANDLE_COUNT = 500;
 
 /**
- * Playground for @rekurt/ohlcv-core (the React and Vue wrappers live in
- * their own repositories — rekurt/ohlcv-react and rekurt/ohlcv-vue —
+ * Playground for @rekurt/openkline-core (the React and Vue wrappers live in
+ * their own repositories — rekurt/openkline-react and rekurt/openkline-vue —
  * each with its own demo app). The toolbar drives the vanilla-core chart
  * (theme, chartType, indicators) against a generated candle buffer.
  *
@@ -127,7 +127,7 @@ export function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <span className="brand">@rekurt/ohlcv playground</span>
+        <span className="brand">@rekurt/openkline playground</span>
         <span className="spacer" />
         <label>Symbol</label>
         <select value={symbolId} onChange={(e) => setSymbolId(e.target.value)}>

@@ -16,7 +16,7 @@ import {
   type Indicator,
   type ThemeMode,
   type HoverInfo,
-} from '@rekurt/ohlcv-core';
+} from '@rekurt/openkline-core';
 import {
   SYMBOLS,
   RESOLUTIONS,
@@ -24,7 +24,7 @@ import {
   advanceLastCandle,
   type SymbolInfo,
   type ResolutionInfo,
-} from '@ohlcv-examples/shared';
+} from '@openkline-examples/shared';
 
 type DrawingTool = 'none' | 'trendline' | 'hline';
 type DataTransform = 'none' | 'heikin-ashi' | 'renko';

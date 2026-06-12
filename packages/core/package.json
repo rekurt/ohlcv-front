@@ -1,5 +1,5 @@
 {
-  "name": "@rekurt/ohlcv-core",
+  "name": "@rekurt/openkline-core",
   "version": "0.1.0",
   "description": "Framework-agnostic OHLCV candlestick chart library. Canvas-based, TypedArray-backed, keyboard-first.",
   "keywords": [
@@ -17,13 +17,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rekurt/ohlcv-front.git",
+    "url": "git+https://github.com/rekurt/openkline.git",
     "directory": "packages/core"
   },
   "bugs": {
-    "url": "https://github.com/rekurt/ohlcv-front/issues"
+    "url": "https://github.com/rekurt/openkline/issues"
   },
-  "homepage": "https://github.com/rekurt/ohlcv-front#readme",
+  "homepage": "https://github.com/rekurt/openkline#readme",
   "type": "module",
   "exports": {
     ".": {

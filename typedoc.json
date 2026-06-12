@@ -3,7 +3,7 @@
   "entryPointStrategy": "expand",
   "entryPoints": ["packages/core/src/index.ts"],
   "out": "docs/api",
-  "name": "@rekurt/ohlcv",
+  "name": "@rekurt/openkline",
   "includeVersion": true,
   "excludePrivate": true,
   "excludeInternal": true,

@@ -1,5 +1,5 @@
 {
-  "name": "@ohlcv-examples/playground",
+  "name": "@openkline-examples/playground",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rekurt/ohlcv-core": "*",
-    "@ohlcv-examples/shared": "*",
+    "@rekurt/openkline-core": "*",
+    "@openkline-examples/shared": "*",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
