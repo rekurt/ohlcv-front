@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship `@rekurt/ohlcv-core`, `@rekurt/ohlcv-react`, `@rekurt/ohlcv-vue` v0.1.0 with full wrapper API parity, chart state persistence, unified playground, CI, and TypeDoc.
+**Goal:** Ship `@rekurt/openkline-core`, `@rekurt/openkline-react`, `@rekurt/openkline-vue` v0.1.0 with full wrapper API parity, chart state persistence, unified playground, CI, and TypeDoc.
 
 **Architecture:** Core owns all business logic (state serialization, indicator registry, diff reconciliation). React/Vue wrappers are thin adapters that translate props/reactivity into core imperative calls. Infrastructure (CI, Pages, docs) lives outside published packages.
 

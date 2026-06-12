@@ -1,4 +1,4 @@
-import type { Candle } from '@rekurt/ohlcv-core';
+import type { Candle } from '@rekurt/openkline-core';
 import type { SymbolInfo } from './symbols';
 import type { ResolutionInfo } from './resolutions';
 

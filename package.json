@@ -1,5 +1,5 @@
 {
-  "name": "ohlcv-front",
+  "name": "openkline",
   "private": true,
   "type": "module",
   "engines": {

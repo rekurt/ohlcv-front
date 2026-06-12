@@ -74,7 +74,7 @@ export interface HistoryRequest {
 
 /**
  * Interface hosts implement to feed the chart with history + live
- * updates. `@rekurt/ohlcv-core` ships `PollingTransport` and the
+ * updates. `@rekurt/openkline-core` ships `PollingTransport` and the
  * abstract `WebSocketTransport` base as concrete starting points, but
  * custom transports are trivially written — the interface has only
  * four methods.

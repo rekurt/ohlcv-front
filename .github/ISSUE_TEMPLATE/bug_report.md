@@ -1,15 +1,15 @@
 ---
 name: Bug report
-about: Report a defect in @rekurt/ohlcv-*
+about: Report a defect in @rekurt/openkline-*
 title: "[bug] "
 labels: bug
 ---
 
 **Package and version**
 
-- [ ] `@rekurt/ohlcv-core`
-- [ ] `@rekurt/ohlcv-react`
-- [ ] `@rekurt/ohlcv-vue`
+- [ ] `@rekurt/openkline-core`
+- [ ] `@rekurt/openkline-react`
+- [ ] `@rekurt/openkline-vue`
 
 Version: `x.y.z`
 

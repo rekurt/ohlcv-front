@@ -1,8 +1,8 @@
 # Guides
 
-Practical recipes for `@rekurt/ohlcv-*`. For the API reference see the
-[TypeDoc site](https://rekurt.github.io/ohlcv-front/api/); for a live
-demo see the [playground](https://rekurt.github.io/ohlcv-front/).
+Practical recipes for `@rekurt/openkline-*`. For the API reference see the
+[TypeDoc site](https://rekurt.github.io/openkline/api/); for a live
+demo see the [playground](https://rekurt.github.io/openkline/).
 
 - [SSR integration (Next.js / Nuxt)](#ssr-integration)
 - [Performance tuning](#performance-tuning)
@@ -27,7 +27,7 @@ Mark the chart component as client-only:
 ```tsx
 'use client';
 
-import { OHLCVChart } from '@rekurt/ohlcv-react';
+import { OHLCVChart } from '@rekurt/openkline-react';
 
 export function Chart({ candles }: { candles: Candle[] }) {
   return (
@@ -139,7 +139,7 @@ To find missing candles in what you've loaded (weekend gaps, dropped
 ticks), use `findGaps` with `resolutionToSeconds`:
 
 ```ts
-import { findGaps, resolutionToSeconds } from '@rekurt/ohlcv-core';
+import { findGaps, resolutionToSeconds } from '@rekurt/openkline-core';
 
 const interval = resolutionToSeconds('1H'); // 3600, or null for '1M'
 if (interval) {
@@ -170,8 +170,8 @@ stable arrays skip recomputation via `diffIndicatorConfigs`.
 Import only what you use via subpath exports to help tree-shaking:
 
 ```ts
-import { SMA, RSI } from '@rekurt/ohlcv-core/indicators';
-import { TrendLine } from '@rekurt/ohlcv-core/drawings';
+import { SMA, RSI } from '@rekurt/openkline-core/indicators';
+import { TrendLine } from '@rekurt/openkline-core/drawings';
 ```
 
 Run `npm run size` to see current gzip sizes (core ~27 KB, react
@@ -201,7 +201,7 @@ chart.setTheme('auto');   // follows prefers-color-scheme
 Pass a full `ThemeColors` object to override any token:
 
 ```ts
-import type { ThemeColors } from '@rekurt/ohlcv-core';
+import type { ThemeColors } from '@rekurt/openkline-core';
 
 const myTheme: ThemeColors = {
   background: '#0d1117',
@@ -242,7 +242,7 @@ Implement the `DataTransport` interface (four methods) to feed any
 source:
 
 ```ts
-import type { DataTransport, Candle, HistoryRequest, DataFeedConfig } from '@rekurt/ohlcv-core';
+import type { DataTransport, Candle, HistoryRequest, DataFeedConfig } from '@rekurt/openkline-core';
 
 class MyTransport implements DataTransport {
   async fetchHistory(req: HistoryRequest): Promise<Candle[]> {

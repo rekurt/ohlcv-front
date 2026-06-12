@@ -3,7 +3,7 @@
  *
  * An alert watches the chart's close price and fires once when the price
  * relationship the user configured becomes true. lightweight-charts has no
- * built-in alert system; this is a core feature of `@rekurt/ohlcv-core`.
+ * built-in alert system; this is a core feature of `@rekurt/openkline-core`.
  */
 
 /**

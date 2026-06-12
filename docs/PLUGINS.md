@@ -1,6 +1,6 @@
 # Plugin API
 
-`@rekurt/ohlcv-core` exposes three stable extension points so you can add
+`@rekurt/openkline-core` exposes three stable extension points so you can add
 chart types, overlays, and sub-pane decorations without forking the library:
 
 1. **Custom Series** — a new primary chart type that participates in autoscale,
@@ -23,7 +23,7 @@ Implement `SeriesDefinition` and register it. The `type` string is what you
 pass to `setChartType` / persist in state.
 
 ```ts
-import { type SeriesDefinition, registerSeriesType } from '@rekurt/ohlcv-core';
+import { type SeriesDefinition, registerSeriesType } from '@rekurt/openkline-core';
 
 const stepLineSeries: SeriesDefinition = {
   type: 'stepline',
@@ -72,7 +72,7 @@ Unlike a `Drawing` (user-created, undoable, persisted), a primitive has no
 undo/persistence — just a `draw` at a chosen z-tier.
 
 ```ts
-import { type Primitive, clipToChart } from '@rekurt/ohlcv-core';
+import { type Primitive, clipToChart } from '@rekurt/openkline-core';
 
 class TargetLine implements Primitive {
   readonly id = 'target-line';
@@ -124,7 +124,7 @@ into the band bounds yourself (do *not* use `viewport.priceToY`, which is the
 main price axis).
 
 ```ts
-import { type Primitive, clipToPane, paneBounds } from '@rekurt/ohlcv-core';
+import { type Primitive, clipToPane, paneBounds } from '@rekurt/openkline-core';
 
 /** Shade the 30/70 RSI zone on sub-pane 1. */
 class RsiZone implements Primitive {

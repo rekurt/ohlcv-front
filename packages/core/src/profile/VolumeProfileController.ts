@@ -29,7 +29,7 @@ export interface VolumeProfileHost {
  *
  * Usage:
  * ```ts
- * import { VolumeProfileController } from '@rekurt/ohlcv-core';
+ * import { VolumeProfileController } from '@rekurt/openkline-core';
  * const vp = new VolumeProfileController(chart);
  * vp.show({ bins: 30, side: 'right' });
  * // ... user pans/zooms; the profile recomputes from the visible window ...

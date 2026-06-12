@@ -1,5 +1,5 @@
 /**
- * Subpath export — `@rekurt/ohlcv-core/drawings`.
+ * Subpath export — `@rekurt/openkline-core/drawings`.
  *
  * Re-exports every drawing class plus the layer. The main package
  * entry re-exports the same symbols, so existing imports continue

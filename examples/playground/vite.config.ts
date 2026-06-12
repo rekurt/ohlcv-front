@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 // Playground Vite config.
 //
-// Key choice: alias @rekurt/ohlcv-core to the workspace package's src/
+// Key choice: alias @rekurt/openkline-core to the workspace package's src/
 // directly, not dist/. This gives HMR for source changes in packages/
 // without rebuilding tsup every edit. Production build (`vite build`)
 // still produces a self-contained bundle.
@@ -17,7 +17,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@rekurt/ohlcv-core': fileURLToPath(
+      '@rekurt/openkline-core': fileURLToPath(
         new URL('../../packages/core/src/index.ts', import.meta.url),
       ),
     },

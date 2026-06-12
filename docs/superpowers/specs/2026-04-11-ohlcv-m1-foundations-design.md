@@ -48,15 +48,15 @@ milestone gets its own brainstorm → design → plan → implement cycle.
 ### In scope
 
 1. Monorepo scope rename `@ohlcv/*` → `@rekurt/ohlcv-*`.
-2. `@rekurt/ohlcv-core`: `ChartState` schema, `saveLayoutState`,
+2. `@rekurt/openkline-core`: `ChartState` schema, `saveLayoutState`,
    `saveFullState`, `loadState`, `IndicatorConfig` discriminated union,
    `createIndicator` factory, `diffIndicatorConfigs` pure function,
    `getIndicators`, `getDrawingLayer`, `startDrawing`, `getDrawings`,
    `loadDrawings`.
-3. `@rekurt/ohlcv-react`: full declarative props (including
+3. `@rekurt/openkline-react`: full declarative props (including
    `indicators?: IndicatorConfig[]`), full imperative `ref` API, expanded
    `useOHLCVChart` hook to parity with component.
-4. `@rekurt/ohlcv-vue`: reactive props (including `v-model:indicators`
+4. `@rekurt/openkline-vue`: reactive props (including `v-model:indicators`
    support), full emits, full `defineExpose`, expanded `useOHLCVChart`
    composable to parity.
 5. New `examples/playground/` — unified demo with framework switcher,
@@ -71,8 +71,8 @@ milestone gets its own brainstorm → design → plan → implement cycle.
     links to playground and TypeDoc).
 11. `CHANGELOG.md` manual 0.1.0 entry in Keep-a-Changelog format.
 12. `CONTRIBUTING.md` with dev setup and PR conventions.
-13. Manual publish of `@rekurt/ohlcv-core`, `@rekurt/ohlcv-react`,
-    `@rekurt/ohlcv-vue` version 0.1.0 to npm.
+13. Manual publish of `@rekurt/openkline-core`, `@rekurt/openkline-react`,
+    `@rekurt/openkline-vue` version 0.1.0 to npm.
 
 ### Out of scope (pushed to M2+)
 
@@ -92,10 +92,10 @@ milestone gets its own brainstorm → design → plan → implement cycle.
 
 Core vs wrappers vs infra — strict dependency direction:
 
-- All business logic lives in `@rekurt/ohlcv-core`: state serialization,
+- All business logic lives in `@rekurt/openkline-core`: state serialization,
   indicator factory, reconciliation diff, drawing lifecycle. Core has
   zero framework dependencies.
-- `@rekurt/ohlcv-react` and `@rekurt/ohlcv-vue` are thin adapters. They
+- `@rekurt/openkline-react` and `@rekurt/openkline-vue` are thin adapters. They
   translate props/reactivity into core imperative calls and core events
   into React callbacks / Vue emits. They contain no business logic. If
   a future `@rekurt/ohlcv-svelte` wrapper is added, it imports the same
@@ -108,7 +108,7 @@ Core vs wrappers vs infra — strict dependency direction:
 
 ```
 packages/
-├─ core/                         @rekurt/ohlcv-core
+├─ core/                         @rekurt/openkline-core
 │  └─ src/
 │     ├─ OHLCVChart.ts           + saveLayoutState / saveFullState / loadState
 │     │                          + getIndicators / getDrawingLayer / startDrawing
@@ -120,12 +120,12 @@ packages/
 │        └─ registry.ts          NEW: IndicatorConfig union + createIndicator +
 │                                diffIndicatorConfigs + indicatorId
 │
-├─ react/                        @rekurt/ohlcv-react
+├─ react/                        @rekurt/openkline-react
 │  └─ src/
 │     ├─ OHLCVChart.tsx          full props / forwardRef / useImperativeHandle
 │     └─ useOHLCVChart.ts        headless hook to API parity
 │
-└─ vue/                          @rekurt/ohlcv-vue
+└─ vue/                          @rekurt/openkline-vue
    └─ src/
       ├─ OHLCVChart.ts           reactive props / emits / defineExpose
       └─ useOHLCVChart.ts        composable to API parity
@@ -259,7 +259,7 @@ makes the clamp snap to `[0, 0]`; restoring `chartType` after
 `setIndicators` can trigger double-rendering; skipping `setLayout`
 leaves a stale `visibleCount`.
 
-### 4. `@rekurt/ohlcv-react` — `<OHLCVChart>` component
+### 4. `@rekurt/openkline-react` — `<OHLCVChart>` component
 
 ```tsx
 interface OHLCVChartProps {
@@ -339,14 +339,14 @@ This re-creates instances only when the config array actually differs
 by `indicatorId`. A hover-driven re-render that passes the same
 reference through `useMemo` does nothing.
 
-### 5. `@rekurt/ohlcv-react` — `useOHLCVChart` headless hook
+### 5. `@rekurt/openkline-react` — `useOHLCVChart` headless hook
 
 Returns `{ containerRef, chart, ...imperativeMethods }` plus accepts
 every prop the component accepts, for devs who do not want a `<div>`
 wrapper component and prefer to build their own layout around the
 canvas container.
 
-### 6. `@rekurt/ohlcv-vue` — `<OHLCVChart>` component
+### 6. `@rekurt/openkline-vue` — `<OHLCVChart>` component
 
 ```ts
 const props = defineProps<{
@@ -408,10 +408,10 @@ New Vite + React app (chosen because it is the bigger of the two
 frameworks and hosting both React and Vue in one page requires picking
 one as the outer shell). Tabs:
 
-- **Core** — vanilla TS demo (imports `@rekurt/ohlcv-core`, builds
+- **Core** — vanilla TS demo (imports `@rekurt/openkline-core`, builds
   directly, no framework wrapper)
-- **React** — `<OHLCVChart>` usage from `@rekurt/ohlcv-react`
-- **Vue** — `<OHLCVChart>` from `@rekurt/ohlcv-vue`, mounted into a
+- **React** — `<OHLCVChart>` usage from `@rekurt/openkline-react`
+- **Vue** — `<OHLCVChart>` from `@rekurt/openkline-vue`, mounted into a
   portal `<div>` inside the React-hosted page
 
 Shared toolbar across tabs: theme, chartType, indicators picker,
@@ -458,9 +458,9 @@ Builds `examples/playground/` + runs TypeDoc, publishes `dist/` and
 `master`. Uses the GitHub Pages action.
 
 URL layout:
-- `https://rekurt.github.io/ohlcv-front/` → playground index
-- `https://rekurt.github.io/ohlcv-front/api/` → TypeDoc API reference
-- `https://rekurt.github.io/ohlcv-front/?state=<base64>` → playground
+- `https://rekurt.github.io/openkline/` → playground index
+- `https://rekurt.github.io/openkline/api/` → TypeDoc API reference
+- `https://rekurt.github.io/openkline/?state=<base64>` → playground
   preloaded with a saved chart layout
 
 ### 10. ESLint configuration
@@ -510,7 +510,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-04-TBD
 
 ### Added
-- First public release of @rekurt/ohlcv-core, @rekurt/ohlcv-react, @rekurt/ohlcv-vue.
+- First public release of @rekurt/openkline-core, @rekurt/openkline-react, @rekurt/openkline-vue.
 - Core rendering (3-layer canvas, hi-DPI, dirty-flag RAF), TypedArray-backed
   CandleBuffer, keyboard shortcuts, Go-to-live pill, drag/wheel/touch pan+zoom
   with momentum and prefers-reduced-motion, auto-follow state machine.
@@ -530,7 +530,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TypeDoc API reference on GitHub Pages.
 - CI (lint + typecheck + test + build) on every PR.
 
-[0.1.0]: https://github.com/rekurt/ohlcv-front/releases/tag/v0.1.0
+[0.1.0]: https://github.com/rekurt/openkline/releases/tag/v0.1.0
 ```
 
 ### 13. CONTRIBUTING.md
@@ -633,7 +633,7 @@ Test count estimate: 406 current → ~470 post-M1 (~60 new tests).
 
 ## Success criteria
 
-1. `npm install @rekurt/ohlcv-core` / `-react` / `-vue` works from a
+1. `npm install @rekurt/openkline-core` / `-react` / `-vue` works from a
    fresh directory and produces a working chart with ~20 lines of user
    code for each wrapper.
 2. Every public method on `OHLCVChart` is exposed through both React ref
@@ -644,9 +644,9 @@ Test count estimate: 406 current → ~470 post-M1 (~60 new tests).
 4. `npm run lint && npm run typecheck && npm test && npm run build`
    all green.
 5. CI workflow runs on every PR and blocks merges on failures.
-6. `https://rekurt.github.io/ohlcv-front/` serves the playground.
-7. `https://rekurt.github.io/ohlcv-front/api/` serves TypeDoc output.
-8. `npm view @rekurt/ohlcv-core` returns `version: 0.1.0` with correct
+6. `https://rekurt.github.io/openkline/` serves the playground.
+7. `https://rekurt.github.io/openkline/api/` serves TypeDoc output.
+8. `npm view @rekurt/openkline-core` returns `version: 0.1.0` with correct
    metadata (repository, license, keywords).
 9. README quickstart snippets for both wrappers work verbatim when
    pasted into a fresh project.
