@@ -66,6 +66,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now dispatches indicator-compute failures through `ErrorReporter` with
   `where: 'indicator'` instead of an empty `catch {}`, matching the
   project's "no silent catches" policy. New `ChartEngine.setErrorReporter`.
+- **`setData({ preserveView: true })` no longer re-arms the load-more
+  guard.** A preserveView refresh (React/Vue re-dispatching the same data
+  array on a prop change) is not a dataset swap, so it now leaves
+  `_dataGeneration` and the `_loadingMore` flag untouched. Previously it
+  cleared the guard (and orphaned the in-flight request's completion via the
+  generation bump), letting a left-edge viewport change fire a duplicate
+  `onLoadMoreHistory` before the first settled.
+- **`stopReplay()` no longer trims `maxCandles` when no replay cap was
+  active.** The post-stop eviction is now gated on a cap having been active
+  before stopping, so a defensive `stopReplay()` call from a replay UI can no
+  longer evict bars added via `prependHistory` (documented as never
+  auto-evicted).
 
 ### Removed
 

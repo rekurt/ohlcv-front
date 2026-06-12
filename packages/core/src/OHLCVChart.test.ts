@@ -830,6 +830,28 @@ describe('OHLCVChart facade', () => {
       expect(chart.getBuffer().length).toBe(100); // trimmed back to maxCandles
       chart.destroy();
     });
+
+    it('stopReplay with no active cap does NOT evict prepended history', async () => {
+      // A replay UI may call stopReplay() defensively even when replay was never
+      // engaged. With no cap there was no suspended over-growth to reclaim, so
+      // the trim must stay off — otherwise it would evict bars added via
+      // prependHistory (documented as never auto-evicted).
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H', maxCandles: 100,
+      });
+      chart.setData(Array.from({ length: 100 }, (_, i) => makeCandle(i)));
+      const older = Array.from({ length: 10 }, (_, i) => makeCandle(i - 10));
+      chart.prependHistory(older);
+      expect(chart.getBuffer().length).toBe(110);
+
+      // No replay was ever started → no cap is active.
+      expect(engineOf(chart).getReplayCap()).toBeNull();
+      chart.stopReplay();
+      await nextFrame();
+      expect(chart.getBuffer().length).toBe(110); // prepended history retained
+      expect(chart.getBuffer().firstTime()).toBe(makeCandle(-10).t);
+      chart.destroy();
+    });
   });
 
   // Future-bar leak regressions (Г3). With a replay cap active the buffer
@@ -1032,6 +1054,33 @@ describe('OHLCVChart facade', () => {
 
       panLeftEdge(chart);
       expect(calls).toBe(2); // new dataset can page again — the guard was reset
+      chart.destroy();
+    });
+
+    it('preserveView setData does NOT re-arm the guard while a load-more is pending', () => {
+      // A preserveView refresh (React/Vue re-dispatching the SAME dataset on a
+      // prop change) is not a swap: a still-pending onLoadMoreHistory is valid.
+      // Clearing the guard here would let the next left-edge change fire a
+      // DUPLICATE request before the first settles.
+      let calls = 0;
+      const chart = new OHLCVChart({
+        container, symbol: 'BTC/USDT', resolution: '1H',
+        onLoadMoreHistory: () => {
+          calls++;
+          return new Promise<void>(() => {}); // never resolves — stays in flight
+        },
+      });
+      const data = Array.from({ length: 200 }, (_, i) => makeCandle(i));
+      chart.setData(data);
+
+      panLeftEdge(chart);
+      expect(calls).toBe(1); // first load-more fired; _loadingMore is now true
+
+      // preserveView refresh of the same dataset must keep the guard armed.
+      chart.setData(data, { preserveView: true });
+
+      panLeftEdge(chart);
+      expect(calls).toBe(1); // no duplicate — the in-flight request still guards
       chart.destroy();
     });
   });
