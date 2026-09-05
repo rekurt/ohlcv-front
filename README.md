@@ -18,7 +18,8 @@ transports — with first-class **React** and **Vue** wrappers at full API parit
 [**API Reference**](https://rekurt.github.io/openkline/api/) ·
 [**Guides**](./docs/GUIDES.md) ·
 [**Comparison**](./docs/COMPARISON.md) ·
-[**Changelog**](./CHANGELOG.md)
+[**Changelog**](./CHANGELOG.md) ·
+[**All projects by rekurt**](https://rekurt.github.io/projects/)
 
 </div>
 
